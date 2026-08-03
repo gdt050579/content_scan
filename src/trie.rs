@@ -124,38 +124,38 @@ impl TrieBuilder {
     pub fn add(&mut self, data: &'static [u8], value: u16) {
         self.words.push(Word { data, value });
     }
-    impl TrieBuilder {
-        pub fn build(self) -> Trie {
-            let mut nodes: Vec<TrieNode> = Vec::new();
-            nodes.push(TrieNode {
-                children: TrieChildren::None,
-                value: None,
-            });
-    
-            for word in &self.words {
-                let mut current: usize = 0;
-                for &symbol in word.data {
-                    match nodes[current].children.find(symbol) {
-                        Some(next) => current = next as usize,
-                        None => {
-                            let new_index = nodes.len();
-                            assert!(
-                                new_index <= TrieIndex::MAX as usize,
-                                "trie exceeds u16 node capacity"
-                            );
-                            nodes.push(TrieNode {
-                                children: TrieChildren::None,
-                                value: None,
-                            });
-                            nodes[current].children.insert(symbol, new_index as TrieIndex);
-                            current = new_index;
-                        }
+    pub fn build(self) -> Trie {
+        let mut nodes: Vec<TrieNode> = Vec::new();
+        nodes.push(TrieNode {
+            children: TrieChildren::None,
+            value: None,
+        });
+
+        for word in &self.words {
+            let mut current: usize = 0;
+            for &symbol in word.data {
+                match nodes[current].children.find(symbol) {
+                    Some(next) => current = next as usize,
+                    None => {
+                        let new_index = nodes.len();
+                        assert!(
+                            new_index <= TrieIndex::MAX as usize,
+                            "trie exceeds u16 node capacity"
+                        );
+                        nodes.push(TrieNode {
+                            children: TrieChildren::None,
+                            value: None,
+                        });
+                        nodes[current]
+                            .children
+                            .insert(symbol, new_index as TrieIndex);
+                        current = new_index;
                     }
                 }
-                nodes[current].value = Some(word.value);
             }
-    
-            Trie { nodes }
+            nodes[current].value = Some(word.value);
         }
+
+        Trie { nodes }
     }
 }
