@@ -10,9 +10,9 @@ pub enum AnalysisResult {
 
 pub trait ContentAnalyzer<T: ContentType> {
     fn analyze(&mut self, content: &dyn Content<T>, output: &mut VarMap) -> AnalysisResult;
-    fn first_entry(&mut self, content: &dyn Content<T>) -> Option<Entry>;
-    fn next_entry(&mut self, content: &dyn Content<T>, entry: &mut Entry) -> bool;
-    fn extract_entry(&mut self, content: &dyn Content<T>, entry: &Entry) -> Option<Box<dyn Content<T>>>;
+    fn init_entry(&mut self, content: &mut dyn Content<T>,entry: &mut Entry) -> bool;
+    fn next_entry(&mut self, content: &mut dyn Content<T>, entry: &mut Entry) -> bool;
+    fn extract_entry(&mut self, content: &mut dyn Content<T>, entry: &Entry) -> Option<Box<dyn Content<T>>>;
 }
 
 pub enum EntryCursor {
@@ -23,9 +23,9 @@ pub enum EntryCursor {
 }
 
 pub struct Entry {
-    name: String,
-    size: Option<u64>, 
-    cursor: EntryCursor,
+    pub path: String,
+    pub size: Option<u64>, 
+    pub cursor: EntryCursor,
 }
 
 pub enum FastID {
