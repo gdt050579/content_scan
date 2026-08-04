@@ -50,7 +50,7 @@ impl<T: ContentType> Scanner<T> {
                 AnalysisResult::Continue => continue,
                 AnalysisResult::Stop => break,
                 AnalysisResult::Extract => {
-                    return;
+                    self.extract_content(content, i, depth);
                 }
             }
         }
