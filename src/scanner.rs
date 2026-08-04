@@ -1,7 +1,7 @@
 use varmap::VarMap;
 
 use super::{
-    AnalysisResult, Content, ContentAnalyzer, ContentIdentifier, ContentType, Entry, EntryCursor,
+    Content, ContentAnalyzer, ContentIdentifier, ContentType, Entry, NextAction,
     Filter, analyzer_list::AnalyzerList,
 };
 use crate::Matcher;
@@ -12,6 +12,7 @@ pub struct Scanner<T: ContentType> {
     filter: Filter,
     identifiers: Vec<Box<dyn ContentIdentifier<T>>>,
     analyzers: AnalyzerList<T>,
+    extractors: AnalyzerList<T>,
     varm: VarMap,
 }
 impl<T: ContentType> Scanner<T> {
@@ -47,11 +48,9 @@ impl<T: ContentType> Scanner<T> {
         for i in start..end {
             let result = unsafe { self.analyzers.get(i).analyze(content, &mut self.varm) };
             match result {
-                AnalysisResult::Continue => continue,
-                AnalysisResult::Stop => break,
-                AnalysisResult::Extract => {
-                    self.extract_content(content, i, depth);
-                }
+                NextAction::Continue => continue,
+                NextAction::Exit => break,
+                NextAction::Skip => break;
             }
         }
     }
@@ -143,7 +142,7 @@ impl<T: ContentType> Scanner<T> {
 }
 pub struct ScannerBuilder<T: ContentType> {
     filter: Filter,
-    analyzers: AnalyzerList<T>,
+    analyzers: Vec<(u32, Box<dyn ContentAnalyzer<T>>)>,
     identifiers: Vec<Box<dyn ContentIdentifier<T>>>,
     identifiers_type: Vec<T>,
 }
@@ -151,7 +150,7 @@ impl<T: ContentType> ScannerBuilder<T> {
     pub fn new() -> Self {
         Self {
             filter: Filter::new(),
-            analyzers: AnalyzerList::new(),
+            analyzers: Vec::with_capacity(16),
             identifiers: Vec::new(),
             identifiers_type: Vec::new(),
         }
@@ -160,30 +159,23 @@ impl<T: ContentType> ScannerBuilder<T> {
         self.filter = filter;
         self
     }
-    pub fn add_analyzer(
+    pub fn add_analyzer<A>(
         mut self,
         content_type: T,
         priority: u8,
-        analyzer: Box<dyn ContentAnalyzer<T>>,
-    ) -> Self {
-        self.analyzers.add(content_type, priority, analyzer);
+        analyzer: A,
+    ) -> Self where A: ContentAnalyzer<T> + 'static {
+        let hash = (content_type.as_u16() as u32) << 16 | priority as u32;
+        self.analyzers.push((hash, Box::new(analyzer)));
         self
     }
-    pub fn add_generic_analyzer(
+    pub fn add_generic_analyzer<A>(
         mut self,
         priority: u8,
-        analyzer: Box<dyn ContentAnalyzer<T>>,
-    ) -> Self {
-        self.analyzers.add_generic_analyzer(priority, analyzer);
-        self
-    }
-    pub fn add_identifier(
-        mut self,
-        content_type: T,
-        identifier: Box<dyn ContentIdentifier<T>>,
-    ) -> Self {
-        self.identifiers.push(identifier);
-        self.identifiers_type.push(content_type);
+        analyzer: A,
+    ) -> Self where A: ContentAnalyzer<T> + 'static {
+        let hash = 0xFFFF0000 | priority as u32;
+        self.analyzers.push((hash, Box::new(analyzer)));
         self
     }
     pub fn build(self) -> Scanner<T> {
