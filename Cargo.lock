@@ -5,3 +5,21 @@ version = 4
 [[package]]
 name = "file_scanner"
 version = "0.1.0"
+dependencies = [
+ "varmap",
+]
+
+[[package]]
+name = "varmap"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2abe1a12a9effeab8ffbf9eae7fa938df2cdb25322104669fa667a1a37cdcdc4"
+dependencies = [
+ "varmap_proc_macro",
+]
+
+[[package]]
+name = "varmap_proc_macro"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1b40ed0eec4346537ad73095f4404ba12e0858bb1fbf61303422e2f98865e3d6"

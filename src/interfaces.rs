@@ -1,16 +1,18 @@
 use std::any::Any;
+use super::{Content, ContentType};
+use varmap::VarMap;
 
-pub enum ObjectType {
+pub enum AnalysisResult {
+    Continue,
+    Stop,
+    Extract
 }
 
-pub trait Object {
-    fn types(&self) -> &[ObjectType];
-    fn path(&self) -> &str;
-    fn size(&self) -> u64;
-    fn read(&mut self, offset: u64, count: u32) -> Option<&[u8]>;
-}
-pub trait Analyzer {
-    fn analyze(&mut self, object: &dyn Object);
+pub trait ContentAnalyzer<T: ContentType> {
+    fn analyze(&mut self, content: &dyn Content<T>, output: &mut VarMap) -> AnalysisResult;
+    fn first_entry(&mut self, content: &dyn Content<T>) -> Option<Entry>;
+    fn next_entry(&mut self, content: &dyn Content<T>, entry: &mut Entry) -> bool;
+    fn extract_entry(&mut self, content: &dyn Content<T>, entry: &Entry) -> Option<Box<dyn Content<T>>>;
 }
 
 pub enum EntryCursor {
@@ -26,13 +28,16 @@ pub struct Entry {
     cursor: EntryCursor,
 }
 
-pub trait Extractor {
-    fn init(&mut self, object: &mut dyn Object) -> Option<Entry>;
-    fn next(&mut self, object: &mut dyn Object, entry: &mut Entry) -> bool;
-    fn extract(&mut self, object: &mut dyn Object, entry: &Entry) -> Option<Box<dyn Object>>;
+pub enum FastID {
+    Magic(&'static [u8]),
+    MultipleMagic(&'static [&'static [u8]]),
+    Extension(&'static str),
+    Extensions(&'static [&'static str]),
+    Name(&'static str),
+    Names(&'static [&'static str]),
 }
 
-pub trait Probe {
-    fn magic() -> &'static [u8];
-    fn update_types(object: &mut dyn Object); // adds ObjectTypes to object
+pub trait ContentIdentifier<T: ContentType> {
+    fn fast_id(&self) -> Option<FastID>;
+    fn validate(&self, content: &dyn Content<T>) -> bool;
 }
