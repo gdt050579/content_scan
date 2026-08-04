@@ -21,7 +21,10 @@ impl<T: ContentType> AnalyzerList<T> {
     pub(super) fn add_generic_analyzer(&mut self, priority: u8, analyzer: Box<dyn ContentAnalyzer<T>>) {
         todo!();
     }
-    pub(super) fn get(&mut self, index: usize) -> Option<&mut Box<dyn ContentAnalyzer<T>>> {
+    pub(super) unsafe fn get(&mut self, index: usize) -> &mut Box<dyn ContentAnalyzer<T>> {
         todo!();
+    }
+    pub(super) fn len(&self) -> usize {
+        self.analyzers.len()
     }
 }

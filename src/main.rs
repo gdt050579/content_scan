@@ -4,6 +4,7 @@ mod matcher;
 mod trie;
 mod content;
 mod scanner;
+mod filter;
 #[cfg(test)]
 mod tests;
 
@@ -11,6 +12,7 @@ mod tests;
 pub use content::*;
 pub use matcher::*;
 pub use interfaces::*;
+pub use filter::*;
 
 fn main() {
     println!("Hello, world!");

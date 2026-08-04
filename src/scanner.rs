@@ -1,23 +1,25 @@
 use varmap::VarMap;
 
 use super::{
-    AnalysisResult, Content, ContentAnalyzer, ContentIdentifier, ContentType,
-    Entry, EntryCursor,
-    analyzer_list::AnalyzerList,
+    AnalysisResult, Content, ContentAnalyzer, ContentIdentifier, ContentType, Entry, EntryCursor,
+    Filter, analyzer_list::AnalyzerList,
 };
 use crate::Matcher;
 pub struct Scanner<T: ContentType> {
     magics: Matcher<T>,
     extensions: Matcher<T>,
     names: Matcher<T>,
-    filter: Option<fn(&str, u32) -> bool>,
+    filter: Filter,
     identifiers: Vec<Box<dyn ContentIdentifier<T>>>,
     analyzers: AnalyzerList<T>,
     varm: VarMap,
 }
 impl<T: ContentType> Scanner<T> {
     pub fn scan(&mut self, content: &mut dyn Content<T>) {
-        if !self.should_process(content.path(), 0, content.size()) {
+        if !self
+            .filter
+            .should_process(content.path(), 0, content.size())
+        {
             return;
         }
         self.inner_scan(content, 0);
@@ -39,53 +41,49 @@ impl<T: ContentType> Scanner<T> {
         }
     }
     fn scan_range(&mut self, content: &mut dyn Content<T>, start: usize, end: usize, depth: u32) {
+        if (end <= start) || (end > self.analyzers.len()) {
+            return;
+        }
         for i in start..end {
-            if let Some(analyzer) = self.analyzers.get(i) {
-                let result = analyzer.analyze(content, &mut self.varm);
-                match result {
-                    AnalysisResult::Continue => continue,
-                    AnalysisResult::Stop => break,
-                    AnalysisResult::Extract => {
-                        return;
-                    }
+            let result = unsafe { self.analyzers.get(i).analyze(content, &mut self.varm) };
+            match result {
+                AnalysisResult::Continue => continue,
+                AnalysisResult::Stop => break,
+                AnalysisResult::Extract => {
+                    return;
                 }
             }
         }
     }
     fn extract_content(&mut self, content: &mut dyn Content<T>, index: usize, depth: u32) {
-        if let Some(analyzer) = self.analyzers.get(index) {
-            let mut entry = Entry {
-                path: String::new(),
-                size: Some(0),
-                cursor: EntryCursor::Offset(0),
-            };
-            if analyzer.init_entry(content, &mut entry) {
-                loop {
-                    // filtram
-                    // let should_process =
-                    //     self.should_process(&entry.path, depth + 1, entry.size.unwrap_or(0));
-                    let should_process = true;
-                    if should_process {
-                        if let Some(mut extracted_content) = analyzer.extract_entry(content, &entry)
-                        {
-                            // rescan
-                            self.inner_scan(&mut *extracted_content, depth + 1);
-                        }
-                    }
-                    if !analyzer.next_entry(content, &mut entry) {
-                        break;
-                    }
+        let len = self.analyzers.len();
+        if index >= len {
+            return;
+        }
+        let mut entry = Entry {
+            path: String::new(),
+            size: Some(0),
+            cursor: EntryCursor::Offset(0),
+        };
+        let inited = unsafe { self.analyzers.get(index).init_entry(content, &mut entry) };
+        if !inited {
+            return;
+        }
+        loop {
+            let should_process =
+                self.filter
+                    .should_process(&entry.path, depth + 1, entry.size.unwrap_or(0));
+            if should_process {
+                if let Some(mut extracted_content) =
+                    unsafe { self.analyzers.get(index).extract_entry(content, &entry) }
+                {
+                    self.inner_scan(&mut *extracted_content, depth + 1);
                 }
             }
-        }
-    }
-    fn should_process(&self, path: &str, depth: u32, size: u64) -> bool {
-        if let Some(filter) = self.filter {
-            if !filter(path, depth) {
-                return false;
+            if !unsafe { self.analyzers.get(index).next_entry(content, &mut entry) } {
+                break;
             }
         }
-        true
     }
     fn retrieve_content_type(&self, content: &mut dyn Content<T>) -> Option<T> {
         let p = content.path().as_bytes();
@@ -144,7 +142,7 @@ impl<T: ContentType> Scanner<T> {
     }
 }
 pub struct ScannerBuilder<T: ContentType> {
-    filter: Option<fn(&str, u32) -> bool>,
+    filter: Filter,
     analyzers: AnalyzerList<T>,
     identifiers: Vec<Box<dyn ContentIdentifier<T>>>,
     identifiers_type: Vec<T>,
@@ -152,14 +150,14 @@ pub struct ScannerBuilder<T: ContentType> {
 impl<T: ContentType> ScannerBuilder<T> {
     pub fn new() -> Self {
         Self {
-            filter: None,
+            filter: Filter::new(),
             analyzers: AnalyzerList::new(),
             identifiers: Vec::new(),
             identifiers_type: Vec::new(),
         }
     }
-    pub fn filter(mut self, filter: fn(&str, u32) -> bool) -> Self {
-        self.filter = Some(filter);
+    pub fn filter(mut self, filter: Filter) -> Self {
+        self.filter = filter;
         self
     }
     pub fn add_analyzer(
