@@ -1,4 +1,4 @@
-mod analyzer_list;
+mod plugin_list;
 mod interfaces;
 mod matcher;
 mod trie;

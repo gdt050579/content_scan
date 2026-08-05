@@ -1,4 +1,5 @@
 pub trait ContentType: Copy + Eq + PartialEq {
+    const COUNT: u16;
     fn as_u16(&self) -> u16;
     fn from_u16(value: u16) -> Option<Self>;
 }
