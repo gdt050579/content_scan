@@ -223,3 +223,79 @@ mod plugin_list {
     }
 }
 
+mod utils {
+    use crate::utils::{get_extension, get_file_name};
+
+    #[test]
+    fn file_name_from_unix_path() {
+        assert_eq!(get_file_name(b"/home/user/file.txt"), b"file.txt");
+        assert_eq!(get_file_name(b"/file.txt"), b"file.txt");
+    }
+
+    #[test]
+    fn file_name_from_windows_path() {
+        assert_eq!(get_file_name(br"C:\Users\me\file.txt"), b"file.txt");
+        assert_eq!(get_file_name(br"C:\file.txt"), b"file.txt");
+    }
+
+    #[test]
+    fn file_name_mixed_separators_uses_last() {
+        assert_eq!(get_file_name(br"C:\Users/me\docs/file.txt"), b"file.txt");
+        assert_eq!(get_file_name(b"/home\\user/file.txt"), b"file.txt");
+    }
+
+    #[test]
+    fn file_name_without_separator_returns_whole_path() {
+        assert_eq!(get_file_name(b"file.txt"), b"file.txt");
+        assert_eq!(get_file_name(b"README"), b"README");
+    }
+
+    #[test]
+    fn file_name_trailing_separator_returns_empty() {
+        assert_eq!(get_file_name(b"/home/user/"), b"");
+        assert_eq!(get_file_name(br"C:\Users\"), b"");
+    }
+
+    #[test]
+    fn file_name_empty_path() {
+        assert_eq!(get_file_name(b""), b"");
+    }
+
+    #[test]
+    fn extension_basic() {
+        assert_eq!(get_extension(b"file.txt"), b"txt");
+        assert_eq!(get_extension(b"archive.tar.gz"), b"gz");
+    }
+
+    #[test]
+    fn extension_no_dot_returns_empty() {
+        assert_eq!(get_extension(b"README"), b"");
+        assert_eq!(get_extension(b"Makefile"), b"");
+    }
+
+    #[test]
+    fn extension_leading_dot_file() {
+        // Dotfile with no further extension: everything after the only dot.
+        assert_eq!(get_extension(b".gitignore"), b"gitignore");
+        assert_eq!(get_extension(b".tar.gz"), b"gz");
+    }
+
+    #[test]
+    fn extension_trailing_dot_returns_empty() {
+        assert_eq!(get_extension(b"file."), b"");
+    }
+
+    #[test]
+    fn extension_empty_name() {
+        assert_eq!(get_extension(b""), b"");
+        assert_eq!(get_extension(b"."), b"");
+    }
+
+    #[test]
+    fn file_name_then_extension() {
+        let name = get_file_name(br"C:\docs\report.PDF");
+        assert_eq!(name, b"report.PDF");
+        assert_eq!(get_extension(name), b"PDF");
+    }
+}
+
