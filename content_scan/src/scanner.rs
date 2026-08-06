@@ -24,6 +24,7 @@ impl<T: ContentType> Scanner<T> {
     }
     fn inner_scan(&mut self, content: &mut dyn Content<T>, depth: u32) -> NextAction {
         self.context.clear_extract();
+        self.context.objects_scanned += 1;
         let ty = self.retrieve_content_type(content);
         let range = if let Some(ty) = ty { self.analyzers.range(ty) } else { None };
         if let Some((start, end)) = range {
