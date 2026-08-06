@@ -1,8 +1,8 @@
-use std::collections::HashMap;
+use std::collections::HashSet;
 use crate::utils;
 use varmap::VarMap;
 
-use super::{Content, ContentAnalyzer, ContentExtractor, ContentIdentifier, ContentType, Entry, Filter, NextAction, plugin_list::PluginsList};
+use super::{Content, ContentAnalyzer, ContentExtractor, ContentIdentifier, ContentType, Filter, NextAction, plugin_list::PluginsList};
 use crate::IdentifierSet;
 pub struct Scanner<T: ContentType> {
     filter: Option<Filter>,
@@ -226,7 +226,20 @@ impl<T: ContentType> ScannerBuilder<T> {
         self.max_depth = max_depth.clamp(1, u32::MAX-2);
         self
     }
+    fn check_unique_identifiers(&self) {
+        let mut m = HashSet::new();
+        for (content_type, _) in &self.identifiers {
+            if m.contains(&content_type.as_u16()) {
+                panic!(
+                    "There can only be one identifier for type ! Type {:?} has multiple identifiers !",
+                    content_type
+                );
+            }
+            m.insert(content_type.as_u16());
+        }
+    }
     pub fn build(self) -> Scanner<T> {
+        self.check_unique_identifiers();
         let analyzers = PluginsList::new(self.analyzers, T::COUNT);
         let extractors = PluginsList::new(self.extractors, T::COUNT);
         let identifiers = IdentifierSet::new(self.identifiers);

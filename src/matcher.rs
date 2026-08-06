@@ -8,7 +8,6 @@ mod tests;
 
 use one::OneMatcher;
 use trie::{Trie, TrieBuilder};
-use packed_linear_list::PackedLinearList;
 use fast_magic::FastMagicMatcher;
 
 use super::ContentType;
