@@ -1,5 +1,10 @@
+mod trie;
+#[cfg(test)]
+mod tests;
+
+use trie::{Trie, TrieBuilder};
+
 use super::ContentType;
-use crate::trie::Trie;
 pub enum Matcher<T: ContentType> {
     None,
     One { content_type: T, data: &'static [u8] },
@@ -20,7 +25,7 @@ impl<T: ContentType> Matcher<T> {
                 }
             },
             Matcher::Trie(trie) => {
-                trie.starts_with(content)
+                trie.starts_with(content).map(|value| T::from_u16(value).expect("Invalid content type"))
             }
         }
     }
@@ -38,7 +43,7 @@ impl<T: ContentType> Matcher<T> {
                 }
             },
             Matcher::Trie(trie) => {
-                trie.matches_exactly(content)
+                trie.matches_exactly(content).map(|value| T::from_u16(value).expect("Invalid content type"))
             }
         }
     }

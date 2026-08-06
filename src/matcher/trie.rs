@@ -92,9 +92,23 @@ pub struct Trie {
     nodes: Vec<TrieNode>,
 }
 impl Trie {
-    pub fn scan(&self, data: &[u8]) -> Option<u16> {
+    #[inline(always)]
+    pub(super) fn starts_with(&self, data: &[u8]) -> Option<u16> {
+        self.inner_scan(data).0
+    }
+    #[inline(always)]
+    pub(super) fn matches_exactly(&self, data: &[u8]) -> Option<u16> {
+        let (res,match_entire_buff) = self.inner_scan(data);
+        if match_entire_buff {
+            res
+        } else {
+            None
+        }
+    }
+    fn inner_scan(&self, data: &[u8]) -> (Option<u16>, bool) {
         let mut current_index: usize = 0;
         let mut current_value = self.nodes[0].value;
+        let mut matched_length = true;
         for symbol in data {
             match self.nodes[current_index].children.find(*symbol) {
                 Some(next) => {
@@ -103,10 +117,13 @@ impl Trie {
                         current_value = Some(v);
                     }
                 }
-                None => break,
+                None => {
+                    matched_length = false;
+                    break;
+                }
             }
         }
-        current_value
+        (current_value, matched_length)
     }
 }
 
