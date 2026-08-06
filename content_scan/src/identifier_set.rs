@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{ContentIdentifier, ContentType, FastID, Matcher, MatcherBuilder};
+use crate::{ContentIdentifier, ContentType, IdentifyMethod, Matcher, MatcherBuilder};
 
 pub(crate) struct IdentifierSet<T: ContentType> {
     identifiers: HashMap<u16, Box<dyn ContentIdentifier<T>>>,
@@ -15,22 +15,22 @@ impl<T: ContentType> IdentifierSet<T> {
         let mut extensions = MatcherBuilder::new();
         let mut names = MatcherBuilder::new();
         for (content_type, identifier) in identifiers {
-            if let Some(fast_id) = identifier.fast_id() {
+            if let Some(fast_id) = identifier.identify_method() {
                 match fast_id {
-                    FastID::Magic(magic) => magics.add(content_type, magic),
-                    FastID::MultipleMagic(items) => {
+                    IdentifyMethod::Magic(magic) => magics.add(content_type, magic),
+                    IdentifyMethod::MultipleMagic(items) => {
                         for item in items {
                             magics.add(content_type, item);
                         }
                     }
-                    FastID::Extension(extension) => extensions.add(content_type, extension.as_bytes()),
-                    FastID::Extensions(items) => {
+                    IdentifyMethod::Extension(extension) => extensions.add(content_type, extension.as_bytes()),
+                    IdentifyMethod::Extensions(items) => {
                         for item in items {
                             extensions.add(content_type, item.as_bytes());
                         }
                     }
-                    FastID::Name(name) => names.add(content_type, name.as_bytes()),
-                    FastID::Names(items) => {
+                    IdentifyMethod::Name(name) => names.add(content_type, name.as_bytes()),
+                    IdentifyMethod::Names(items) => {
                         for item in items {
                             names.add(content_type, item.as_bytes());
                         }

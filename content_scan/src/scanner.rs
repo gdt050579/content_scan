@@ -1,7 +1,6 @@
 use std::collections::HashSet;
 use crate::utils;
-use varmap::VarMap;
-
+use crate::{Context, ScanResult};
 use super::{Content, ContentAnalyzer, ContentExtractor, ContentIdentifier, ContentType, Filter, NextAction, plugin_list::PluginsList};
 use crate::IdentifierSet;
 pub struct Scanner<T: ContentType> {
@@ -9,21 +8,22 @@ pub struct Scanner<T: ContentType> {
     identifiers: IdentifierSet<T>,
     analyzers: PluginsList<Box<dyn ContentAnalyzer<T>>>,
     extractors: PluginsList<Box<dyn ContentExtractor<T>>>,
-    varm: VarMap,
+    context: Context,
     max_depth: u32,
 }
 impl<T: ContentType> Scanner<T> {
-    pub fn scan(&mut self, content: &mut dyn Content<T>) -> &VarMap {
-        self.varm.clear();
+    pub fn scan<'a>(&'a mut self, content: &mut dyn Content<T>) -> ScanResult<'a> {
+        self.context.clear();
         if let Some(filter) = &self.filter {
             if !filter.should_process(content.path(), content.size()) {
-                return &self.varm;
+                return ScanResult::new(&self.context);
             }
         }
         self.inner_scan(content, 1);
-        &self.varm
+        ScanResult::new(&self.context)
     }
     fn inner_scan(&mut self, content: &mut dyn Content<T>, depth: u32) -> NextAction {
+        self.context.clear_extract();
         let ty = self.retrieve_content_type(content);
         let range = if let Some(ty) = ty { self.analyzers.range(ty) } else { None };
         if let Some((start, end)) = range {
@@ -68,7 +68,7 @@ impl<T: ContentType> Scanner<T> {
             return NextAction::Continue;
         }
         for i in start..end {
-            let result = unsafe { self.analyzers.get(i).analyze(content, &mut self.varm) };
+            let result = unsafe { self.analyzers.get(i).analyze(content, &mut self.context) };
             match result {
                 NextAction::Continue => continue,
                 NextAction::Exit => return NextAction::Exit,
@@ -100,7 +100,7 @@ impl<T: ContentType> Scanner<T> {
             return NextAction::Continue;
         }
         let mut extractor = unsafe { self.extractors.get(index) };
-        if !extractor.init(content, &mut self.varm) {
+        if !extractor.init(content, &mut self.context.extract()) {
             return NextAction::Continue;
         }
         while let Some(entry) = unsafe { self.extractors.get(index).advance(content) } {
@@ -250,7 +250,7 @@ impl<T: ContentType> ScannerBuilder<T> {
             identifiers,
             analyzers,
             extractors,
-            varm: VarMap::new(),
+            context: Context::new(),
             max_depth: self.max_depth,
         }
     }

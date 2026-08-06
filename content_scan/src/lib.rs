@@ -6,6 +6,7 @@ mod scanner;
 mod filter;
 mod identifier_set;
 mod utils;
+mod context;
 #[cfg(test)]
 mod tests;
 
@@ -20,3 +21,6 @@ use matcher::*;
 pub use scanner::Scanner;
 pub use scanner::ScannerBuilder;
 pub use content_scan_proc_macro::ContentType;
+pub use context::Context;
+pub use context::ScanResult;
+pub use varmap::*;
