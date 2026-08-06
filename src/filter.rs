@@ -7,6 +7,6 @@ impl Filter {
         }
     }
     pub fn should_process(&self, path: &str, depth: u32, size: u64) -> bool {
-        true
+        todo!()
     }
 }

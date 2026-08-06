@@ -240,12 +240,11 @@ mod one {
     }
 
     #[test]
-    fn prefix_with_extra_bytes_matches() {
-        // OneMatcher uses starts_with for both APIs.
+    fn prefix_with_extra_bytes() {
         let matcher = OneMatcher::new(TestType::Pdf, b"%PDF");
 
         assert_eq!(matcher.starts_with(b"%PDF-1.7"), Some(TestType::Pdf));
-        assert_eq!(matcher.matches_exactly(b"%PDF-1.7"), Some(TestType::Pdf));
+        assert_eq!(matcher.matches_exactly(b"%PDF-1.7"), None);
     }
 
     #[test]
@@ -269,13 +268,15 @@ mod one {
     }
 
     #[test]
-    fn empty_pattern_matches_any_input() {
+    fn empty_pattern() {
         let matcher = OneMatcher::new(TestType::Pdf, b"");
 
+        // starts_with: empty pattern is a prefix of every input.
         assert_eq!(matcher.starts_with(b""), Some(TestType::Pdf));
-        assert_eq!(matcher.matches_exactly(b""), Some(TestType::Pdf));
         assert_eq!(matcher.starts_with(b"anything"), Some(TestType::Pdf));
-        assert_eq!(matcher.matches_exactly(b"anything"), Some(TestType::Pdf));
+        // matches_exactly: only an empty input equals an empty pattern.
+        assert_eq!(matcher.matches_exactly(b""), Some(TestType::Pdf));
+        assert_eq!(matcher.matches_exactly(b"anything"), None);
     }
 
     #[test]
@@ -286,7 +287,7 @@ mod one {
         assert_eq!(matcher.starts_with(b"PK"), Some(TestType::Zip));
         assert_eq!(matcher.starts_with(b"X"), None);
         assert_eq!(matcher.matches_exactly(b"P"), Some(TestType::Zip));
-        assert_eq!(matcher.matches_exactly(b"PK"), Some(TestType::Zip));
+        assert_eq!(matcher.matches_exactly(b"PK"), None);
         assert_eq!(matcher.matches_exactly(b"X"), None);
     }
 
@@ -299,11 +300,12 @@ mod one {
         assert_eq!(elf.starts_with(b"\x7fELF\x01\x01"), Some(TestType::Elf));
         assert_eq!(elf.starts_with(b"\x7fEL"), None);
         assert_eq!(elf.matches_exactly(b"\x7fELF"), Some(TestType::Elf));
-        assert_eq!(elf.matches_exactly(b"\x7fELF\x01\x01"), Some(TestType::Elf));
+        assert_eq!(elf.matches_exactly(b"\x7fELF\x01\x01"), None);
         assert_eq!(elf.matches_exactly(b"\x7fEL"), None);
 
         assert_eq!(zip.starts_with(b"PK\x03\x04extra"), Some(TestType::Zip));
-        assert_eq!(zip.matches_exactly(b"PK\x03\x04extra"), Some(TestType::Zip));
+        assert_eq!(zip.matches_exactly(b"PK\x03\x04extra"), None);
+        assert_eq!(zip.matches_exactly(b"PK\x03\x04"), Some(TestType::Zip));
         assert_eq!(zip.starts_with(b"PK\x03\x03"), None);
         assert_eq!(zip.matches_exactly(b"PK\x03\x03"), None);
     }

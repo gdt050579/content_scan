@@ -18,7 +18,7 @@ impl<T: ContentType> OneMatcher<T> {
     }
     #[inline(always)]
     pub(crate) fn matches_exactly(&self, data: &[u8]) -> Option<T> {
-        if data.starts_with(self.data) {
+        if data == self.data {
             Some(self.content_type)
         } else {
             None
