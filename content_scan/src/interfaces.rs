@@ -7,6 +7,7 @@ pub enum NextAction {
     Exit,
 }
 
+#[derive(Default)]
 pub struct Entry {
     pub path: String,
     pub size: u64,

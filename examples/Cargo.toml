@@ -12,3 +12,7 @@ varmap = "*"
 [[example]]
 name = "vowals"
 path = "vowals/main.rs"
+
+[[example]]
+name = "sum"
+path = "sum/main.rs"
