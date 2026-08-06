@@ -1,0 +1,9 @@
+[package]
+name = "file_scanner"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+
+[dependencies]
+varmap = "*"

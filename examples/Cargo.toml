@@ -1,0 +1,13 @@
+[package]
+name = "examples"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[dev-dependencies]
+content_scan = { path = "../content_scan" }
+
+
+[[example]]
+name = "vowals"
+path = "vowals/main.rs"

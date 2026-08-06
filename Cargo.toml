@@ -1,9 +1,15 @@
-[package]
-name = "file_scanner"
-version = "0.1.0"
-edition = "2024"
+[workspace]
+resolver = "2"
 
-[lib]
+members = [
+  "content_scan",
+  "examples",
+]
 
-[dependencies]
-varmap = "*"
+
+[profile.release]
+debug = true
+
+[workspace.lints.clippy]
+module_inception = "allow"
+new_without_default = "allow"
