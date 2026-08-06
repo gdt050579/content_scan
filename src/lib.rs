@@ -5,6 +5,7 @@ mod content;
 mod scanner;
 mod filter;
 mod identifier_set;
+mod utils;
 #[cfg(test)]
 mod tests;
 

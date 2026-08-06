@@ -1,20 +1,21 @@
 use std::collections::HashMap;
-
+use crate::utils;
 use varmap::VarMap;
 
 use super::{Content, ContentAnalyzer, ContentExtractor, ContentIdentifier, ContentType, Entry, Filter, NextAction, plugin_list::PluginsList};
-use crate::{IdentifierSet};
+use crate::IdentifierSet;
 pub struct Scanner<T: ContentType> {
     filter: Option<Filter>,
     identifiers: IdentifierSet<T>,
     analyzers: PluginsList<Box<dyn ContentAnalyzer<T>>>,
     extractors: PluginsList<Box<dyn ContentExtractor<T>>>,
     varm: VarMap,
+    max_depth: u32,
 }
 impl<T: ContentType> Scanner<T> {
     pub fn scan(&mut self, content: &mut dyn Content<T>) {
         if let Some(filter) = &self.filter {
-            if !filter.should_process(content.path(), 0, content.size()) {
+            if !filter.should_process(content.path(), content.size()) {
                 return;
             }
         }
@@ -89,6 +90,9 @@ impl<T: ContentType> Scanner<T> {
         NextAction::Continue
     }
     fn extract_content(&mut self, content: &mut dyn Content<T>, index: usize, depth: u32) -> NextAction {
+        if depth + 1 >= self.max_depth {
+            return NextAction::Continue;
+        }
         let len = self.extractors.len();
         if index >= len {
             return NextAction::Continue;
@@ -99,7 +103,7 @@ impl<T: ContentType> Scanner<T> {
         }
         while let Some(entry) = unsafe { self.extractors.get(index).advance(content) } {
             if let Some(filter) = &self.filter {
-                if !filter.should_process(&entry.path, depth + 1, entry.size) {
+                if !filter.should_process(&entry.path, entry.size) {
                     continue;
                 }
             }
@@ -118,18 +122,9 @@ impl<T: ContentType> Scanner<T> {
     fn retrieve_content_type(&self, content: &mut dyn Content<T>) -> Option<T> {
         let p = content.path().as_bytes();
         // type from file name
-        let file_name = if let Some(ofs) = p.iter().rposition(|&b| b == b'/' || b == b'\\') {
-            &p[ofs + 1..]
-        } else {
-            p
-        };
-        // type from extension
+        let file_name = utils::get_file_name(p);
         let type_from_file_name = self.identifiers.type_from_file_name(file_name);
-        let extension = if let Some(ofs) = file_name.iter().rposition(|&b| b == b'.') {
-            &file_name[ofs + 1..]
-        } else {
-            &[]
-        };
+        let extension = utils::get_extension(file_name);
         let type_from_extension = self.identifiers.type_from_extension(extension);
         // type from magic
         let type_from_magic = {
@@ -169,6 +164,7 @@ pub struct ScannerBuilder<T: ContentType> {
     analyzers: Vec<(u32, Box<dyn ContentAnalyzer<T>>)>,
     extractors: Vec<(u32, Box<dyn ContentExtractor<T>>)>,
     identifiers: Vec<(T, Box<dyn ContentIdentifier<T>>)>,
+    max_depth: u32,
 }
 impl<T: ContentType> ScannerBuilder<T> {
     pub fn new() -> Self {
@@ -177,6 +173,7 @@ impl<T: ContentType> ScannerBuilder<T> {
             analyzers: Vec::with_capacity(16),
             extractors: Vec::with_capacity(4),
             identifiers: Vec::with_capacity(4),
+            max_depth: 1,
         }
     }
     pub fn filter(mut self, filter: Filter) -> Self {
@@ -220,6 +217,10 @@ impl<T: ContentType> ScannerBuilder<T> {
         I: ContentIdentifier<T> + 'static,
     {
         self.identifiers.push((content_type, Box::new(identifier)));
+        self
+    }
+    pub fn max_depth(mut self, max_depth: u32) -> Self {
+        self.max_depth = max_depth.clamp(1, u32::MAX-2);
         self
     }
     fn check_consistency(&self) {
@@ -277,6 +278,7 @@ impl<T: ContentType> ScannerBuilder<T> {
             analyzers,
             extractors,
             varm: VarMap::new(),
+            max_depth: self.max_depth,
         }
     }
 }

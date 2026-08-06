@@ -1,4 +1,5 @@
 use crate::matcher::{Matcher, MatcherBuilder};
+use crate::utils;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Precedence {
@@ -25,8 +26,28 @@ pub struct Filter {
     check_file_names: bool,
 }
 impl Filter {
-    pub fn should_process(&self, path: &str, depth: u32, size: u64) -> bool {
-        todo!()
+    pub fn should_process(&self, path: &str, size: u64) -> bool {
+        let file_name = if self.check_file_names { utils::get_file_name(path.as_bytes()) } else { b"" };
+        let ext = if self.check_extensions { utils::get_extension(file_name) } else { b"" };
+        
+
+        for rule in &self.rules {
+            match rule {
+                FilterRule::IncludeExtensions(matcher) | FilterRule::ExcludeExtensions(matcher)=> {
+                    if let Some(res) = matcher.matches_exactly(ext) {
+                        return res;
+                    }
+                },
+                FilterRule::IncludeFileNames(matcher) | FilterRule::ExcludeFileNames(matcher) => {
+                    if let Some(res) = matcher.matches_exactly(file_name) {
+                        return res;
+                    }
+                },
+                FilterRule::Include(cb) => if cb(path, size) { return true; },
+                FilterRule::Exclude(cb) => if cb(path, size) { return false; },
+            };
+        }
+        self.default_result
     }
 }
 
@@ -92,6 +113,14 @@ pub struct ReadyFilterBuilder {
 }
 impl ReadyFilterBuilder {
     pub fn build(self) -> Filter {
-        todo!()
+        let check_extensions = self.builder.rules.iter().any(|(_, rule)| matches!(rule, FilterRule::IncludeExtensions(_) | FilterRule::ExcludeExtensions(_)));
+        let check_file_names = self.builder.rules.iter().any(|(_, rule)| matches!(rule, FilterRule::IncludeFileNames(_) | FilterRule::ExcludeFileNames(_)));
+        let rules = self.builder.rules.into_iter().map(|(_, rule)| rule).collect();
+        Filter {
+            rules,
+            default_result: self.builder.default_result,
+            check_extensions,
+            check_file_names: check_file_names || check_extensions, // if we check extensions, we also check file names
+        }
     }
 }
