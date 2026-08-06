@@ -34,7 +34,6 @@ pub(crate) struct PackedLinearList<T: ContentType, K: Key> {
     keys: [K; 16],
     values: [T; 16],
     len: usize,        
-    pat_len: usize,    
 }
 
 impl<T: ContentType, K: Key> PackedLinearList<T, K> {
@@ -60,12 +59,7 @@ impl<T: ContentType, K: Key> PackedLinearList<T, K> {
             len += 1;
         }
 
-        Some(Self { keys, values, len, pat_len })
-    }
-
-    #[inline(always)]
-    pub(crate) const fn pattern_len(&self) -> usize {
-        self.pat_len
+        Some(Self { keys, values, len })
     }
     #[inline(always)]
     pub(crate) fn find(&self, k: K) -> Option<T> {

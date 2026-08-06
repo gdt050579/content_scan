@@ -16,3 +16,6 @@ pub use filter::*;
 
 use identifier_set::*;
 use matcher::*;
+
+pub use scanner::Scanner;
+pub use scanner::ScannerBuilder;

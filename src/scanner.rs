@@ -19,7 +19,7 @@ impl<T: ContentType> Scanner<T> {
                 return;
             }
         }
-        self.inner_scan(content, 0);
+        self.inner_scan(content, 1);
     }
     fn inner_scan(&mut self, content: &mut dyn Content<T>, depth: u32) -> NextAction {
         let ty = self.retrieve_content_type(content);
@@ -76,7 +76,7 @@ impl<T: ContentType> Scanner<T> {
         NextAction::Continue
     }
     fn extract_range(&mut self, content: &mut dyn Content<T>, start: usize, end: usize, depth: u32) -> NextAction {
-        if (end <= start) || (end > self.analyzers.len()) {
+        if (end <= start) || (end > self.extractors.len()) {
             return NextAction::Continue;
         }
         for i in start..end {
@@ -90,7 +90,7 @@ impl<T: ContentType> Scanner<T> {
         NextAction::Continue
     }
     fn extract_content(&mut self, content: &mut dyn Content<T>, index: usize, depth: u32) -> NextAction {
-        if depth + 1 >= self.max_depth {
+        if depth > self.max_depth {
             return NextAction::Continue;
         }
         let len = self.extractors.len();
@@ -173,7 +173,7 @@ impl<T: ContentType> ScannerBuilder<T> {
             analyzers: Vec::with_capacity(16),
             extractors: Vec::with_capacity(4),
             identifiers: Vec::with_capacity(4),
-            max_depth: 1,
+            max_depth: 8,
         }
     }
     pub fn filter(mut self, filter: Filter) -> Self {

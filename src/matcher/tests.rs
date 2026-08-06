@@ -420,7 +420,6 @@ mod packed_linear_list {
                 fn single_pattern_find() {
                     let list =
                         PackedLinearList::<TestType, $key>::new(&[(TestType::A, b"PK")]).unwrap();
-                    assert_eq!(list.pattern_len(), 2);
                     assert_eq!(list.find(<$key>::pack(b"PK")), Some(TestType::A));
                     assert_eq!(list.find(<$key>::pack(b"P")), None);
                     assert_eq!(list.find(<$key>::pack(b"XX")), None);
@@ -435,7 +434,6 @@ mod packed_linear_list {
                     ])
                     .unwrap();
 
-                    assert_eq!(list.pattern_len(), 4);
                     assert_eq!(list.find(<$key>::pack(b"%PDF")), Some(TestType::A));
                     assert_eq!(list.find(<$key>::pack(b"PK\x03\x04")), Some(TestType::B));
                     assert_eq!(list.find(<$key>::pack(b"\x7fELF")), Some(TestType::C));
@@ -463,7 +461,6 @@ mod packed_linear_list {
                         (TestType::D, b"0f"),
                     ];
                     let list = PackedLinearList::<TestType, $key>::new(&patterns).unwrap();
-                    assert_eq!(list.pattern_len(), 2);
                     assert_eq!(list.find(<$key>::pack(b"00")), Some(TestType::A));
                     assert_eq!(list.find(<$key>::pack(b"0f")), Some(TestType::D));
                     assert_eq!(list.find(<$key>::pack(b"10")), None);
@@ -486,7 +483,6 @@ mod packed_linear_list {
                         (TestType::B, b"B"),
                     ])
                     .unwrap();
-                    assert_eq!(list.pattern_len(), 1);
                     assert_eq!(list.find(<$key>::pack(b"A")), Some(TestType::A));
                     assert_eq!(list.find(<$key>::pack(b"B")), Some(TestType::B));
                     assert_eq!(list.find(<$key>::pack(b"C")), None);
@@ -516,7 +512,6 @@ mod packed_linear_list {
         fn accepts_full_width_pattern() {
             let list =
                 PackedLinearList::<TestType, u32>::new(&[(TestType::A, b"abcd")]).unwrap();
-            assert_eq!(list.pattern_len(), 4);
             assert_eq!(list.find(u32::pack(b"abcd")), Some(TestType::A));
         }
 
@@ -535,7 +530,6 @@ mod packed_linear_list {
         fn accepts_full_width_pattern() {
             let list =
                 PackedLinearList::<TestType, u64>::new(&[(TestType::A, b"abcdefgh")]).unwrap();
-            assert_eq!(list.pattern_len(), 8);
             assert_eq!(list.find(u64::pack(b"abcdefgh")), Some(TestType::A));
         }
 
@@ -553,7 +547,6 @@ mod packed_linear_list {
                 (TestType::B, b"67890"),
             ])
             .unwrap();
-            assert_eq!(list.pattern_len(), 5);
             assert_eq!(list.find(u64::pack(b"12345")), Some(TestType::A));
             assert_eq!(list.find(u64::pack(b"67890")), Some(TestType::B));
             assert_eq!(list.find(u64::pack(b"123456")), None);
