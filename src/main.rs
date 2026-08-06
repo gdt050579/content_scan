@@ -15,15 +15,3 @@ pub use matcher::*;
 pub use interfaces::*;
 pub use filter::*;
 pub use identifier_set::*;
-
-fn main() {
-    println!("Hello, world!");
-}
-
-/*
-1. Fac un Content (nu am citit nimic inca)
-2. aplic - filtru si ies
-3. daca trece de filtru -  extensia / numele --> obtin tipul + content
-
-
-*/

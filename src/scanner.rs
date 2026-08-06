@@ -2,14 +2,11 @@ use std::collections::HashMap;
 
 use varmap::VarMap;
 
-use super::{Content, ContentAnalyzer, ContentExtractor,ContentIdentifier, ContentType, Entry, Filter, NextAction, plugin_list::PluginsList};
-use crate::Matcher;
+use super::{Content, ContentAnalyzer, ContentExtractor, ContentIdentifier, ContentType, Entry, Filter, NextAction, plugin_list::PluginsList};
+use crate::{IdentifierSet, Matcher};
 pub struct Scanner<T: ContentType> {
-    magics: Matcher<T>,
-    extensions: Matcher<T>,
-    names: Matcher<T>,
     filter: Filter,
-    identifiers: Vec<Box<dyn ContentIdentifier<T>>>,
+    identifiers: IdentifierSet<T>,
     analyzers: PluginsList<Box<dyn ContentAnalyzer<T>>>,
     extractors: PluginsList<Box<dyn ContentExtractor<T>>>,
     varm: VarMap,
@@ -23,14 +20,10 @@ impl<T: ContentType> Scanner<T> {
     }
     fn inner_scan(&mut self, content: &mut dyn Content<T>, depth: u32) -> NextAction {
         let ty = self.retrieve_content_type(content);
-        let range = if let Some(ty) = ty {
-            self.analyzers.range(ty)
-        } else {
-            None
-        };
+        let range = if let Some(ty) = ty { self.analyzers.range(ty) } else { None };
         if let Some((start, end)) = range {
             match self.scan_range(content, start, end) {
-                NextAction::Continue => {},
+                NextAction::Continue => {}
                 NextAction::Skip => return NextAction::Continue, // skip current content
                 NextAction::Exit => return NextAction::Exit,
             }
@@ -39,16 +32,16 @@ impl<T: ContentType> Scanner<T> {
         let range = self.analyzers.generic_range();
         if let Some((start, end)) = range {
             match self.scan_range(content, start, end) {
-                NextAction::Continue => {},
+                NextAction::Continue => {}
                 NextAction::Skip => return NextAction::Continue, // skip current content
                 NextAction::Exit => return NextAction::Exit,
             }
         }
         // extractors (specfic)
         if let Some(ty) = ty {
-            if let Some((start,end)) = self.extractors.range(ty) {
+            if let Some((start, end)) = self.extractors.range(ty) {
                 match self.extract_range(content, start, end, depth) {
-                    NextAction::Continue => {},
+                    NextAction::Continue => {}
                     NextAction::Skip => return NextAction::Continue, // skip current content
                     NextAction::Exit => return NextAction::Exit,
                 }
@@ -58,7 +51,7 @@ impl<T: ContentType> Scanner<T> {
         let range = self.extractors.generic_range();
         if let Some((start, end)) = range {
             match self.extract_range(content, start, end, depth) {
-                NextAction::Continue => {},
+                NextAction::Continue => {}
                 NextAction::Skip => return NextAction::Continue, // skip current content
                 NextAction::Exit => return NextAction::Exit,
             }
@@ -91,7 +84,7 @@ impl<T: ContentType> Scanner<T> {
                 NextAction::Skip => return NextAction::Skip,
             }
         }
-        NextAction::Continue        
+        NextAction::Continue
     }
     fn extract_content(&mut self, content: &mut dyn Content<T>, index: usize, depth: u32) -> NextAction {
         let len = self.extractors.len();
@@ -127,25 +120,17 @@ impl<T: ContentType> Scanner<T> {
             p
         };
         // type from extension
-        let type_from_file_name = if file_name.is_empty() {
-            None
-        } else {
-            self.names.matches_exactly(file_name)
-        };
+        let type_from_file_name = self.identifiers.type_from_file_name(file_name);
         let extension = if let Some(ofs) = file_name.iter().rposition(|&b| b == b'.') {
             &file_name[ofs + 1..]
         } else {
             &[]
         };
-        let type_from_extension = if extension.is_empty() {
-            None
-        } else {
-            self.extensions.matches_exactly(extension)
-        };
+        let type_from_extension = self.identifiers.type_from_extension(extension);
         // type from magic
         let type_from_magic = {
             if let Some(buf) = content.read(0, 16) {
-                self.magics.starts_with(buf)
+                self.identifiers.type_from_magic(buf)
             } else {
                 None
             }
@@ -167,9 +152,10 @@ impl<T: ContentType> Scanner<T> {
         }
         None
     }
+    #[inline(always)]
     fn validate_content_type(&self, content: &mut dyn Content<T>, content_type: T) -> bool {
         self.identifiers
-            .get(content_type.as_u16() as usize)
+            .get(content_type)
             .map(|identifier| identifier.validate(content))
             .unwrap_or(false)
     }
@@ -244,7 +230,10 @@ impl<T: ContentType> ScannerBuilder<T> {
             let id = content_type.as_u16() as u16;
             if let Some(mask) = m.get_mut(&id) {
                 if (*mask) == 3 {
-                    panic!("There can only be one identifier for type ! Type {:?} has multiple identifiers !", content_type);
+                    panic!(
+                        "There can only be one identifier for type ! Type {:?} has multiple identifiers !",
+                        content_type
+                    );
                 }
                 *mask = 3;
             } else {
@@ -254,10 +243,16 @@ impl<T: ContentType> ScannerBuilder<T> {
         // ar trebui toate sa fie cu 3
         for (id, mask) in m {
             if mask == 1 {
-                panic!("For type {:?}, there is an analyzer/extractor but no identifier !", T::from_u16(id as u16).unwrap());
+                panic!(
+                    "For type {:?}, there is an analyzer/extractor but no identifier !",
+                    T::from_u16(id as u16).unwrap()
+                );
             }
             if mask == 2 {
-                panic!("For type {:?}, there is an identifier but no analyzer/extractor !", T::from_u16(id as u16).unwrap());
+                panic!(
+                    "For type {:?}, there is an identifier but no analyzer/extractor !",
+                    T::from_u16(id as u16).unwrap()
+                );
             }
         }
     }
@@ -265,8 +260,13 @@ impl<T: ContentType> ScannerBuilder<T> {
         self.check_consistency();
         let analyzers = PluginsList::new(self.analyzers, T::COUNT);
         let extractors = PluginsList::new(self.extractors, T::COUNT);
-        // build-ul de identificatori
-        // verificat sa nu am extractor/analyzator fara identficatori sau invers
-        todo!()
+        let identifiers = IdentifierSet::new(self.identifiers);
+        Scanner {
+            filter: self.filter,
+            identifiers,
+            analyzers,
+            extractors,
+            varm: VarMap::new(),
+        }
     }
 }
