@@ -1,23 +1,9 @@
 use content_scan::*;
 use varmap::*;
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, ContentType)]
 enum MyType {
     TextBuffer,
-}
-impl ContentType for MyType {
-    fn as_u16(&self) -> u16 {
-        match self {
-            MyType::TextBuffer => 0,
-        }
-    }
-    fn from_u16(value: u16) -> Option<Self> {
-        match value {
-            0 => Some(MyType::TextBuffer),
-            _ => None,
-        }
-    }
-    const COUNT: u16 = 1;
 }
 
 struct VowelAnalyzer;

@@ -19,3 +19,4 @@ use matcher::*;
 
 pub use scanner::Scanner;
 pub use scanner::ScannerBuilder;
+pub use content_scan_proc_macro::ContentType;

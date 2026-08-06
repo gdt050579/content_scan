@@ -10,6 +10,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "content_scan_proc_macro"
+version = "0.1.1"
+
+[[package]]
 name = "examples"
 version = "0.0.0"
 dependencies = [
