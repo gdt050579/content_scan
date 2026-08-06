@@ -13,13 +13,15 @@ pub struct Scanner<T: ContentType> {
     max_depth: u32,
 }
 impl<T: ContentType> Scanner<T> {
-    pub fn scan(&mut self, content: &mut dyn Content<T>) {
+    pub fn scan(&mut self, content: &mut dyn Content<T>) -> &VarMap {
+        self.varm.clear();
         if let Some(filter) = &self.filter {
             if !filter.should_process(content.path(), content.size()) {
-                return;
+                return &self.varm;
             }
         }
         self.inner_scan(content, 1);
+        &self.varm
     }
     fn inner_scan(&mut self, content: &mut dyn Content<T>, depth: u32) -> NextAction {
         let ty = self.retrieve_content_type(content);
