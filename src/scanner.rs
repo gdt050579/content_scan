@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use varmap::VarMap;
 
 use super::{Content, ContentAnalyzer, ContentExtractor,ContentIdentifier, ContentType, Entry, Filter, NextAction, plugin_list::PluginsList};
@@ -176,8 +178,7 @@ pub struct ScannerBuilder<T: ContentType> {
     filter: Filter,
     analyzers: Vec<(u32, Box<dyn ContentAnalyzer<T>>)>,
     extractors: Vec<(u32, Box<dyn ContentExtractor<T>>)>,
-    identifiers: Vec<Box<dyn ContentIdentifier<T>>>,
-    identifiers_type: Vec<T>,
+    identifiers: Vec<(T, Box<dyn ContentIdentifier<T>>)>,
 }
 impl<T: ContentType> ScannerBuilder<T> {
     pub fn new() -> Self {
@@ -185,8 +186,7 @@ impl<T: ContentType> ScannerBuilder<T> {
             filter: Filter::new(),
             analyzers: Vec::with_capacity(16),
             extractors: Vec::with_capacity(4),
-            identifiers: Vec::new(),
-            identifiers_type: Vec::new(),
+            identifiers: Vec::with_capacity(4),
         }
     }
     pub fn filter(mut self, filter: Filter) -> Self {
@@ -225,9 +225,48 @@ impl<T: ContentType> ScannerBuilder<T> {
         self.extractors.push((hash, Box::new(extractor)));
         self
     }
+    pub fn add_identifier<I>(mut self, content_type: T, identifier: I) -> Self
+    where
+        I: ContentIdentifier<T> + 'static,
+    {
+        self.identifiers.push((content_type, Box::new(identifier)));
+        self
+    }
+    fn check_consistency(&self) {
+        let mut m = HashMap::new();
+        for (h, _) in &self.analyzers {
+            m.insert((h >> 16) as u16, 1);
+        }
+        for (h, _) in &self.extractors {
+            m.insert((h >> 16) as u16, 1);
+        }
+        for (content_type, _) in &self.identifiers {
+            let id = content_type.as_u16() as u16;
+            if let Some(mask) = m.get_mut(&id) {
+                if (*mask) == 3 {
+                    panic!("There can only be one identifier for type ! Type {:?} has multiple identifiers !", content_type);
+                }
+                *mask = 3;
+            } else {
+                m.insert(id, 2);
+            }
+        }
+        // ar trebui toate sa fie cu 3
+        for (id, mask) in m {
+            if mask == 1 {
+                panic!("For type {:?}, there is an analyzer/extractor but no identifier !", T::from_u16(id as u16).unwrap());
+            }
+            if mask == 2 {
+                panic!("For type {:?}, there is an identifier but no analyzer/extractor !", T::from_u16(id as u16).unwrap());
+            }
+        }
+    }
     pub fn build(self) -> Scanner<T> {
+        self.check_consistency();
         let analyzers = PluginsList::new(self.analyzers, T::COUNT);
         let extractors = PluginsList::new(self.extractors, T::COUNT);
+        // build-ul de identificatori
+        // verificat sa nu am extractor/analyzator fara identficatori sau invers
         todo!()
     }
 }

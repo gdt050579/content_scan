@@ -332,7 +332,7 @@ mod plugin_list {
 
     #[test]
     fn range_for_type_beyond_max_count_returns_none() {
-        #[derive(Clone, Copy, PartialEq, Eq)]
+        #[derive(Clone, Copy, PartialEq, Eq, Debug)]
         struct OutOfRange;
         impl ContentType for OutOfRange {
             const COUNT: u16 = 1;
