@@ -7,6 +7,7 @@ pub trait ContentType: Copy + Eq + PartialEq + Debug{
 }
 
 pub trait Content<T: ContentType> {
+    fn content_type(&self) -> Option<T> { None }
     fn path(&self) -> &str;
     fn size(&self) -> u64;
     fn read(&mut self, offset: u64, count: u32) -> Option<&[u8]>;

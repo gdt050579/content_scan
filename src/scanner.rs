@@ -120,6 +120,9 @@ impl<T: ContentType> Scanner<T> {
         NextAction::Continue
     }
     fn retrieve_content_type(&self, content: &mut dyn Content<T>) -> Option<T> {
+        if let Some(ty) = content.content_type() {
+            return Some(ty);
+        }
         let p = content.path().as_bytes();
         // type from file name
         let file_name = utils::get_file_name(p);
@@ -223,52 +226,7 @@ impl<T: ContentType> ScannerBuilder<T> {
         self.max_depth = max_depth.clamp(1, u32::MAX-2);
         self
     }
-    fn check_consistency(&self) {
-        let mut m = HashMap::new();
-        for (h, _) in &self.analyzers {
-            if h & 0xFFFF0000 != 0 {
-                continue;
-            }
-            m.insert((h >> 16) as u16, 1);
-        }
-        for (h, _) in &self.extractors {
-            if h & 0xFFFF0000 != 0 {
-                continue;
-            }
-            m.insert((h >> 16) as u16, 1);
-        }
-        for (content_type, _) in &self.identifiers {
-            let id = content_type.as_u16() as u16;
-            if let Some(mask) = m.get_mut(&id) {
-                if (*mask) == 3 {
-                    panic!(
-                        "There can only be one identifier for type ! Type {:?} has multiple identifiers !",
-                        content_type
-                    );
-                }
-                *mask = 3;
-            } else {
-                m.insert(id, 2);
-            }
-        }
-        // ar trebui toate sa fie cu 3
-        for (id, mask) in m {
-            if mask == 1 {
-                panic!(
-                    "For type {:?}, there is an analyzer/extractor but no identifier !",
-                    T::from_u16(id as u16).unwrap()
-                );
-            }
-            if mask == 2 {
-                panic!(
-                    "For type {:?}, there is an identifier but no analyzer/extractor !",
-                    T::from_u16(id as u16).unwrap()
-                );
-            }
-        }
-    }
     pub fn build(self) -> Scanner<T> {
-        self.check_consistency();
         let analyzers = PluginsList::new(self.analyzers, T::COUNT);
         let extractors = PluginsList::new(self.extractors, T::COUNT);
         let identifiers = IdentifierSet::new(self.identifiers);
