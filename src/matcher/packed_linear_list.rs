@@ -38,7 +38,7 @@ pub(crate) struct PackedLinearList<T: ContentType, K: Key> {
 }
 
 impl<T: ContentType, K: Key> PackedLinearList<T, K> {
-    pub(crate) fn new(patterns: Vec<(T, &'static [u8])>) -> Option<Self> {
+    pub(crate) fn new(patterns: &[(T, &'static [u8])]) -> Option<Self> {
         if patterns.is_empty() || patterns.len() > 16 {
             return None;
         }
@@ -56,7 +56,7 @@ impl<T: ContentType, K: Key> PackedLinearList<T, K> {
 
         for (i, (ct, data)) in patterns.into_iter().enumerate() {
             keys[i] = K::pack(data);
-            values[i] = ct;
+            values[i] = *ct;
             len += 1;
         }
 
