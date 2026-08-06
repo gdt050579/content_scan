@@ -561,3 +561,203 @@ mod packed_linear_list {
     }
 }
 
+mod fast_magic {
+    use super::super::fast_magic::FastMagicMatcher;
+    use crate::ContentType;
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum TestType {
+        Pk = 1,
+        Gif = 2,
+        Elf = 3,
+        Pdf = 4,
+        Riff = 5,
+    }
+
+    impl ContentType for TestType {
+        const COUNT: u16 = 6;
+
+        fn as_u16(&self) -> u16 {
+            *self as u16
+        }
+
+        fn from_u16(value: u16) -> Option<Self> {
+            match value {
+                1 => Some(Self::Pk),
+                2 => Some(Self::Gif),
+                3 => Some(Self::Elf),
+                4 => Some(Self::Pdf),
+                5 => Some(Self::Riff),
+                _ => None,
+            }
+        }
+    }
+
+    #[test]
+    fn empty_patterns_returns_none() {
+        assert!(FastMagicMatcher::<TestType>::new(&[]).is_none());
+    }
+
+    #[test]
+    fn pattern_shorter_than_two_returns_none() {
+        assert!(FastMagicMatcher::new(&[(TestType::Pk, b"P")]).is_none());
+        assert!(FastMagicMatcher::new(&[(TestType::Pk, b"")]).is_none());
+    }
+
+    #[test]
+    fn pattern_longer_than_four_returns_none() {
+        assert!(FastMagicMatcher::new(&[(TestType::Pdf, b"%PDF-")]).is_none());
+    }
+
+    #[test]
+    fn only_two_byte_patterns() {
+        let matcher = FastMagicMatcher::new(&[
+            (TestType::Pk, b"PK"),
+            (TestType::Gif, b"BM"),
+        ])
+        .unwrap();
+
+        assert_eq!(matcher.starts_with(b"PK"), Some(TestType::Pk));
+        assert_eq!(matcher.starts_with(b"PKextra"), Some(TestType::Pk));
+        assert_eq!(matcher.starts_with(b"BM"), Some(TestType::Gif));
+        assert_eq!(matcher.starts_with(b"XX"), None);
+        assert_eq!(matcher.starts_with(b"P"), None);
+
+        assert_eq!(matcher.matches_exactly(b"PK"), Some(TestType::Pk));
+        assert_eq!(matcher.matches_exactly(b"BM"), Some(TestType::Gif));
+        assert_eq!(matcher.matches_exactly(b"PKextra"), None);
+        assert_eq!(matcher.matches_exactly(b"P"), None);
+        assert_eq!(matcher.matches_exactly(b"PK\x03\x04"), None);
+    }
+
+    #[test]
+    fn only_three_byte_patterns() {
+        let matcher = FastMagicMatcher::new(&[(TestType::Gif, b"GIF")]).unwrap();
+
+        assert_eq!(matcher.starts_with(b"GIF"), Some(TestType::Gif));
+        assert_eq!(matcher.starts_with(b"GIF89a"), Some(TestType::Gif));
+        assert_eq!(matcher.starts_with(b"GI"), None);
+
+        assert_eq!(matcher.matches_exactly(b"GIF"), Some(TestType::Gif));
+        assert_eq!(matcher.matches_exactly(b"GIF89a"), None);
+        assert_eq!(matcher.matches_exactly(b"GI"), None);
+    }
+
+    #[test]
+    fn only_four_byte_patterns() {
+        let matcher = FastMagicMatcher::new(&[
+            (TestType::Elf, b"\x7fELF"),
+            (TestType::Pdf, b"%PDF"),
+            (TestType::Riff, b"RIFF"),
+        ])
+        .unwrap();
+
+        assert_eq!(matcher.starts_with(b"\x7fELF"), Some(TestType::Elf));
+        assert_eq!(matcher.starts_with(b"\x7fELF\x01"), Some(TestType::Elf));
+        assert_eq!(matcher.starts_with(b"%PDF-1.7"), Some(TestType::Pdf));
+        assert_eq!(matcher.starts_with(b"RIFF"), Some(TestType::Riff));
+        assert_eq!(matcher.starts_with(b"\x7fEL"), None);
+
+        assert_eq!(matcher.matches_exactly(b"\x7fELF"), Some(TestType::Elf));
+        assert_eq!(matcher.matches_exactly(b"%PDF"), Some(TestType::Pdf));
+        assert_eq!(matcher.matches_exactly(b"RIFF"), Some(TestType::Riff));
+        assert_eq!(matcher.matches_exactly(b"\x7fELF\x01"), None);
+        assert_eq!(matcher.matches_exactly(b"%PD"), None);
+    }
+
+    #[test]
+    fn mixed_lengths_sorted_by_size() {
+        // Must be sorted ascending by pattern length (API assumption).
+        let matcher = FastMagicMatcher::new(&[
+            (TestType::Pk, b"PK"),
+            (TestType::Gif, b"GIF"),
+            (TestType::Elf, b"\x7fELF"),
+            (TestType::Pdf, b"%PDF"),
+        ])
+        .unwrap();
+
+        assert_eq!(matcher.matches_exactly(b"PK"), Some(TestType::Pk));
+        assert_eq!(matcher.matches_exactly(b"GIF"), Some(TestType::Gif));
+        assert_eq!(matcher.matches_exactly(b"\x7fELF"), Some(TestType::Elf));
+        assert_eq!(matcher.matches_exactly(b"%PDF"), Some(TestType::Pdf));
+    }
+
+    #[test]
+    fn starts_with_prefers_shorter_match() {
+        // Length-2 is checked before length-4.
+        let matcher = FastMagicMatcher::new(&[
+            (TestType::Pk, b"PK"),
+            (TestType::Riff, b"PK\x03\x04"),
+        ])
+        .unwrap();
+
+        assert_eq!(matcher.starts_with(b"PK\x03\x04"), Some(TestType::Pk));
+        assert_eq!(matcher.matches_exactly(b"PK"), Some(TestType::Pk));
+        assert_eq!(matcher.matches_exactly(b"PK\x03\x04"), Some(TestType::Riff));
+    }
+
+    #[test]
+    fn starts_with_falls_through_to_longer_pattern() {
+        let matcher = FastMagicMatcher::new(&[
+            (TestType::Pk, b"BM"),
+            (TestType::Elf, b"\x7fELF"),
+        ])
+        .unwrap();
+
+        assert_eq!(matcher.starts_with(b"\x7fELF"), Some(TestType::Elf));
+        assert_eq!(matcher.starts_with(b"BM"), Some(TestType::Pk));
+        assert_eq!(matcher.starts_with(b"\x7fEL"), None);
+    }
+
+    #[test]
+    fn skips_missing_middle_length() {
+        let matcher = FastMagicMatcher::new(&[
+            (TestType::Pk, b"PK"),
+            (TestType::Pdf, b"%PDF"),
+        ])
+        .unwrap();
+
+        assert_eq!(matcher.starts_with(b"PK"), Some(TestType::Pk));
+        assert_eq!(matcher.starts_with(b"%PDF"), Some(TestType::Pdf));
+        assert_eq!(matcher.matches_exactly(b"GIF"), None);
+        assert_eq!(matcher.matches_exactly(b"XXX"), None);
+    }
+
+    #[test]
+    fn short_input_cannot_match_longer_patterns() {
+        let matcher = FastMagicMatcher::new(&[(TestType::Elf, b"\x7fELF")]).unwrap();
+
+        assert_eq!(matcher.starts_with(b""), None);
+        assert_eq!(matcher.starts_with(b"\x7f"), None);
+        assert_eq!(matcher.starts_with(b"\x7fEL"), None);
+        assert_eq!(matcher.matches_exactly(b""), None);
+        assert_eq!(matcher.matches_exactly(b"\x7fEL"), None);
+        assert_eq!(matcher.matches_exactly(b"\x7fELF\x00"), None);
+    }
+
+    #[test]
+    fn duplicate_same_length_returns_first() {
+        let matcher = FastMagicMatcher::new(&[
+            (TestType::Pk, b"PK"),
+            (TestType::Gif, b"PK"),
+        ])
+        .unwrap();
+
+        assert_eq!(matcher.starts_with(b"PK"), Some(TestType::Pk));
+        assert_eq!(matcher.matches_exactly(b"PK"), Some(TestType::Pk));
+    }
+
+    #[test]
+    fn range_boundary_two_and_four() {
+        let matcher = FastMagicMatcher::new(&[
+            (TestType::Pk, b"ab"),
+            (TestType::Pdf, b"abcd"),
+        ])
+        .unwrap();
+
+        assert_eq!(matcher.matches_exactly(b"ab"), Some(TestType::Pk));
+        assert_eq!(matcher.matches_exactly(b"abcd"), Some(TestType::Pdf));
+        assert_eq!(matcher.starts_with(b"abcdef"), Some(TestType::Pk));
+    }
+}
+
