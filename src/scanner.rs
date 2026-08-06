@@ -221,9 +221,15 @@ impl<T: ContentType> ScannerBuilder<T> {
     fn check_consistency(&self) {
         let mut m = HashMap::new();
         for (h, _) in &self.analyzers {
+            if h & 0xFFFF0000 != 0 {
+                continue;
+            }
             m.insert((h >> 16) as u16, 1);
         }
         for (h, _) in &self.extractors {
+            if h & 0xFFFF0000 != 0 {
+                continue;
+            }
             m.insert((h >> 16) as u16, 1);
         }
         for (content_type, _) in &self.identifiers {
