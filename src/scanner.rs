@@ -3,9 +3,9 @@ use std::collections::HashMap;
 use varmap::VarMap;
 
 use super::{Content, ContentAnalyzer, ContentExtractor, ContentIdentifier, ContentType, Entry, Filter, NextAction, plugin_list::PluginsList};
-use crate::{IdentifierSet, Matcher};
+use crate::{IdentifierSet};
 pub struct Scanner<T: ContentType> {
-    filter: Filter,
+    filter: Option<Filter>,
     identifiers: IdentifierSet<T>,
     analyzers: PluginsList<Box<dyn ContentAnalyzer<T>>>,
     extractors: PluginsList<Box<dyn ContentExtractor<T>>>,
@@ -13,8 +13,10 @@ pub struct Scanner<T: ContentType> {
 }
 impl<T: ContentType> Scanner<T> {
     pub fn scan(&mut self, content: &mut dyn Content<T>) {
-        if !self.filter.should_process(content.path(), 0, content.size()) {
-            return;
+        if let Some(filter) = &self.filter {
+            if !filter.should_process(content.path(), 0, content.size()) {
+                return;
+            }
         }
         self.inner_scan(content, 0);
     }
@@ -96,8 +98,10 @@ impl<T: ContentType> Scanner<T> {
             return NextAction::Continue;
         }
         while let Some(entry) = unsafe { self.extractors.get(index).advance(content) } {
-            if !self.filter.should_process(&entry.path, depth + 1, entry.size) {
-                continue;
+            if let Some(filter) = &self.filter {
+                if !filter.should_process(&entry.path, depth + 1, entry.size) {
+                    continue;
+                }
             }
             extractor = unsafe { self.extractors.get(index) };
             if let Some(mut extracted_content) = extractor.extract(content) {
@@ -161,7 +165,7 @@ impl<T: ContentType> Scanner<T> {
     }
 }
 pub struct ScannerBuilder<T: ContentType> {
-    filter: Filter,
+    filter: Option<Filter>,
     analyzers: Vec<(u32, Box<dyn ContentAnalyzer<T>>)>,
     extractors: Vec<(u32, Box<dyn ContentExtractor<T>>)>,
     identifiers: Vec<(T, Box<dyn ContentIdentifier<T>>)>,
@@ -169,14 +173,14 @@ pub struct ScannerBuilder<T: ContentType> {
 impl<T: ContentType> ScannerBuilder<T> {
     pub fn new() -> Self {
         Self {
-            filter: Filter::new(),
+            filter: None,
             analyzers: Vec::with_capacity(16),
             extractors: Vec::with_capacity(4),
             identifiers: Vec::with_capacity(4),
         }
     }
     pub fn filter(mut self, filter: Filter) -> Self {
-        self.filter = filter;
+        self.filter = Some(filter);
         self
     }
     pub fn add_analyzer<A>(mut self, content_type: T, priority: u8, analyzer: A) -> Self
