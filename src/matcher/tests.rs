@@ -322,3 +322,245 @@ mod one {
     }
 }
 
+mod packed_linear_list {
+    use super::super::packed_linear_list::{Key, PackedLinearList};
+    use crate::ContentType;
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum TestType {
+        A = 1,
+        B = 2,
+        C = 3,
+        D = 4,
+    }
+
+    impl ContentType for TestType {
+        const COUNT: u16 = 5;
+
+        fn as_u16(&self) -> u16 {
+            *self as u16
+        }
+
+        fn from_u16(value: u16) -> Option<Self> {
+            match value {
+                1 => Some(Self::A),
+                2 => Some(Self::B),
+                3 => Some(Self::C),
+                4 => Some(Self::D),
+                _ => None,
+            }
+        }
+    }
+
+    macro_rules! packed_key_tests {
+        ($mod_name:ident, $key:ty, $oversize:expr) => {
+            mod $mod_name {
+                use super::*;
+
+                #[test]
+                fn empty_patterns_returns_none() {
+                    assert!(PackedLinearList::<TestType, $key>::new(vec![]).is_none());
+                }
+
+                #[test]
+                fn more_than_sixteen_returns_none() {
+                    let patterns: Vec<(TestType, &'static [u8])> = (0..17)
+                        .map(|i| {
+                            // Distinct 1-byte patterns; reuse type.
+                            let pat: &'static [u8] = match i {
+                                0 => b"0",
+                                1 => b"1",
+                                2 => b"2",
+                                3 => b"3",
+                                4 => b"4",
+                                5 => b"5",
+                                6 => b"6",
+                                7 => b"7",
+                                8 => b"8",
+                                9 => b"9",
+                                10 => b"a",
+                                11 => b"b",
+                                12 => b"c",
+                                13 => b"d",
+                                14 => b"e",
+                                15 => b"f",
+                                _ => b"g",
+                            };
+                            (TestType::A, pat)
+                        })
+                        .collect();
+                    assert!(PackedLinearList::<TestType, $key>::new(patterns).is_none());
+                }
+
+                #[test]
+                fn empty_pattern_bytes_returns_none() {
+                    assert!(
+                        PackedLinearList::<TestType, $key>::new(vec![(TestType::A, b"")]).is_none()
+                    );
+                }
+
+                #[test]
+                fn pattern_longer_than_key_width_returns_none() {
+                    assert!(
+                        PackedLinearList::<TestType, $key>::new(vec![(TestType::A, $oversize)])
+                            .is_none()
+                    );
+                }
+
+                #[test]
+                fn mixed_pattern_lengths_returns_none() {
+                    assert!(PackedLinearList::<TestType, $key>::new(vec![
+                        (TestType::A, b"ab"),
+                        (TestType::B, b"abc"),
+                    ])
+                    .is_none());
+                }
+
+                #[test]
+                fn single_pattern_find() {
+                    let list =
+                        PackedLinearList::<TestType, $key>::new(vec![(TestType::A, b"PK")])
+                            .unwrap();
+                    assert_eq!(list.pattern_len(), 2);
+                    assert_eq!(list.find(<$key>::pack(b"PK")), Some(TestType::A));
+                    assert_eq!(list.find(<$key>::pack(b"P")), None);
+                    assert_eq!(list.find(<$key>::pack(b"XX")), None);
+                }
+
+                #[test]
+                fn multiple_patterns_find_each() {
+                    let list = PackedLinearList::<TestType, $key>::new(vec![
+                        (TestType::A, b"%PDF"),
+                        (TestType::B, b"PK\x03\x04"),
+                        (TestType::C, b"\x7fELF"),
+                    ])
+                    .unwrap();
+
+                    assert_eq!(list.pattern_len(), 4);
+                    assert_eq!(list.find(<$key>::pack(b"%PDF")), Some(TestType::A));
+                    assert_eq!(list.find(<$key>::pack(b"PK\x03\x04")), Some(TestType::B));
+                    assert_eq!(list.find(<$key>::pack(b"\x7fELF")), Some(TestType::C));
+                    assert_eq!(list.find(<$key>::pack(b"XXXX")), None);
+                }
+
+                #[test]
+                fn sixteen_patterns_accepted() {
+                    let patterns: Vec<(TestType, &'static [u8])> = vec![
+                        (TestType::A, b"00"),
+                        (TestType::B, b"01"),
+                        (TestType::C, b"02"),
+                        (TestType::D, b"03"),
+                        (TestType::A, b"04"),
+                        (TestType::B, b"05"),
+                        (TestType::C, b"06"),
+                        (TestType::D, b"07"),
+                        (TestType::A, b"08"),
+                        (TestType::B, b"09"),
+                        (TestType::C, b"0a"),
+                        (TestType::D, b"0b"),
+                        (TestType::A, b"0c"),
+                        (TestType::B, b"0d"),
+                        (TestType::C, b"0e"),
+                        (TestType::D, b"0f"),
+                    ];
+                    let list = PackedLinearList::<TestType, $key>::new(patterns).unwrap();
+                    assert_eq!(list.pattern_len(), 2);
+                    assert_eq!(list.find(<$key>::pack(b"00")), Some(TestType::A));
+                    assert_eq!(list.find(<$key>::pack(b"0f")), Some(TestType::D));
+                    assert_eq!(list.find(<$key>::pack(b"10")), None);
+                }
+
+                #[test]
+                fn duplicate_keys_returns_first() {
+                    let list = PackedLinearList::<TestType, $key>::new(vec![
+                        (TestType::A, b"key"),
+                        (TestType::B, b"key"),
+                    ])
+                    .unwrap();
+                    assert_eq!(list.find(<$key>::pack(b"key")), Some(TestType::A));
+                }
+
+                #[test]
+                fn single_byte_patterns() {
+                    let list = PackedLinearList::<TestType, $key>::new(vec![
+                        (TestType::A, b"A"),
+                        (TestType::B, b"B"),
+                    ])
+                    .unwrap();
+                    assert_eq!(list.pattern_len(), 1);
+                    assert_eq!(list.find(<$key>::pack(b"A")), Some(TestType::A));
+                    assert_eq!(list.find(<$key>::pack(b"B")), Some(TestType::B));
+                    assert_eq!(list.find(<$key>::pack(b"C")), None);
+                }
+
+                #[test]
+                fn pack_zero_pads_shorter_than_width() {
+                    // Same leading bytes with different trailing pad must not collide
+                    // when stored pattern length differs — here both are length 2.
+                    let list =
+                        PackedLinearList::<TestType, $key>::new(vec![(TestType::A, b"AB")])
+                            .unwrap();
+                    assert_eq!(list.find(<$key>::pack(b"AB")), Some(TestType::A));
+                    // Longer input packed whole differs from zero-padded 2-byte key.
+                    if <$key>::WIDTH >= 4 {
+                        assert_ne!(<$key>::pack(b"AB"), <$key>::pack(b"ABCD"));
+                        assert_eq!(list.find(<$key>::pack(b"ABCD")), None);
+                    }
+                }
+            }
+        };
+    }
+
+    packed_key_tests!(u32_key, u32, b"12345");
+    packed_key_tests!(u64_key, u64, b"123456789");
+
+    mod u32_key_width {
+        use super::*;
+
+        #[test]
+        fn accepts_full_width_pattern() {
+            let list =
+                PackedLinearList::<TestType, u32>::new(vec![(TestType::A, b"abcd")]).unwrap();
+            assert_eq!(list.pattern_len(), 4);
+            assert_eq!(list.find(u32::pack(b"abcd")), Some(TestType::A));
+        }
+
+        #[test]
+        fn rejects_five_byte_pattern() {
+            assert!(PackedLinearList::<TestType, u32>::new(vec![(TestType::A, b"abcde")]).is_none());
+        }
+    }
+
+    mod u64_key_width {
+        use super::*;
+
+        #[test]
+        fn accepts_full_width_pattern() {
+            let list =
+                PackedLinearList::<TestType, u64>::new(vec![(TestType::A, b"abcdefgh")]).unwrap();
+            assert_eq!(list.pattern_len(), 8);
+            assert_eq!(list.find(u64::pack(b"abcdefgh")), Some(TestType::A));
+        }
+
+        #[test]
+        fn rejects_nine_byte_pattern() {
+            assert!(
+                PackedLinearList::<TestType, u64>::new(vec![(TestType::A, b"abcdefghi")]).is_none()
+            );
+        }
+
+        #[test]
+        fn patterns_longer_than_u32_width() {
+            let list = PackedLinearList::<TestType, u64>::new(vec![
+                (TestType::A, b"12345"),
+                (TestType::B, b"67890"),
+            ])
+            .unwrap();
+            assert_eq!(list.pattern_len(), 5);
+            assert_eq!(list.find(u64::pack(b"12345")), Some(TestType::A));
+            assert_eq!(list.find(u64::pack(b"67890")), Some(TestType::B));
+            assert_eq!(list.find(u64::pack(b"123456")), None);
+        }
+    }
+}
+

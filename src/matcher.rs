@@ -1,11 +1,13 @@
 mod one;
 mod trie;
+mod packed_linear_list;
 
 #[cfg(test)]
 mod tests;
 
 use one::OneMatcher;
 use trie::{Trie, TrieBuilder};
+use packed_linear_list::PackedLinearList;
 
 use super::ContentType;
 pub enum Matcher<T: ContentType> {
