@@ -2,6 +2,7 @@ use content_scan::*;
 use varmap::*;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, ContentType)]
+#[repr(u16)]
 enum MyType {
     TextBuffer,
 }

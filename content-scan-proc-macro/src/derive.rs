@@ -80,11 +80,15 @@ pub(crate) fn process_content_type(input: TokenStream) -> Result<TokenStream, St
             const COUNT: u16 = {count};
 
             #[inline(always)]
-            fn as_u16(self) -> u16 {{
-                self as u16
+            fn as_u16(&self) -> u16 {{
+                *self as u16
             }}
             fn from_u16(value: u16) -> Option<Self> {{
-                Some(Self::from(value))
+                if value < {count} {{
+                    Some(unsafe {{ std::mem::transmute(value) }})
+                }} else {{
+                    None
+                }}
             }}
         }}
         "#,

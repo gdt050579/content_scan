@@ -7,4 +7,4 @@ edition = "2024"
 
 [dependencies]
 varmap = "*"
-content-scan-proc-macro = { path = "../content-scan-proc-macro" }
+content_scan_proc_macro = { path = "../content-scan-proc-macro" }
