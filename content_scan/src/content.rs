@@ -1,4 +1,5 @@
-use std::fmt::Debug;
+use filecache::*;
+use std::{fmt::Debug, fs, path::Path};
 
 /// Enumeration of content kinds understood by a scanner.
 ///
@@ -161,11 +162,7 @@ impl<T: ContentType> BufferContent<T> {
     /// paying an extra allocation. Passing `content_type = None` lets
     /// the scanner identify the type automatically.
     pub fn from_parts(buffer: Vec<u8>, path: String, content_type: Option<T>) -> Self {
-        Self {
-            buffer,
-            path,
-            content_type,
-        }
+        Self { buffer, path, content_type }
     }
 }
 impl<T: ContentType> Content<T> for BufferContent<T> {
@@ -190,5 +187,81 @@ impl<T: ContentType> Content<T> for BufferContent<T> {
         }
         let len = (self.buffer.len() as u64 - offset).min(count as u64) as usize;
         Some(&self.buffer.as_slice()[offset as usize..offset as usize + len])
+    }
+}
+
+enum FileContentStatus {
+    NotOpened,
+    Opened(FileCache<filecache::RandomAccessFile>),
+    Error
+}
+pub struct FileContent<T: ContentType> {
+    path: String,
+    content_type: Option<T>,
+    status: FileContentStatus,
+    size: u64,
+}
+impl<T: ContentType> FileContent<T> {
+    pub fn new(path: &str) -> Self {
+        Self {
+            path: path.to_string(),
+            content_type: None,
+            status: FileContentStatus::NotOpened,
+            size: fs::metadata(path).map(|m| m.len()).unwrap_or(0),
+        }
+    }
+    pub fn with_content_type(path: &str, content_type: T) -> Self {
+        Self {
+            path: path.to_string(),
+            content_type: Some(content_type),
+            status: FileContentStatus::NotOpened,
+            size: fs::metadata(path).map(|m| m.len()).unwrap_or(0),
+        }
+    }
+    fn open(&mut self) {
+        match RandomAccessFile::open(Path::new(&self.path), RandomAccessFlags::None) {
+            Ok(reader) => match FileCache::new(CacheType::MemoryMap, reader) {
+                Ok(file) => {
+                    self.status = FileContentStatus::Opened(file);
+                },
+                Err(_) => {
+                    self.status = FileContentStatus::Error;
+                },
+            },
+            Err(_) => {
+                self.status = FileContentStatus::Error;
+            },
+        }
+    }
+}
+impl<T: ContentType> Content<T> for FileContent<T> {
+    #[inline(always)]
+    fn content_type(&self) -> Option<T> {
+        self.content_type
+    }
+
+    #[inline(always)]
+    fn path(&self) -> &str {
+        &self.path
+    }
+
+    #[inline(always)]
+    fn size(&self) -> u64 {
+        match &self.status {
+            FileContentStatus::Opened(file) => file.len(),
+            FileContentStatus::NotOpened => self.size,
+            FileContentStatus::Error => 0,
+        }
+    }
+
+    #[inline(always)]
+    fn read(&mut self, offset: u64, count: u32) -> Option<&[u8]> {
+        if matches!(self.status, FileContentStatus::NotOpened) {
+            self.open();
+        }
+        match &mut self.status {
+            FileContentStatus::Opened(file) => file.read(offset, count as usize).ok(),
+            FileContentStatus::NotOpened | FileContentStatus::Error => None,
+        }
     }
 }

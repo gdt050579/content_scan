@@ -3,10 +3,17 @@
 version = 4
 
 [[package]]
+name = "EnumBitFlags"
+version = "1.0.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f67a0e1a9a71b306e6e9daf2c7cac122707adb92c89af0e20e8db37d5954bb0d"
+
+[[package]]
 name = "content_scan"
 version = "0.1.0"
 dependencies = [
  "content_scan_proc_macro 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "filecache",
  "varmap",
 ]
 
@@ -26,6 +33,32 @@ version = "0.0.0"
 dependencies = [
  "content_scan",
  "varmap",
+]
+
+[[package]]
+name = "filecache"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "16e536e77e537e274a126531e58c01db88b072a76dedde354c65cba872bf8635"
+dependencies = [
+ "EnumBitFlags",
+ "libc",
+ "memmap2",
+]
+
+[[package]]
+name = "libc"
+version = "0.2.189"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3eaf3ede3fee6db1a4c2ee091bf8a8b4dccdc6d17f656fb07896ee72867612f2"
+
+[[package]]
+name = "memmap2"
+version = "0.9.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d1219ed1b7f229ee7104d281dd01d6802fe28bb6e95d292942c4daacdeb798c0"
+dependencies = [
+ "libc",
 ]
 
 [[package]]
