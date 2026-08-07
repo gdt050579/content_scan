@@ -6,13 +6,19 @@ version = 4
 name = "content_scan"
 version = "0.1.0"
 dependencies = [
- "content_scan_proc_macro",
+ "content_scan_proc_macro 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "varmap",
 ]
 
 [[package]]
 name = "content_scan_proc_macro"
 version = "0.1.1"
+
+[[package]]
+name = "content_scan_proc_macro"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9f1c02c2949a372f02c2502887b3ea4d08b92240c22603fe8c22efbb8bdfa482"
 
 [[package]]
 name = "examples"

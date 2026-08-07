@@ -4,6 +4,19 @@ use crate::Object;
 use crate::utils;
 use crate::{Context, ScanResult};
 use std::collections::HashSet;
+
+/// The engine that drives a scan.
+///
+/// A `Scanner` bundles together a set of
+/// [`ContentIdentifier`](crate::ContentIdentifier)s,
+/// [`ContentAnalyzer`](crate::ContentAnalyzer)s,
+/// [`ContentExtractor`](crate::ContentExtractor)s, an optional
+/// [`Filter`], and a maximum recursion depth. Build one with
+/// [`ScannerBuilder`] and drive scans with [`Scanner::scan`].
+///
+/// Scanners are reusable: the internal [`Context`] is cleared at the
+/// start of every [`scan`](Self::scan) call, so a single instance can
+/// process many independent inputs sequentially.
 pub struct Scanner<T: ContentType> {
     filter: Option<Filter>,
     identifiers: IdentifierSet<T>,
@@ -13,6 +26,22 @@ pub struct Scanner<T: ContentType> {
     max_depth: u32,
 }
 impl<T: ContentType> Scanner<T> {
+    /// Scans a single top-level [`Content`] and returns the results.
+    ///
+    /// The scanner:
+    ///
+    /// 1. Clears its internal [`Context`] so that no state leaks
+    ///    between calls.
+    /// 2. Applies the configured [`Filter`], if any, to the top-level
+    ///    content. If the filter rejects it, the returned
+    ///    [`ScanResult`] contains no objects.
+    /// 3. Recursively identifies, analyzes, and extracts nested
+    ///    content up to the configured
+    ///    [`max_depth`](ScannerBuilder::max_depth).
+    ///
+    /// The returned [`ScanResult`] borrows from `self` and stays
+    /// valid until the next call on this scanner. Copy anything you
+    /// need to keep out before starting another scan.
     pub fn scan<'a>(&'a mut self, content: &mut dyn Content<T>) -> ScanResult<'a, T> {
         self.context.clear();
         if let Some(filter) = &self.filter {
@@ -197,6 +226,29 @@ impl<T: ContentType> Scanner<T> {
             .unwrap_or(false)
     }
 }
+/// Fluent builder for [`Scanner`].
+///
+/// Register identifiers, analyzers, extractors, and (optionally) a
+/// [`Filter`] with the `add_*` / [`filter`](Self::filter) methods,
+/// then call [`build`](Self::build) to obtain a ready-to-use
+/// [`Scanner`].
+///
+/// # Priorities
+///
+/// Analyzers and extractors are registered with a `priority` byte.
+/// Within the same [`ContentType`] bucket (or within the generic
+/// bucket), plugins are executed in **ascending** priority order —
+/// lower numbers run first.
+///
+/// # Generic vs. typed plugins
+///
+/// - `add_analyzer` / `add_extractor` register a plugin against a
+///   specific [`ContentType`]. It only runs when the scanner has
+///   positively identified content of that type.
+/// - `add_generic_analyzer` / `add_generic_extractor` register a
+///   plugin that runs for every content object, regardless of type
+///   (including unidentified content). Generic plugins run after the
+///   type-specific ones.
 pub struct ScannerBuilder<T: ContentType> {
     filter: Option<Filter>,
     analyzers: Vec<(u32, Box<dyn ContentAnalyzer<T>>)>,
@@ -205,6 +257,10 @@ pub struct ScannerBuilder<T: ContentType> {
     max_depth: u32,
 }
 impl<T: ContentType> ScannerBuilder<T> {
+    /// Creates a new, empty builder with sensible defaults.
+    ///
+    /// The default maximum recursion depth is `8`. Change it with
+    /// [`max_depth`](Self::max_depth).
     pub fn new() -> Self {
         Self {
             filter: None,
@@ -214,10 +270,23 @@ impl<T: ContentType> ScannerBuilder<T> {
             max_depth: 8,
         }
     }
+
+    /// Attaches a pre-built [`Filter`] to the scanner.
+    ///
+    /// The filter is consulted for every content object (top-level
+    /// and extracted) before any plugin runs. If a filter was
+    /// previously set, it is replaced.
     pub fn filter(mut self, filter: Filter) -> Self {
         self.filter = Some(filter);
         self
     }
+
+    /// Registers an analyzer for a specific `content_type`.
+    ///
+    /// `priority` (`0..=255`) orders analyzers registered for the
+    /// same type; lower values run first. Multiple analyzers for the
+    /// same `(content_type, priority)` are allowed and their relative
+    /// order is unspecified.
     pub fn add_analyzer<A>(mut self, content_type: T, priority: u8, analyzer: A) -> Self
     where
         A: ContentAnalyzer<T> + 'static,
@@ -226,6 +295,12 @@ impl<T: ContentType> ScannerBuilder<T> {
         self.analyzers.push((hash, Box::new(analyzer)));
         self
     }
+
+    /// Registers a generic analyzer that runs on every content object.
+    ///
+    /// Generic analyzers run after all type-specific analyzers for a
+    /// given object. `priority` (`0..=255`) orders generic analyzers
+    /// among themselves; lower values run first.
     pub fn add_generic_analyzer<A>(mut self, priority: u8, analyzer: A) -> Self
     where
         A: ContentAnalyzer<T> + 'static,
@@ -234,6 +309,13 @@ impl<T: ContentType> ScannerBuilder<T> {
         self.analyzers.push((hash, Box::new(analyzer)));
         self
     }
+
+    /// Registers an extractor for a specific `content_type`.
+    ///
+    /// `priority` (`0..=255`) orders extractors registered for the
+    /// same type; lower values run first. Extracted children are
+    /// scanned recursively as long as
+    /// [`max_depth`](Self::max_depth) allows.
     pub fn add_extractor<E>(mut self, content_type: T, priority: u8, extractor: E) -> Self
     where
         E: ContentExtractor<T> + 'static,
@@ -242,6 +324,12 @@ impl<T: ContentType> ScannerBuilder<T> {
         self.extractors.push((hash, Box::new(extractor)));
         self
     }
+
+    /// Registers a generic extractor that runs on every content object.
+    ///
+    /// Generic extractors run after all type-specific extractors for
+    /// a given object. `priority` (`0..=255`) orders generic
+    /// extractors among themselves; lower values run first.
     pub fn add_generic_extractor<E>(mut self, priority: u8, extractor: E) -> Self
     where
         E: ContentExtractor<T> + 'static,
@@ -250,6 +338,12 @@ impl<T: ContentType> ScannerBuilder<T> {
         self.extractors.push((hash, Box::new(extractor)));
         self
     }
+
+    /// Registers an identifier for `content_type`.
+    ///
+    /// Only one identifier is allowed per content type; registering
+    /// two identifiers for the same type will cause
+    /// [`build`](Self::build) to panic.
     pub fn add_identifier<I>(mut self, content_type: T, identifier: I) -> Self
     where
         I: ContentIdentifier<T> + 'static,
@@ -257,10 +351,18 @@ impl<T: ContentType> ScannerBuilder<T> {
         self.identifiers.push((content_type, Box::new(identifier)));
         self
     }
+
+    /// Sets the maximum recursion depth for the scanner.
+    ///
+    /// The value is clamped to `1..=u32::MAX - 2`. The top-level
+    /// content is at depth `1`; children extracted from it are at
+    /// depth `2`, and so on. Extraction stops when the next child
+    /// would exceed `max_depth`.
     pub fn max_depth(mut self, max_depth: u32) -> Self {
         self.max_depth = max_depth.clamp(1, u32::MAX - 2);
         self
     }
+
     fn check_unique_identifiers(&self) {
         let mut m = HashSet::new();
         for (content_type, _) in &self.identifiers {
@@ -273,6 +375,12 @@ impl<T: ContentType> ScannerBuilder<T> {
             m.insert(content_type.as_u16());
         }
     }
+    /// Consumes the builder and produces a ready-to-use [`Scanner`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if two identifiers are registered for the same
+    /// [`ContentType`].
     pub fn build(self) -> Scanner<T> {
         self.check_unique_identifiers();
         let analyzers = PluginsList::new(self.analyzers, T::COUNT);

@@ -1,10 +1,21 @@
 [package]
 name = "content_scan"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
+authors = ["Gavrilut Dragos <gavrilut.dragos@gmail.com>"]
+license = "MIT"
+description = "An extensible, plugin-based framework for identifying, analyzing, and recursively extracting structured content from arbitrary bytes."
+repository = "https://github.com/gdt050579/content_scan"
+homepage = "https://github.com/gdt050579/content_scan"
+documentation = "https://docs.rs/content_scan"
+readme = "../README.md"
+keywords = ["scanner", "content", "extraction", "file-format", "plugin"]
+categories = ["data-structures", "algorithms", "filesystem"]
+
 
 [lib]
 
 [dependencies]
 varmap = "*"
-content_scan_proc_macro = { path = "../content-scan-proc-macro" }
+content_scan_proc_macro = "0.1.1"
+# content_scan_proc_macro = { path = "../content-scan-proc-macro" }

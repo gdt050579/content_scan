@@ -1,12 +1,23 @@
 use crate::matcher::{Matcher, MatcherBuilder};
 use crate::utils;
 
+/// Precedence of a [`Filter`] rule.
+///
+/// When a filter is built the rules are grouped by their precedence
+/// and evaluated from `Highest` to `Lowest`. Within the same
+/// precedence bucket, rules are evaluated in the order they were
+/// added.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Precedence {
+    /// Evaluated last, after every other precedence tier.
     Lowest,
+    /// Evaluated after `Medium` but before `Lowest`.
     Low,
+    /// Default middle tier.
     Medium,
+    /// Evaluated after `Highest` but before `Medium`.
     High,
+    /// Evaluated first, before every other precedence tier.
     Highest,
 }
 
@@ -19,6 +30,14 @@ enum FilterRule {
     Exclude(fn(&str, u64) -> bool),
 }
 
+/// Compiled inclusion/exclusion policy applied to every content item
+/// before it is scanned.
+///
+/// A `Filter` is built with [`FilterBuilder`] and then handed to a
+/// [`ScannerBuilder`](crate::ScannerBuilder) via
+/// [`ScannerBuilder::filter`](crate::ScannerBuilder::filter). The
+/// scanner consults it both for the top-level content and for every
+/// item returned by an extractor.
 pub struct Filter {
     rules: Vec<FilterRule>,
     default_result: bool,
@@ -26,6 +45,18 @@ pub struct Filter {
     check_file_names: bool,
 }
 impl Filter {
+    /// Decides whether the content at `path` (of `size` bytes) should
+    /// be processed.
+    ///
+    /// Rules are evaluated in precedence order (as configured on the
+    /// builder). The first rule that matches determines the outcome:
+    ///
+    /// - `Include*` rules return `true` on match.
+    /// - `Exclude*` rules return `false` on match.
+    ///
+    /// If no rule matches, the default outcome
+    /// ([`FilterBuilder::deny_the_rest`] or
+    /// [`FilterBuilder::allow_the_rest`]) is returned.
     pub fn should_process(&self, path: &str, size: u64) -> bool {
         let file_name = if self.check_file_names { utils::get_file_name(path.as_bytes()) } else { b"" };
         let ext = if self.check_extensions { utils::get_extension(file_name) } else { b"" };
@@ -51,14 +82,30 @@ impl Filter {
     }
 }
 
+/// Builder for a [`Filter`].
+///
+/// Rules are added with the `include_*` / `exclude_*` methods. Each
+/// rule carries a [`Precedence`] that controls the order in which it
+/// is evaluated. When you are done, terminate the builder with either
+/// [`deny_the_rest`](Self::deny_the_rest) or
+/// [`allow_the_rest`](Self::allow_the_rest) to obtain a
+/// [`ReadyFilterBuilder`] and finally call
+/// [`ReadyFilterBuilder::build`] to produce the [`Filter`].
 pub struct FilterBuilder {
     rules: Vec<(Precedence, FilterRule)>,
     default_result: bool,
 }
 impl FilterBuilder {
+    /// Creates a new, empty filter builder.
+    ///
+    /// Until at least one rule is added, the resulting filter will
+    /// simply return the default outcome for every input.
     pub fn new() -> Self {
         Self { rules: Vec::with_capacity(4), default_result: true }
     }
+
+    /// Accepts content whose extension is one of `extensions` (case
+    /// sensitive, without the leading dot).
     pub fn include_extensions(mut self, prec: Precedence, extensions: &[&'static str]) -> Self {
         let mut matcher_builder = MatcherBuilder::new();
         for extension in extensions {
@@ -67,6 +114,9 @@ impl FilterBuilder {
         self.rules.push((prec, FilterRule::IncludeExtensions(matcher_builder.build())));
         self
     }
+
+    /// Rejects content whose extension is one of `extensions` (case
+    /// sensitive, without the leading dot).
     pub fn exclude_extensions(mut self, prec: Precedence, extensions: &[&'static str]) -> Self {
         let mut matcher_builder = MatcherBuilder::new();
         for extension in extensions {
@@ -75,6 +125,9 @@ impl FilterBuilder {
         self.rules.push((prec, FilterRule::ExcludeExtensions(matcher_builder.build())));
         self
     }
+
+    /// Accepts content whose file name (basename) is one of
+    /// `file_names`.
     pub fn include_file_names(mut self, prec: Precedence, file_names: &[&'static str]) -> Self {
         let mut matcher_builder = MatcherBuilder::new();
         for file_name in file_names {
@@ -83,6 +136,9 @@ impl FilterBuilder {
         self.rules.push((prec, FilterRule::IncludeFileNames(matcher_builder.build())));
         self
     }
+
+    /// Rejects content whose file name (basename) is one of
+    /// `file_names`.
     pub fn exclude_file_names(mut self, prec: Precedence, file_names: &[&'static str]) -> Self {
         let mut matcher_builder = MatcherBuilder::new();
         for file_name in file_names {
@@ -91,27 +147,59 @@ impl FilterBuilder {
         self.rules.push((prec, FilterRule::ExcludeFileNames(matcher_builder.build())));
         self
     }
+
+    /// Adds a custom inclusion callback.
+    ///
+    /// `callback` receives the full path and the size of a content
+    /// item and should return `true` to include it. Returning `false`
+    /// simply lets the next rule decide (it is *not* an exclusion).
     pub fn include(mut self, prec: Precedence, callback: fn(&str, u64) -> bool) -> Self {
         self.rules.push((prec, FilterRule::Include(callback)));
         self
     }
+
+    /// Adds a custom exclusion callback.
+    ///
+    /// `callback` receives the full path and the size of a content
+    /// item and should return `true` to reject it. Returning `false`
+    /// simply lets the next rule decide (it is *not* an inclusion).
     pub fn exclude(mut self, prec: Precedence, callback: fn(&str, u64) -> bool) -> Self {
         self.rules.push((prec, FilterRule::Exclude(callback)));
         self
     }
+
+    /// Terminates the builder with a *deny-by-default* policy.
+    ///
+    /// Content that does not match any rule will be rejected.
     pub fn deny_the_rest(mut self) -> ReadyFilterBuilder {
         self.default_result = false;
         ReadyFilterBuilder { builder: self }
     }
+
+    /// Terminates the builder with an *allow-by-default* policy.
+    ///
+    /// Content that does not match any rule will be accepted.
     pub fn allow_the_rest(mut self) -> ReadyFilterBuilder {
         self.default_result = true;
         ReadyFilterBuilder { builder: self }
     }
 }
+
+/// Finalized [`FilterBuilder`] ready to produce a [`Filter`].
+///
+/// This intermediate type exists to force the caller to explicitly
+/// choose between [`FilterBuilder::deny_the_rest`] and
+/// [`FilterBuilder::allow_the_rest`] before building the filter,
+/// which makes the default behavior visible at every call site.
 pub struct ReadyFilterBuilder {
     builder: FilterBuilder,
 }
 impl ReadyFilterBuilder {
+    /// Consumes the builder and produces the compiled [`Filter`].
+    ///
+    /// Rules are compiled into efficient matchers (tries / magic
+    /// tables) so that [`Filter::should_process`] is cheap even when
+    /// many patterns are registered.
     pub fn build(self) -> Filter {
         let check_extensions = self.builder.rules.iter().any(|(_, rule)| matches!(rule, FilterRule::IncludeExtensions(_) | FilterRule::ExcludeExtensions(_)));
         let check_file_names = self.builder.rules.iter().any(|(_, rule)| matches!(rule, FilterRule::IncludeFileNames(_) | FilterRule::ExcludeFileNames(_)));
