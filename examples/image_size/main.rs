@@ -1,4 +1,5 @@
 mod bmp;
+mod jpeg;
 mod png;
 
 use content_scan::*;
@@ -8,6 +9,7 @@ use content_scan::*;
 pub enum ImageType {
     Png,
     Bmp,
+    Jpeg,
 }
 
 fn main() {
@@ -23,6 +25,8 @@ fn main() {
         .add_analyzer(ImageType::Png, 0, png::PngAnalyzer {})
         .add_identifier(ImageType::Bmp, bmp::BmpIdentifier {})
         .add_analyzer(ImageType::Bmp, 0, bmp::BmpAnalyzer {})
+        .add_identifier(ImageType::Jpeg, jpeg::JpegIdentifier {})
+        .add_analyzer(ImageType::Jpeg, 0, jpeg::JpegAnalyzer {})
         .build();
 
     let mut content = FileContent::<ImageType>::new(&path);
