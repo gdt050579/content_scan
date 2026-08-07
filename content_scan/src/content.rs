@@ -219,7 +219,7 @@ impl<T: ContentType> FileContent<T> {
         }
     }
     fn open(&mut self) {
-        match RandomAccessFile::open(Path::new(&self.path), RandomAccessFlags::None) {
+        match RandomAccessFile::open(Path::new(&self.path), RandomAccessFlags::Exclusive) {
             Ok(reader) => match FileCache::new(CacheType::MemoryMap, reader) {
                 Ok(file) => {
                     self.status = FileContentStatus::Opened(file);

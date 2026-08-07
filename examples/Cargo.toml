@@ -16,3 +16,7 @@ path = "vowals/main.rs"
 [[example]]
 name = "sum"
 path = "sum/main.rs"
+
+[[example]]
+name = "image_size"
+path = "image_size/main.rs"

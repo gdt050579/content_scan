@@ -1,0 +1,31 @@
+use content_scan::*;
+
+use crate::ImageType;
+
+pub struct BmpIdentifier;
+impl ContentIdentifier<ImageType> for BmpIdentifier {
+    fn identify_method(&self) -> Option<IdentifyMethod> {
+        Some(IdentifyMethod::Magic(b"BM"))
+    }
+
+    fn validate(&self, content: &dyn Content<ImageType>) -> bool {
+        content.size() >= 26
+    }
+}
+
+pub struct BmpAnalyzer;
+impl ContentAnalyzer<ImageType> for BmpAnalyzer {
+    fn analyze(&mut self, content: &mut dyn Content<ImageType>, context: &mut Context) -> NextAction {
+        let Some(d) = content.read(0, 26) else {
+            return NextAction::Continue;
+        };
+        if d.len() < 26 {
+            return NextAction::Continue;
+        }
+        let w = u32::from_le_bytes(d[18..22].try_into().unwrap());
+        let h = u32::from_le_bytes(d[22..26].try_into().unwrap());
+        context.global().set(var!("width"), w);
+        context.global().set(var!("height"), h);
+        NextAction::Continue
+    }
+}
