@@ -112,10 +112,10 @@ impl<'a, T: ContentType> ScanResult<'a, T> {
     }
     pub fn child(&self, handle: ScanContentHandle) -> Option<ScanContentHandle> {
         let object = self.context.objects.get(handle.index as usize)?;
-        if object.child_index as usize >= self.context.objects.len() {
+        if object.first_child_index as usize >= self.context.objects.len() {
             None
         } else {
-            Some(ScanContentHandle { index: object.child_index })
+            Some(ScanContentHandle { index: object.first_child_index })
         }
     }
     pub fn local(&self, handle: ScanContentHandle) -> Option<&VarMap> {

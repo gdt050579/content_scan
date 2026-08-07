@@ -1,9 +1,9 @@
-use std::collections::HashSet;
-use crate::utils;
-use crate::{Context, ScanResult};
 use super::{Content, ContentAnalyzer, ContentExtractor, ContentIdentifier, ContentType, Filter, NextAction, plugin_list::PluginsList};
 use crate::IdentifierSet;
 use crate::Object;
+use crate::utils;
+use crate::{Context, ScanResult};
+use std::collections::HashSet;
 pub struct Scanner<T: ContentType> {
     filter: Option<Filter>,
     identifiers: IdentifierSet<T>,
@@ -31,14 +31,32 @@ impl<T: ContentType> Scanner<T> {
         let path_index = self.context.path_arena.alloc(content.path().as_bytes());
         let obj = Object {
             path: path_index,
-            parent_index,    
+            parent_index,
             sibling_index: Object::INVALID_INDEX,
             varmap_index: Object::INVALID_INDEX,
-            child_index: Object::INVALID_INDEX,
-            type_id: if let Some(ty) = ty { ty.as_u16() } else { u16::MAX }
+            first_child_index: Object::INVALID_INDEX,
+            last_child_index: Object::INVALID_INDEX,
+            type_id: if let Some(ty) = ty { ty.as_u16() } else { u16::MAX },
         };
         let my_index = self.context.objects.len() as u32;
         self.context.objects.push(obj);
+        // links to parent and siblig
+        let mut last_sibling_index = Object::INVALID_INDEX;
+        if parent_index != Object::INVALID_INDEX {
+            if let Some(parent) = self.context.objects.get_mut(parent_index as usize) {
+                if parent.first_child_index == Object::INVALID_INDEX {
+                    parent.first_child_index = my_index;
+                } else {
+                    last_sibling_index = parent.last_child_index;
+                }
+                parent.last_child_index = my_index;
+            }
+        }
+        if last_sibling_index != Object::INVALID_INDEX {
+            if let Some(last_sibling) = self.context.objects.get_mut(last_sibling_index as usize) {
+                last_sibling.sibling_index = my_index;
+            }
+        }
 
         let range = if let Some(ty) = ty { self.analyzers.range(ty) } else { None };
         if let Some((start, end)) = range {
@@ -240,7 +258,7 @@ impl<T: ContentType> ScannerBuilder<T> {
         self
     }
     pub fn max_depth(mut self, max_depth: u32) -> Self {
-        self.max_depth = max_depth.clamp(1, u32::MAX-2);
+        self.max_depth = max_depth.clamp(1, u32::MAX - 2);
         self
     }
     fn check_unique_identifiers(&self) {
