@@ -57,6 +57,10 @@ impl Context {
                 self.used_local_varmaps += 1;
                 self.varmap_pool[self.local_varmaps_index as usize].clear();
             }
+            // link to the object
+            if let Some(object) = self.objects.last_mut() {
+                object.varmap_index = self.local_varmaps_index;
+            }
         }
         &mut self.varmap_pool[self.local_varmaps_index as usize]
     }
@@ -87,7 +91,7 @@ impl<'a, T: ContentType> ScanResult<'a, T> {
     pub fn objects_scanned(&self) -> u32 {
         self.context.objects.len() as u32
     }
-    pub fn initial(&self) -> Option<ScanContentHandle> {
+    pub fn root(&self) -> Option<ScanContentHandle> {
         if self.context.objects.is_empty() {
             None
         } else {

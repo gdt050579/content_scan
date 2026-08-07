@@ -33,8 +33,9 @@ Typical use cases:
     - [`ContentExtractor`](#contentextractor)
     - [`Filter` / `FilterBuilder`](#filter--filterbuilder)
     - [`Scanner` / `ScannerBuilder`](#scanner--scannerbuilder)
-    - [`Context` / `ScanResult`](#context--scanresult)
-  - [Scanning pipeline](#scanning-pipeline)
+  - [`Context` / `ScanResult`](#context--scanresult)
+  - [Navigating the scan result tree](#navigating-the-scan-result-tree)
+- [Scanning pipeline](#scanning-pipeline)
   - [Building \& testing](#building--testing)
   - [License](#license)
 
@@ -65,6 +66,7 @@ The framework is built around a few small traits:
 - **`ContentExtractor<T>`** — pulls sub-contents out of a container and hands them back to the scanner, which recurses into them.
 - **`Filter`** — decides which paths / sizes should be processed at all.
 - **`Scanner<T>`** — the orchestrator; built via `ScannerBuilder<T>`.
+- **`ScanResult<T>` / `ScanContentHandle`** — after a scan, the framework exposes the full **tree** of visited objects (parent / child / sibling links), each with its interned path, resolved content type and its own local `VarMap`.
 
 Analyzers and extractors are either **specific** to a `ContentType` or **generic** (run on every scanned object). Each is registered with a `priority` byte to control execution order.
 
@@ -178,19 +180,51 @@ fn main() {
 
 ### Summing numbers extracted from text
 
-This example shows the full pipeline — a text container is *identified* by magic bytes, an *extractor* pulls numeric substrings out of it as independent `Number` contents, and a numeric *analyzer* sums them into a shared context variable. See [`examples/sum/main.rs`](examples/sum/main.rs).
+This example shows the full pipeline — a text container is *identified* by magic bytes, an *extractor* pulls numeric substrings out of it as independent `Number` contents, and a numeric *analyzer* both sums them into a shared **global** variable and stashes each value into a per-object **local** `VarMap`. After the scan, the example walks the resulting tree via `ScanResult`. See [`examples/sum/main.rs`](examples/sum/main.rs).
 
 ```rust
-let mut scanner = ScannerBuilder::new()
-    .add_analyzer(MyTypes::Number, 0, NumericAnalyzer {})
-    .add_extractor(MyTypes::Text, 0, NumericExtractor::default())
-    .add_identifier(MyTypes::Text, TextIdentifier {})
-    .build();
+struct NumericAnalyzer;
+impl ContentAnalyzer<MyTypes> for NumericAnalyzer {
+    fn analyze(&mut self, content: &mut dyn Content<MyTypes>, context: &mut Context) -> NextAction {
+        let value = u32::from_str_radix(
+            std::str::from_utf8(content.read(0, content.size() as u32).unwrap()).unwrap(),
+            10,
+        ).unwrap();
 
-let mut b = BufferContent::<MyTypes>::new(b"TXT   1+2+3=", "test.txt");
-let res = scanner.scan(&mut b);
-println!("sum: {}", res.global().get::<u32>(var!("sum")).unwrap_or(0));
-// -> sum: 6
+        // aggregate into the global VarMap...
+        if !context.global().update(var!("sum"), |v: &mut u32| *v += value) {
+            context.global().set(var!("sum"), value);
+        }
+        // ...and remember this object's own value in its local VarMap
+        context.local().set(var!("value"), value);
+        NextAction::Continue
+    }
+}
+
+fn main() {
+    let mut scanner = ScannerBuilder::new()
+        .add_analyzer(MyTypes::Number, 0, NumericAnalyzer {})
+        .add_extractor(MyTypes::Text, 0, NumericExtractor::default())
+        .add_identifier(MyTypes::Text, TextIdentifier {})
+        .build();
+
+    let mut b = BufferContent::<MyTypes>::new(b"TXT   1+2+3=", "test.txt");
+    let res = scanner.scan(&mut b);
+    println!("sum: {}", res.global().get::<u32>(var!("sum")).unwrap_or(0)); // -> 6
+
+    // Walk the scan tree: root ("test.txt") -> children ("number", "number", "number")
+    let root = res.root().unwrap();
+    println!("root: {}", res.path(root).unwrap());
+    let mut c = res.child(root).unwrap();
+    loop {
+        let v = res.local(c).unwrap().get::<u32>(var!("value")).unwrap_or(0);
+        println!("- child: {} => {}", res.path(c).unwrap(), v);
+        match res.next_sibling(c) {
+            Some(next) => c = next,
+            None => break,
+        }
+    }
+}
 ```
 
 ---
@@ -369,14 +403,15 @@ let result: ScanResult = scanner.scan(&mut content);
 
 ### `Context` / `ScanResult`
 
-The `Context` passed to analyzers exposes two `VarMap`s (from the [`varmap`](https://crates.io/crates/varmap) crate, re-exported by `content_scan`):
+The `Context` passed to analyzers exposes three `VarMap`s (from the [`varmap`](https://crates.io/crates/varmap) crate, re-exported by `content_scan`):
 
 - `context.global()` — persists for the entire `scan()` call. Use it to accumulate results across all analyzed objects.
-- `context.extract()` — a scratch map for a single extractor's `init` call.
+- `context.local()` — per-object scratch storage. The first call from an analyzer on a given object lazily grabs a `VarMap` from an internal pool, clears it, and attaches it to that object; subsequent calls (from other analyzers running on the same object) return the same map. It is kept alive after the scan and can be looked up on the corresponding `ScanContentHandle` via `ScanResult::local(handle)`.
+- `context.extract()` — a scratch map handed to a single extractor's `init` call.
 
 `context.objects_scanned()` returns how many objects have been visited so far.
 
-After `scan()` returns, you can read results from the `ScanResult`:
+After `scan()` returns, you can read results from the `ScanResult<T>`. In addition to the classic aggregate view, it also exposes the full **tree of scanned objects**:
 
 ```rust
 let res = scanner.scan(&mut content);
@@ -385,6 +420,56 @@ println!("scanned {} objects, sum = {}", res.objects_scanned(), sum);
 ```
 
 `var!("name")` is a compile-time typed key macro provided by `varmap`.
+
+### Navigating the scan result tree
+
+Every object visited by the scanner is recorded, along with its resolved content type, its path (interned in an internal arena) and its optional local `VarMap`. Objects are linked as a **parent / first-child / next-sibling** tree that mirrors the extraction hierarchy.
+
+You navigate the tree with opaque `ScanContentHandle`s returned by `ScanResult<T>`:
+
+```rust
+pub struct ScanContentHandle { /* opaque */ }
+
+impl<'a, T: ContentType> ScanResult<'a, T> {
+    pub fn global(&self) -> &VarMap;
+    pub fn objects_scanned(&self) -> u32;
+
+    // Tree navigation
+    pub fn root(&self) -> Option<ScanContentHandle>;
+    pub fn parent(&self, handle: ScanContentHandle) -> Option<ScanContentHandle>;
+    pub fn child(&self, handle: ScanContentHandle) -> Option<ScanContentHandle>;
+    pub fn next_sibling(&self, handle: ScanContentHandle) -> Option<ScanContentHandle>;
+
+    // Per-object data
+    pub fn path(&self, handle: ScanContentHandle) -> Option<&str>;
+    pub fn content_type(&self, handle: ScanContentHandle) -> Option<T>;
+    pub fn local(&self, handle: ScanContentHandle) -> Option<&VarMap>;
+}
+```
+
+Typical walk:
+
+```rust
+fn dump<T: ContentType>(res: &ScanResult<T>, h: ScanContentHandle, depth: usize) {
+    let pad = "  ".repeat(depth);
+    let path = res.path(h).unwrap_or("?");
+    let ty   = res.content_type(h);
+    println!("{pad}- {path} ({ty:?})");
+
+    // walk children left-to-right via first-child / next-sibling
+    let mut c = res.child(h);
+    while let Some(cur) = c {
+        dump(res, cur, depth + 1);
+        c = res.next_sibling(cur);
+    }
+}
+
+if let Some(root) = res.root() {
+    dump(&res, root, 0);
+}
+```
+
+Because paths and local `VarMap`s live in pools owned by the scanner's `Context`, they are reused across successive `scan()` calls with zero re-allocation once steady-state is reached — the `ScanResult` simply borrows them for the lifetime of the current scan.
 
 ---
 
@@ -403,6 +488,8 @@ For every scanned object, the scanner performs the following steps (see [`conten
 4. **Generic analyzers** run for every object in priority order.
 5. **Type-specific extractors** run and, for each entry they emit, the scanner recurses (subject to `max_depth` and `Filter`).
 6. **Generic extractors** run and recurse in the same way.
+
+While this is happening, the scanner also **records the object** into `Context::objects` — allocating its path in an internal arena, tagging it with the resolved content type, and linking it into its parent's child list. After `scan()` returns, that tree is exposed to the caller through [`ScanResult`](#navigating-the-scan-result-tree).
 
 Any analyzer or extractor may short-circuit the current object with `NextAction::Skip` or abort the entire scan with `NextAction::Exit`.
 

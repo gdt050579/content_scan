@@ -81,6 +81,7 @@ impl ContentAnalyzer<MyTypes> for NumericAnalyzer {
         if !context.global().update(var!("sum"), |v: &mut u32| *v += value) {
             context.global().set(var!("sum"), value);
         }
+        context.local().set(var!("value"), value);
         NextAction::Continue
     }
 }
@@ -94,4 +95,13 @@ fn main() {
     let mut b = BufferContent::<MyTypes>::new(b"TXT   1+2+3=", "test.txt");
     let res = scanner.scan(&mut b);
     println!("sum: {}", res.global().get::<u32>(var!("sum")).unwrap_or(0));
+    // navigate
+    let root = res.root().unwrap();
+    println!("root: {}", res.path(root).unwrap());
+    let mut c = res.child(root).unwrap();
+    println!("- child: {} => {}", res.path(c).unwrap(), res.local(c).unwrap().get::<u32>(var!("value")).unwrap_or(0));
+    while let Some(next) = res.next_sibling(c) {
+        println!("- sibling: {} => {}", res.path(c).unwrap(), res.local(c).unwrap().get::<u32>(var!("value")).unwrap_or(0));
+        c = next;
+    }
 }
