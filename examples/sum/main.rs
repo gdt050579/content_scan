@@ -92,7 +92,7 @@ fn main() {
         .add_extractor(MyTypes::Text, 0, NumericExtractor::default())
         .add_identifier(MyTypes::Text, TextIdentifier {})
         .build();
-    let mut b = BufferContent::<MyTypes>::new(b"TXT   1+2+3=", "test.txt");
+    let mut b = BufferContent::<MyTypes>::new(b"TXT   10+20+30=", "test.txt");
     let res = scanner.scan(&mut b);
     println!("sum: {}", res.global().get::<u32>(var!("sum")).unwrap_or(0));
     // navigate
@@ -101,7 +101,7 @@ fn main() {
     let mut c = res.child(root).unwrap();
     println!("- child: {} => {}", res.path(c).unwrap(), res.local(c).unwrap().get::<u32>(var!("value")).unwrap_or(0));
     while let Some(next) = res.next_sibling(c) {
-        println!("- sibling: {} => {}", res.path(c).unwrap(), res.local(c).unwrap().get::<u32>(var!("value")).unwrap_or(0));
         c = next;
+        println!("- sibling: {} => {}", res.path(c).unwrap(), res.local(c).unwrap().get::<u32>(var!("value")).unwrap_or(0));
     }
 }
