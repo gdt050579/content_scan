@@ -16,6 +16,6 @@ categories = ["data-structures", "algorithms", "filesystem"]
 [lib]
 
 [dependencies]
-varmap = "*"
+varmap = "0.1.1"
 content_scan_proc_macro = "0.1.1"
 # content_scan_proc_macro = { path = "../content-scan-proc-macro" }
