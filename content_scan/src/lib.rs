@@ -7,6 +7,8 @@ mod filter;
 mod identifier_set;
 mod utils;
 mod context;
+mod object;
+mod buffer_arena;
 #[cfg(test)]
 mod tests;
 
@@ -17,6 +19,8 @@ pub use filter::*;
 
 use identifier_set::*;
 use matcher::*;
+use object::Object;
+use buffer_arena::BufferArena;
 
 pub use scanner::Scanner;
 pub use scanner::ScannerBuilder;

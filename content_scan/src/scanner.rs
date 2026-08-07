@@ -3,6 +3,7 @@ use crate::utils;
 use crate::{Context, ScanResult};
 use super::{Content, ContentAnalyzer, ContentExtractor, ContentIdentifier, ContentType, Filter, NextAction, plugin_list::PluginsList};
 use crate::IdentifierSet;
+use crate::Object;
 pub struct Scanner<T: ContentType> {
     filter: Option<Filter>,
     identifiers: IdentifierSet<T>,
@@ -12,20 +13,33 @@ pub struct Scanner<T: ContentType> {
     max_depth: u32,
 }
 impl<T: ContentType> Scanner<T> {
-    pub fn scan<'a>(&'a mut self, content: &mut dyn Content<T>) -> ScanResult<'a> {
+    pub fn scan<'a>(&'a mut self, content: &mut dyn Content<T>) -> ScanResult<'a, T> {
         self.context.clear();
         if let Some(filter) = &self.filter {
             if !filter.should_process(content.path(), content.size()) {
                 return ScanResult::new(&self.context);
             }
         }
-        self.inner_scan(content, 1);
+        self.inner_scan(content, 1, Object::INVALID_INDEX);
         ScanResult::new(&self.context)
     }
-    fn inner_scan(&mut self, content: &mut dyn Content<T>, depth: u32) -> NextAction {
+    fn inner_scan(&mut self, content: &mut dyn Content<T>, depth: u32, parent_index: u32) -> NextAction {
         self.context.clear_extract();
-        self.context.objects_scanned += 1;
+        self.context.local_varmaps_index = Object::INVALID_INDEX; // so that next time someone ask for a local varmap, it will get one from the context varmap_pool
         let ty = self.retrieve_content_type(content);
+
+        let path_index = self.context.path_arena.alloc(content.path().as_bytes());
+        let obj = Object {
+            path: path_index,
+            parent_index,    
+            sibling_index: Object::INVALID_INDEX,
+            varmap_index: Object::INVALID_INDEX,
+            child_index: Object::INVALID_INDEX,
+            type_id: if let Some(ty) = ty { ty.as_u16() } else { u16::MAX }
+        };
+        let my_index = self.context.objects.len() as u32;
+        self.context.objects.push(obj);
+
         let range = if let Some(ty) = ty { self.analyzers.range(ty) } else { None };
         if let Some((start, end)) = range {
             match self.scan_range(content, start, end) {
@@ -46,7 +60,7 @@ impl<T: ContentType> Scanner<T> {
         // extractors (specfic)
         if let Some(ty) = ty {
             if let Some((start, end)) = self.extractors.range(ty) {
-                match self.extract_range(content, start, end, depth) {
+                match self.extract_range(content, start, end, depth, my_index) {
                     NextAction::Continue => {}
                     NextAction::Skip => return NextAction::Continue, // skip current content
                     NextAction::Exit => return NextAction::Exit,
@@ -56,7 +70,7 @@ impl<T: ContentType> Scanner<T> {
         // extractors (generc)
         let range = self.extractors.generic_range();
         if let Some((start, end)) = range {
-            match self.extract_range(content, start, end, depth) {
+            match self.extract_range(content, start, end, depth, my_index) {
                 NextAction::Continue => {}
                 NextAction::Skip => return NextAction::Continue, // skip current content
                 NextAction::Exit => return NextAction::Exit,
@@ -78,12 +92,12 @@ impl<T: ContentType> Scanner<T> {
         }
         NextAction::Continue
     }
-    fn extract_range(&mut self, content: &mut dyn Content<T>, start: usize, end: usize, depth: u32) -> NextAction {
+    fn extract_range(&mut self, content: &mut dyn Content<T>, start: usize, end: usize, depth: u32, parent_index: u32) -> NextAction {
         if (end <= start) || (end > self.extractors.len()) {
             return NextAction::Continue;
         }
         for i in start..end {
-            let result = self.extract_content(content, i, depth);
+            let result = self.extract_content(content, i, depth, parent_index);
             match result {
                 NextAction::Continue => continue,
                 NextAction::Exit => return NextAction::Exit,
@@ -92,7 +106,7 @@ impl<T: ContentType> Scanner<T> {
         }
         NextAction::Continue
     }
-    fn extract_content(&mut self, content: &mut dyn Content<T>, index: usize, depth: u32) -> NextAction {
+    fn extract_content(&mut self, content: &mut dyn Content<T>, index: usize, depth: u32, parent_index: u32) -> NextAction {
         if depth > self.max_depth {
             return NextAction::Continue;
         }
@@ -112,7 +126,7 @@ impl<T: ContentType> Scanner<T> {
             }
             extractor = unsafe { self.extractors.get(index) };
             if let Some(mut extracted_content) = extractor.extract(content) {
-                let result = self.inner_scan(&mut *extracted_content, depth + 1);
+                let result = self.inner_scan(&mut *extracted_content, depth + 1, parent_index);
                 match result {
                     NextAction::Continue => continue,
                     NextAction::Exit => return NextAction::Exit,
