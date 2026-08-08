@@ -3,9 +3,9 @@ pub(crate) struct ArenaIndex {
     pub(crate) pos: u32,
     pub(crate) size: u32,
 }
-impl ArenaIndex {
-    const INVALID: ArenaIndex = ArenaIndex { pos: u32::MAX, size: u32::MAX };
-}
+// impl ArenaIndex {
+//     const INVALID: ArenaIndex = ArenaIndex { pos: u32::MAX, size: u32::MAX };
+// }
 
 #[derive(Copy, Clone, Debug)]
 pub(crate) struct Object {
