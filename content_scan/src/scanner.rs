@@ -1,7 +1,7 @@
-use super::{Content, ContentAnalyzer, ContentExtractor, ContentIdentifier, ContentType, Filter, NextAction, plugin_list::PluginsList};
+use super::{plugin_list::PluginsList, Content, ContentAnalyzer, ContentExtractor, ContentIdentifier, ContentType, Filter, NextAction};
+use crate::utils;
 use crate::IdentifierSet;
 use crate::Object;
-use crate::utils;
 use crate::{Context, ScanResult};
 use std::collections::HashSet;
 
@@ -162,24 +162,34 @@ impl<T: ContentType> Scanner<T> {
             return NextAction::Continue;
         }
         let mut extractor = unsafe { self.extractors.get(index) };
-        if !extractor.begin(content, &mut self.context.extract()) {
-            return NextAction::Continue;
-        }
-        while let Some(entry) = unsafe { self.extractors.get(index).advance(content) } {
-            if let Some(filter) = &self.filter {
-                if !filter.should_process(&entry.path, entry.size) {
-                    continue;
+        if let Some(handle) = extractor.acquire(content, &mut self.context.extract()) {
+            while let Some(entry) = unsafe { self.extractors.get(index).advance(handle, content) } {
+                if let Some(filter) = &self.filter {
+                    if !filter.should_process(&entry.path, entry.size) {
+                        continue;
+                    }
+                }
+                extractor = unsafe { self.extractors.get(index) };
+                if let Some(mut extracted_content) = extractor.extract(handle, content) {
+                    let result = self.inner_scan(&mut *extracted_content, depth + 1, parent_index);
+                    match result {
+                        NextAction::Continue => continue,
+                        NextAction::Exit => 
+                        {
+                            extractor = unsafe { self.extractors.get(index) };
+                            extractor.release(handle);
+                            return NextAction::Exit;
+                        }
+                        NextAction::Skip => {
+                            extractor = unsafe { self.extractors.get(index) };
+                            extractor.release(handle);
+                            return NextAction::Continue;
+                        }
+                    }
                 }
             }
             extractor = unsafe { self.extractors.get(index) };
-            if let Some(mut extracted_content) = extractor.extract(content) {
-                let result = self.inner_scan(&mut *extracted_content, depth + 1, parent_index);
-                match result {
-                    NextAction::Continue => continue,
-                    NextAction::Exit => return NextAction::Exit,
-                    NextAction::Skip => return NextAction::Continue,
-                }
-            }
+            extractor.release(handle);
         }
         NextAction::Continue
     }
