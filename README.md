@@ -25,6 +25,7 @@ Typical use cases:
   - [Examples](#examples)
     - [Counting vowels](#counting-vowels)
     - [Summing numbers extracted from text](#summing-numbers-extracted-from-text)
+    - [Reading PNG / BMP / JPEG dimensions](#reading-png--bmp--jpeg-dimensions)
   - [API overview](#api-overview)
     - [`ContentType`](#contenttype)
     - [`Content`](#content)
@@ -49,7 +50,7 @@ This repository is a Cargo workspace with three members:
 | ------------------------- | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
 | `content_scan`            | [`content_scan/`](content_scan)                       | The main library: scanner, traits, matchers, filters.                                          |
 | `content_scan_proc_macro` | [`content-scan-proc-macro/`](content-scan-proc-macro) | Companion proc-macro crate exposing `#[derive(ContentType)]`. Re-exported from `content_scan`. |
-| `examples`                | [`examples/`](examples)                               | Runnable examples (`sum`, `vowals`).                                                           |
+| `examples`                | [`examples/`](examples)                               | Runnable examples (`sum`, `vowals`, `image_size`).                                              |
 
 You normally only depend on `content_scan` — the proc-macro is re-exported for you.
 
@@ -60,10 +61,10 @@ You normally only depend on `content_scan` — the proc-macro is re-exported for
 The framework is built around a few small traits:
 
 - **`ContentType`** — a `#[repr(u16)]` enum describing the kinds of content your scanner knows about. Derived with `#[derive(ContentType)]`.
-- **`Content<T>`** — an abstract, seekable, read-only byte source with a path and a size. A ready-made `BufferContent<T>` is provided for in-memory buffers.
+- **`Content<T>`** — an abstract, seekable, read-only byte source with a path and a size. Ready-made `BufferContent<T>` (in-memory) and `FileContent<T>` (memory-mapped file) implementations are provided.
 - **`ContentIdentifier<T>`** — decides *what* a piece of content is (by magic bytes, extension, or file name) and validates the guess.
 - **`ContentAnalyzer<T>`** — reads content and produces information (stored in a shared `Context`).
-- **`ContentExtractor<T>`** — pulls sub-contents out of a container and hands them back to the scanner, which recurses into them.
+- **`ContentExtractor<T>`** — pulls sub-contents out of a container through an `acquire` / `advance` / `extract` / `release` session keyed by an `ExtractionHandle`, then hands children back to the scanner for recursion.
 - **`Filter`** — decides which paths / sizes should be processed at all.
 - **`Scanner<T>`** — the orchestrator; built via `ScannerBuilder<T>`.
 - **`ScanResult<T>` / `ScanContentHandle`** — after a scan, the framework exposes the full **tree** of visited objects (parent / child / sibling links), each with its interned path, resolved content type and its own local `VarMap`.
@@ -123,6 +124,7 @@ The [`examples/`](examples) directory contains runnable programs. From the works
 ```bash
 cargo run --example vowals
 cargo run --example sum
+cargo run --example image_size -- path/to/image.png
 ```
 
 ### Counting vowels
@@ -227,6 +229,15 @@ fn main() {
 }
 ```
 
+### Reading PNG / BMP / JPEG dimensions
+
+The [`image_size`](examples/image_size) example registers one identifier + analyzer pair per image format (`png.rs`, `bmp.rs`, `jpeg.rs`), scans a file via `FileContent`, and prints `{width}x{height}` from the global `VarMap`:
+
+```bash
+cargo run --example image_size -- photo.jpg
+# -> 1920x1080
+```
+
 ---
 
 ## API overview
@@ -263,15 +274,18 @@ pub trait Content<T: ContentType> {
 
 A `Content` is any addressable byte source. It exposes a logical `path` (used for identification and filtering), a `size`, and a `read(offset, count)` method that returns a borrowed slice.
 
-An in-memory implementation is provided:
+An in-memory implementation and a file-backed one are provided:
 
 ```rust
 BufferContent::<MyType>::new(buffer, "path.ext");
 BufferContent::<MyType>::with_content_type(buffer, "path.ext", MyType::Text);
 BufferContent::<MyType>::from_parts(vec, "path".into(), Some(MyType::Text));
+
+FileContent::<MyType>::new("path/to/file.bin");
+FileContent::<MyType>::with_content_type("path/to/file.bin", MyType::Text);
 ```
 
-You can implement `Content<T>` for files, memory-mapped regions, network streams, archive entries, etc.
+You can also implement `Content<T>` for memory-mapped regions, network streams, archive entries, etc.
 
 ### `ContentIdentifier`
 
@@ -322,24 +336,43 @@ Within a bucket, analyzers execute in ascending `priority` order.
 
 ```rust
 pub trait ContentExtractor<T: ContentType> {
-    fn init(&mut self, content: &mut dyn Content<T>, extract_context: &mut VarMap) -> bool;
-    fn advance(&mut self, content: &mut dyn Content<T>) -> Option<&Entry>;
-    fn extract(&mut self, content: &mut dyn Content<T>) -> Option<Box<dyn Content<T>>>;
+    fn acquire(
+        &mut self,
+        content: &mut dyn Content<T>,
+        extract_context: &mut VarMap,
+    ) -> Option<ExtractionHandle>;
+    fn advance(
+        &mut self,
+        handle: ExtractionHandle,
+        content: &mut dyn Content<T>,
+    ) -> Option<&Entry>;
+    fn extract(
+        &mut self,
+        handle: ExtractionHandle,
+        content: &mut dyn Content<T>,
+    ) -> Option<Box<dyn Content<T>>>;
+    fn release(&mut self, handle: ExtractionHandle);
 }
 
 pub struct Entry {
     pub path: String,
     pub size: u64,
 }
+
+pub struct ExtractionHandle { /* opaque */ }
+impl ExtractionHandle {
+    pub const fn new(index: u32, uid: u32) -> Self;
+}
 ```
 
-Extractors turn a container into a stream of children:
+Extractors turn a container into a stream of children, driven as a short session keyed by an opaque `ExtractionHandle`:
 
-1. `init` — called once, receives a scratch `VarMap` (`context.extract()`) valid until the next object is scanned. Return `false` to skip this extractor.
-2. `advance` — advances to the next child and returns a lightweight `Entry` describing its path/size. Returning `None` ends the stream.
+1. `acquire` — called once per parent. Receives a scratch `VarMap` (`context.extract()`) valid until the next object is scanned. Return `Some(handle)` to start the session, or `None` to skip this extractor. Simple extractors that only run one session at a time can return a constant handle such as `ExtractionHandle::new(0, 0)`.
+2. `advance` — advances the session to the next child and returns a lightweight `Entry` describing its path/size. Returning `None` ends the stream.
 3. `extract` — materializes the current child as a boxed `Content<T>`. The scanner then recursively scans it (subject to `max_depth`).
+4. `release` — called exactly once for every successfully acquired handle (including when the scan stops early via `NextAction::Skip` / `NextAction::Exit`). Use it to free per-session resources.
 
-Extractors are registered with `add_extractor` / `add_generic_extractor`, mirroring analyzers.
+The handle lets one extractor instance keep per-session state even when extractions nest or interleave. Extractors are registered with `add_extractor` / `add_generic_extractor`, mirroring analyzers.
 
 ### `Filter` / `FilterBuilder`
 
@@ -407,7 +440,7 @@ The `Context` passed to analyzers exposes three `VarMap`s (from the [`varmap`](h
 
 - `context.global()` — persists for the entire `scan()` call. Use it to accumulate results across all analyzed objects.
 - `context.local()` — per-object scratch storage. The first call from an analyzer on a given object lazily grabs a `VarMap` from an internal pool, clears it, and attaches it to that object; subsequent calls (from other analyzers running on the same object) return the same map. It is kept alive after the scan and can be looked up on the corresponding `ScanContentHandle` via `ScanResult::local(handle)`.
-- `context.extract()` — a scratch map handed to a single extractor's `init` call.
+- `context.extract()` — a scratch map handed to a single extractor's `acquire` call.
 
 `context.objects_scanned()` returns how many objects have been visited so far.
 
@@ -486,8 +519,8 @@ For every scanned object, the scanner performs the following steps (see [`conten
    Each candidate is confirmed via the corresponding identifier's `validate()` method.
 3. **Type-specific analyzers** for the resolved type run in priority order.
 4. **Generic analyzers** run for every object in priority order.
-5. **Type-specific extractors** run and, for each entry they emit, the scanner recurses (subject to `max_depth` and `Filter`).
-6. **Generic extractors** run and recurse in the same way.
+5. **Type-specific extractors** run (`acquire` → `advance`/`extract` loop → `release`) and, for each entry they emit, the scanner recurses (subject to `max_depth` and `Filter`).
+6. **Generic extractors** run the same session lifecycle and recurse in the same way.
 
 While this is happening, the scanner also **records the object** into `Context::objects` — allocating its path in an internal arena, tagging it with the resolved content type, and linking it into its parent's child list. After `scan()` returns, that tree is exposed to the caller through [`ScanResult`](#navigating-the-scan-result-tree).
 
@@ -509,6 +542,7 @@ cargo test
 # run an example
 cargo run --example vowals
 cargo run --example sum
+cargo run --example image_size -- path/to/image.jpg
 ```
 
 The workspace pins `resolver = "2"` and applies a couple of shared Clippy overrides (`module_inception`, `new_without_default`) — see the root [`Cargo.toml`](Cargo.toml).

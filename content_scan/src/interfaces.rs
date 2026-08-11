@@ -61,10 +61,91 @@ pub trait ContentAnalyzer<T: ContentType> {
     fn analyze(&mut self, content: &mut dyn Content<T>, context: &mut Context) -> NextAction;
 }
 
+/// A plugin that produces child content items from a parent.
+///
+/// Extractors are the "recursion" half of the framework. Typical
+/// examples: an archive extractor emitting each stored file, an
+/// executable extractor emitting resource sections, a text extractor
+/// emitting embedded numeric tokens, and so on.
+///
+/// The scanner drives an extractor as a short session keyed by an
+/// opaque [`ExtractionHandle`]:
+///
+/// 1. [`acquire`](Self::acquire) is called once per parent content. If
+///    it returns `None`, this extractor is skipped for the parent.
+///    Otherwise the returned handle identifies the session and is
+///    passed to every subsequent call.
+/// 2. [`advance`](Self::advance) is called repeatedly with that
+///    handle. Each call returns metadata for the next available
+///    entry, or `None` when the extractor is exhausted.
+/// 3. For each accepted entry, [`extract`](Self::extract) is called
+///    (with the same handle) to materialize a [`Content`] object which
+///    is then scanned recursively (subject to the configured max
+///    depth).
+/// 4. [`release`](Self::release) is always called exactly once for a
+///    successfully acquired handle, whether the stream ended
+///    normally, a filter skipped every entry, or the scan aborted
+///    early with [`NextAction::Skip`] / [`NextAction::Exit`].
+///
+/// The handle lets a single extractor instance keep per-session state
+/// (cursor, buffers, open archive handles, …) even when extractions
+/// nest or interleave. Simple extractors that only ever run one
+/// session at a time can ignore the handle values and return a
+/// constant [`ExtractionHandle::new`]`(0, 0)` from `acquire`.
+///
+/// Extractors can be registered per [`ContentType`] via
+/// [`ScannerBuilder::add_extractor`](crate::ScannerBuilder::add_extractor)
+/// or as generic (all types) plugins via
+/// [`ScannerBuilder::add_generic_extractor`](crate::ScannerBuilder::add_generic_extractor).
 pub trait ContentExtractor<T: ContentType> {
-    fn acquire(&mut self, content: &mut dyn Content<T>, extract_context: &mut VarMap) -> Option<ExtractionHandle>;
-    fn advance(&mut self, handle: ExtractionHandle, content: &mut dyn Content<T>) -> Option<&Entry>;
-    fn extract(&mut self, handle: ExtractionHandle, content: &mut dyn Content<T>) -> Option<Box<dyn Content<T>>>;
+    /// Begins an extraction session over `content`.
+    ///
+    /// The `extract_context` [`VarMap`] is scoped to the current
+    /// parent object and can be used to stash per-extraction state
+    /// alongside plugin-owned fields keyed by the returned handle.
+    ///
+    /// Return `Some(handle)` to proceed with
+    /// [`advance`](Self::advance) / [`extract`](Self::extract), or
+    /// `None` to skip this extractor entirely for the current parent.
+    /// Every successful acquire is paired with a later
+    /// [`release`](Self::release) on the same handle.
+    fn acquire(
+        &mut self,
+        content: &mut dyn Content<T>,
+        extract_context: &mut VarMap,
+    ) -> Option<ExtractionHandle>;
+
+    /// Advances the session identified by `handle` to the next entry.
+    ///
+    /// Returns `Some(&Entry)` describing the upcoming entry (path and
+    /// size), or `None` when there are no more entries to extract.
+    /// The scanner may consult the entry's path and size against the
+    /// active [`Filter`](crate::Filter) and skip the following
+    /// [`extract`](Self::extract) call accordingly.
+    fn advance(
+        &mut self,
+        handle: ExtractionHandle,
+        content: &mut dyn Content<T>,
+    ) -> Option<&Entry>;
+
+    /// Materializes the [`Content`] for the entry most recently
+    /// announced by [`advance`](Self::advance) on `handle`.
+    ///
+    /// Returning `None` skips the current entry without aborting the
+    /// enumeration (the scanner will still call `advance` again to
+    /// look for the following entry).
+    fn extract(
+        &mut self,
+        handle: ExtractionHandle,
+        content: &mut dyn Content<T>,
+    ) -> Option<Box<dyn Content<T>>>;
+
+    /// Ends the extraction session identified by `handle`.
+    ///
+    /// Called exactly once after a successful
+    /// [`acquire`](Self::acquire), including when the scan stops
+    /// early. Use it to drop per-session resources (open files,
+    /// cursors, pooled buffers, …) keyed by the handle.
     fn release(&mut self, handle: ExtractionHandle);
 }
 

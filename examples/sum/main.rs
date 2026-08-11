@@ -26,11 +26,11 @@ struct NumericExtractor {
     e: Entry,
 }
 impl ContentExtractor<MyTypes> for NumericExtractor {
-    fn begin(&mut self, _: &mut dyn Content<MyTypes>, _: &mut VarMap) -> bool {
+    fn acquire(&mut self, _: &mut dyn Content<MyTypes>, _: &mut VarMap) -> Option<ExtractionHandle> {
         self.pos = 0;
-        true
+        Some(ExtractionHandle::new(0, 0))
     }
-    fn advance(&mut self, content: &mut dyn Content<MyTypes>) -> Option<&Entry> {
+    fn advance(&mut self, _: ExtractionHandle, content: &mut dyn Content<MyTypes>) -> Option<&Entry> {
         self.start = u64::MAX;
         while self.pos < content.size() {
             if let Some(b) = content.read(self.pos, 1) {
@@ -64,7 +64,7 @@ impl ContentExtractor<MyTypes> for NumericExtractor {
         self.e.size = self.len;
         Some(&self.e)
     }
-    fn extract(&mut self, content: &mut dyn Content<MyTypes>) -> Option<Box<dyn Content<MyTypes>>> {
+    fn extract(&mut self, _: ExtractionHandle, content: &mut dyn Content<MyTypes>) -> Option<Box<dyn Content<MyTypes>>> {
         if let Some(buf) = content.read(self.start, self.len as u32) {
             let extr = BufferContent::<MyTypes>::with_content_type(buf, "number", MyTypes::Number);
             Some(Box::new(extr))
@@ -72,6 +72,7 @@ impl ContentExtractor<MyTypes> for NumericExtractor {
             None
         }
     }
+    fn release(&mut self, _: ExtractionHandle) {}
 }
 
 struct NumericAnalyzer;

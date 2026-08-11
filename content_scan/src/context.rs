@@ -73,7 +73,7 @@ impl Context {
     ///
     /// This map is cleared each time the scanner moves to a new
     /// content object and is passed to
-    /// [`ContentExtractor::init`](crate::ContentExtractor::init).
+    /// [`ContentExtractor::acquire`](crate::ContentExtractor::acquire).
     /// Analyzers may also read/write it while an extraction is in
     /// progress.
     #[inline(always)]
