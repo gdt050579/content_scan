@@ -91,4 +91,5 @@ pub use context::ScanResult;
 pub use context::ScanContentHandle;
 pub use varmap::*;
 pub use extraction_pool::ExtractionHandle;
+pub use extraction_pool::ExtractionPool;
 

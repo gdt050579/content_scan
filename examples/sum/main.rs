@@ -19,37 +19,40 @@ impl ContentIdentifier<MyTypes> for TextIdentifier {
 }
 
 #[derive(Default)]
-struct NumericExtractor {
+struct ExtractData {
     pos: u64,
     start: u64,
     len: u64,
-    e: Entry,
+}
+#[derive(Default)]
+struct NumericExtractor {
+    e: ExtractionPool<ExtractData>,
 }
 impl ContentExtractor<MyTypes> for NumericExtractor {
     fn acquire(&mut self, _: &mut dyn Content<MyTypes>, _: &mut VarMap) -> Option<ExtractionHandle> {
-        self.pos = 0;
-        Some(ExtractionHandle::new(0, 0))
+        Some(self.e.acquire_slot(ExtractData { pos: 0, start: u64::MAX, len: 0 }))
     }
-    fn advance(&mut self, _: ExtractionHandle, content: &mut dyn Content<MyTypes>) -> Option<&Entry> {
-        self.start = u64::MAX;
-        while self.pos < content.size() {
-            if let Some(b) = content.read(self.pos, 1) {
+    fn advance(&mut self, handle: ExtractionHandle, content: &mut dyn Content<MyTypes>) -> Option<&Entry> {
+        let data = self.e.get_mut(handle)?;
+        data.start = u64::MAX;
+        while data.pos < content.size() {
+            if let Some(b) = content.read(data.pos, 1) {
                 if b[0].is_ascii_digit() {
-                    self.start = self.pos;
+                    data.start = data.pos;
                     break;
                 }
             }
-            self.pos += 1;
+            data.pos += 1;
         }
-        if self.start == u64::MAX {
+        if data.start == u64::MAX {
             return None;
         }
-        self.len = 0;
-        while self.pos < content.size() {
-            if let Some(b) = content.read(self.pos, 1) {
+        data.len = 0;
+        while data.pos < content.size() {
+            if let Some(b) = content.read(data.pos, 1) {
                 if b[0].is_ascii_digit() {
-                    self.len += 1;
-                    self.pos += 1;
+                    data.len += 1;
+                    data.pos += 1;
                 } else {
                     break;
                 }
@@ -57,22 +60,25 @@ impl ContentExtractor<MyTypes> for NumericExtractor {
                 break;
             }
         }
-        if self.len == 0 {
+        if data.len == 0 {
             return None;
         }
-        self.e.path = "number".to_string();
-        self.e.size = self.len;
-        Some(&self.e)
+        let len = data.len;
+        self.e.update_entry("number", len);
+        Some(&self.e.entry())
     }
-    fn extract(&mut self, _: ExtractionHandle, content: &mut dyn Content<MyTypes>) -> Option<Box<dyn Content<MyTypes>>> {
-        if let Some(buf) = content.read(self.start, self.len as u32) {
+    fn extract(&mut self, handle: ExtractionHandle, content: &mut dyn Content<MyTypes>) -> Option<Box<dyn Content<MyTypes>>> {
+        let data = self.e.get(handle)?;
+        if let Some(buf) = content.read(data.start, data.len as u32) {
             let extr = BufferContent::<MyTypes>::with_content_type(buf, "number", MyTypes::Number);
             Some(Box::new(extr))
         } else {
             None
         }
     }
-    fn release(&mut self, _: ExtractionHandle) {}
+    fn release(&mut self, handle: ExtractionHandle) {
+        self.e.release_slot(handle);
+    }
 }
 
 struct NumericAnalyzer;

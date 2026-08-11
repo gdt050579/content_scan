@@ -32,6 +32,7 @@ impl ExtractionHandle {
     }
 }
 
+#[derive(Default)]
 pub struct ExtractionPool<T> {
     entry: Entry,
     pool: Vec<Option<(u32, T)>>,
