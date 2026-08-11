@@ -69,6 +69,7 @@ mod utils;
 mod context;
 mod object;
 mod buffer_arena;
+mod extraction_pool;
 #[cfg(test)]
 mod tests;
 
@@ -89,4 +90,5 @@ pub use context::Context;
 pub use context::ScanResult;
 pub use context::ScanContentHandle;
 pub use varmap::*;
+pub use extraction_pool::ExtractionHandle;
 

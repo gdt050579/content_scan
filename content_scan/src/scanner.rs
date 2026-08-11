@@ -162,7 +162,7 @@ impl<T: ContentType> Scanner<T> {
             return NextAction::Continue;
         }
         let mut extractor = unsafe { self.extractors.get(index) };
-        if !extractor.init(content, &mut self.context.extract()) {
+        if !extractor.begin(content, &mut self.context.extract()) {
             return NextAction::Continue;
         }
         while let Some(entry) = unsafe { self.extractors.get(index).advance(content) } {

@@ -26,7 +26,7 @@ struct NumericExtractor {
     e: Entry,
 }
 impl ContentExtractor<MyTypes> for NumericExtractor {
-    fn init(&mut self, _: &mut dyn Content<MyTypes>, _: &mut VarMap) -> bool {
+    fn begin(&mut self, _: &mut dyn Content<MyTypes>, _: &mut VarMap) -> bool {
         self.pos = 0;
         true
     }
