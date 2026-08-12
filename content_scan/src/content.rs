@@ -301,14 +301,16 @@ pub struct FolderExtractor<T: ContentType> {
     pool: ExtractionPool<fs::ReadDir>,
     entry: crate::Entry,
     current_is_folder: bool,
+    recursive: bool,
 }
 impl<T: ContentType> FolderExtractor<T> {
-    pub fn new() -> Self {
+    pub fn new(recursive: bool) -> Self {
         Self {
             _marker: PhantomData,
             pool: ExtractionPool::new(4),
             entry: crate::Entry::default(),
-            current_is_folder: false
+            current_is_folder: false,
+            recursive,
         }
     }
 }
@@ -328,6 +330,7 @@ impl<T: ContentType + 'static> ContentExtractor<T> for FolderExtractor<T> {
             self.current_is_folder = ft.is_dir();
             let symlink = ft.is_symlink();
             if self.current_is_folder && symlink { continue; } // skip directory symlinks
+            if !self.recursive && self.current_is_folder { continue; } // skip folders if not recursive
             self.entry.path.clear();
             // to review (no allocation)
             self.entry.path.push_str(folder_ent.path().to_str().unwrap_or_default());
