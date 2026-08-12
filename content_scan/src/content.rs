@@ -220,6 +220,14 @@ impl<T: ContentType> FileContent<T> {
             size: fs::metadata(path).map(|m| m.len()).unwrap_or(0),
         }
     }
+    pub fn with_size(path: &str, size: u64) -> Self {
+        Self {
+            path: path.to_string(),
+            content_type: None,
+            status: FileContentStatus::NotOpened,
+            size,
+        }
+    }
     fn open(&mut self) {
         match RandomAccessFile::open(Path::new(&self.path), RandomAccessFlags::Exclusive) {
             Ok(reader) => match FileCache::new(CacheType::MemoryMap, reader) {
@@ -329,8 +337,12 @@ impl<T: ContentType + 'static> ContentExtractor<T> for FolderExtractor<T> {
             let ft = folder_ent.file_type().ok()?;
             self.current_is_folder = ft.is_dir();
             let symlink = ft.is_symlink();
-            if self.current_is_folder && symlink { continue; } // skip directory symlinks
-            if !self.recursive && self.current_is_folder { continue; } // skip folders if not recursive
+            if self.current_is_folder && symlink {
+                continue;
+            } // skip directory symlinks
+            if !self.recursive && self.current_is_folder {
+                continue;
+            } // skip folders if not recursive
             self.entry.path.clear();
             // to review (no allocation)
             self.entry.path.push_str(folder_ent.path().to_str().unwrap_or_default());
@@ -341,9 +353,9 @@ impl<T: ContentType + 'static> ContentExtractor<T> for FolderExtractor<T> {
 
     fn extract(&mut self, _: crate::ExtractionHandle, content: &mut dyn Content<T>) -> Option<Box<dyn Content<T>>> {
         if self.current_is_folder {
-            Some(Box::new(FolderContent::with_content_type(content.path(), content.content_type()?)))
+            Some(Box::new(FolderContent::with_content_type(&self.entry.path, content.content_type()?)))
         } else {
-            Some(Box::new(FileContent::new(content.path())))
+            Some(Box::new(FileContent::with_size(&self.entry.path, self.entry.size)))
         }
     }
 

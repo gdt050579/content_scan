@@ -61,7 +61,7 @@ impl<T: ContentType> Scanner<T> {
         let obj = Object {
             path: path_index,
             parent_index,
-            sibling_index: Object::INVALID_INDEX,
+            next_siblig_index: Object::INVALID_INDEX,
             varmap_index: Object::INVALID_INDEX,
             first_child_index: Object::INVALID_INDEX,
             last_child_index: Object::INVALID_INDEX,
@@ -79,11 +79,12 @@ impl<T: ContentType> Scanner<T> {
                     last_sibling_index = parent.last_child_index;
                 }
                 parent.last_child_index = my_index;
+                //println!("Parent: {}, Me: {}, First: {}, Last: {} -> {}", parent_index, my_index, parent.first_child_index, parent.last_child_index, content.path());
             }
         }
         if last_sibling_index != Object::INVALID_INDEX {
             if let Some(last_sibling) = self.context.objects.get_mut(last_sibling_index as usize) {
-                last_sibling.sibling_index = my_index;
+                last_sibling.next_siblig_index = my_index;
             }
         }
 
@@ -166,6 +167,7 @@ impl<T: ContentType> Scanner<T> {
             while let Some(entry) = unsafe { self.extractors.get(index).advance(handle, content) } {
                 if let Some(filter) = &self.filter {
                     if !filter.should_process(&entry.path, entry.size) {
+                        println!("Skip: {:?}", &entry.path);
                         continue;
                     }
                 }

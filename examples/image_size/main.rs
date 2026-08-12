@@ -2,9 +2,14 @@ mod bmp;
 mod jpeg;
 mod png;
 
+use content_scan::*;
 use std::path::Path;
 
-use content_scan::*;
+#[derive(Debug, Copy, Clone, Eq, PartialEq, VarMapValue)]
+pub struct Size {
+    pub width: u32,
+    pub height: u32,
+}
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, ContentType)]
 #[repr(u16)]
@@ -13,6 +18,26 @@ pub enum ImageType {
     Bmp,
     Jpeg,
     Folder,
+}
+
+fn print_results(result: &ScanResult<ImageType>, handle: ScanContentHandle, depth: i32) {
+    let path = result.path(handle);
+    let content_type = result.content_type(handle);
+    for _ in 0..depth {
+        print!("  ");
+    }
+    print!("{} [{:?}]", path.unwrap(), content_type);
+    if let Some(size) = result.local(handle).and_then(|v| v.get::<Size>(var!("size"))) {
+        println!("  => {} x {}", size.width, size.height);
+    } else {
+        println!("");
+    }
+    if let Some(child) = result.child(handle) {
+        print_results(result, child, depth + 1);
+    }
+    if let Some(next) = result.next_sibling(handle) {
+        print_results(result, next, depth);
+    }
 }
 
 fn main() {
@@ -24,6 +49,12 @@ fn main() {
         }
     };
     let mut scanner = ScannerBuilder::new()
+        .filter(
+            FilterBuilder::new()
+                .include_extensions(Precedence::Medium, &[".jpg", ".bmp", ".png"])
+                .deny_the_rest()
+                .build(),
+        )
         .add_identifier(ImageType::Png, png::PngIdentifier {})
         .add_analyzer(ImageType::Png, 0, png::PngAnalyzer {})
         .add_identifier(ImageType::Bmp, bmp::BmpIdentifier {})
@@ -33,7 +64,7 @@ fn main() {
         .add_extractor(ImageType::Folder, 0, FolderExtractor::<ImageType>::new(false))
         .build();
 
-    let res = if  Path::new(&path).is_dir() {
+    let res = if Path::new(&path).is_dir() {
         let mut content = FolderContent::<ImageType>::with_content_type(&path, ImageType::Folder);
         scanner.scan(&mut content)
     } else {
@@ -41,17 +72,8 @@ fn main() {
         scanner.scan(&mut content)
     };
 
-
     println!("Scanned : {} files", res.objects_scanned());
-    println!("Type    : {:?}", res.content_type(res.root().unwrap()));
-    println!("Path    : {:?}", res.path(res.root().unwrap()));
-    match (
-        res.global().get::<u32>(var!("width")),
-        res.global().get::<u32>(var!("height")),
-    ) {
-        (Some(w), Some(h)) => println!("{w}x{h}"),
-        _ => {
-            println!("failed to determine image size for '{path}'");
-        }
+    if res.objects_scanned() > 0 {
+        print_results(&res, res.root().unwrap(), 0);
     }
 }

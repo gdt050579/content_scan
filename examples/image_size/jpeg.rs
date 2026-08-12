@@ -1,5 +1,5 @@
 use content_scan::*;
-
+use crate::Size;
 use crate::ImageType;
 
 pub struct JpegIdentifier;
@@ -61,10 +61,9 @@ impl ContentAnalyzer<ImageType> for JpegAnalyzer {
                 if dim.len() < 4 {
                     break;
                 }
-                let h = u16::from_be_bytes([dim[0], dim[1]]);
+                let h = u16::from_be_bytes([dim[0], dim[1]]) as u32;
                 let w = u16::from_be_bytes([dim[2], dim[3]]);
-                context.global().set(var!("width"), w as u32);
-                context.global().set(var!("height"), h as u32);
+                context.local().set(var!("size"), Size { width: w as u32, height: h as u32 });
                 return NextAction::Continue;
             }
 

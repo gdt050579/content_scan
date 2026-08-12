@@ -1,5 +1,5 @@
 use content_scan::*;
-
+use crate::Size;
 use crate::ImageType;
 
 pub struct PngIdentifier;
@@ -24,8 +24,7 @@ impl ContentAnalyzer<ImageType> for PngAnalyzer {
         }
         let w = u32::from_le_bytes(d[16..20].try_into().unwrap());
         let h = u32::from_le_bytes(d[20..24].try_into().unwrap());
-        context.global().set(var!("width"), w);
-        context.global().set(var!("height"), h);
+        context.local().set(var!("size"), Size { width: w, height: h });
         NextAction::Continue
     }
 }

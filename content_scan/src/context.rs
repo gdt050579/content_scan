@@ -221,10 +221,10 @@ impl<'a, T: ContentType> ScanResult<'a, T> {
     /// ```
     pub fn next_sibling(&self, handle: ScanContentHandle) -> Option<ScanContentHandle> {
         let object = self.context.objects.get(handle.index as usize)?;
-        if object.sibling_index as usize >= self.context.objects.len() {
+        if object.next_siblig_index as usize >= self.context.objects.len() {
             None
         } else {
-            Some(ScanContentHandle { index: object.sibling_index })
+            Some(ScanContentHandle { index: object.next_siblig_index })
         }
     }
 
