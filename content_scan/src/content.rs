@@ -1,5 +1,7 @@
 use filecache::*;
-use std::{fmt::Debug, fs, path::Path};
+use std::{fmt::Debug, fs, marker::PhantomData, path::Path};
+
+use crate::{ContentExtractor, ExtractionPool};
 
 /// Enumeration of content kinds understood by a scanner.
 ///
@@ -193,7 +195,7 @@ impl<T: ContentType> Content<T> for BufferContent<T> {
 enum FileContentStatus {
     NotOpened,
     Opened(FileCache<filecache::RandomAccessFile>),
-    Error
+    Error,
 }
 pub struct FileContent<T: ContentType> {
     path: String,
@@ -223,14 +225,14 @@ impl<T: ContentType> FileContent<T> {
             Ok(reader) => match FileCache::new(CacheType::MemoryMap, reader) {
                 Ok(file) => {
                     self.status = FileContentStatus::Opened(file);
-                },
+                }
                 Err(_) => {
                     self.status = FileContentStatus::Error;
-                },
+                }
             },
             Err(_) => {
                 self.status = FileContentStatus::Error;
-            },
+            }
         }
     }
 }
@@ -263,5 +265,76 @@ impl<T: ContentType> Content<T> for FileContent<T> {
             FileContentStatus::Opened(file) => file.read(offset, count as usize).ok(),
             FileContentStatus::NotOpened | FileContentStatus::Error => None,
         }
+    }
+}
+pub struct FolderContent<T: ContentType> {
+    path: String,
+    content_type: T,
+}
+impl<T: ContentType> FolderContent<T> {
+    pub fn with_content_type(path: &str, content_type: T) -> Self {
+        Self {
+            path: path.to_string(),
+            content_type,
+        }
+    }
+}
+impl<T: ContentType> Content<T> for FolderContent<T> {
+    fn path(&self) -> &str {
+        &self.path
+    }
+
+    fn size(&self) -> u64 {
+        0
+    }
+
+    fn read(&mut self, _: u64, _: u32) -> Option<&[u8]> {
+        None
+    }
+
+    fn content_type(&self) -> Option<T> {
+        Some(self.content_type)
+    }
+}
+pub struct FolderExtractor<T: ContentType> {
+    _marker: PhantomData<T>,
+    pool: ExtractionPool<fs::ReadDir>,
+    entry: crate::Entry,
+    current_is_folder: bool,
+}
+impl<T: ContentType + 'static> ContentExtractor<T> for FolderExtractor<T> {
+    fn acquire(&mut self, content: &mut dyn Content<T>, _: &mut varmap::VarMap) -> Option<crate::ExtractionHandle> {
+        let obj = fs::read_dir(content.path()).ok()?;
+        Some(self.pool.acquire_slot(obj))
+    }
+
+    fn advance(&mut self, handle: crate::ExtractionHandle, _: &mut dyn Content<T>) -> Option<&crate::Entry> {
+        let Some(rd) = self.pool.get_mut(handle) else {
+            return None;
+        };
+        loop {
+            let folder_ent = rd.next()?.ok()?;
+            let ft = folder_ent.file_type().ok()?;
+            self.current_is_folder = ft.is_dir();
+            let symlink = ft.is_symlink();
+            if self.current_is_folder && symlink { continue; } // skip directory symlinks
+            self.entry.path.clear();
+            // to review (no allocation)
+            self.entry.path.push_str(folder_ent.path().to_str().unwrap_or_default());
+            self.entry.size = 0; // folder
+            return Some(&self.entry);
+        }
+    }
+
+    fn extract(&mut self, _: crate::ExtractionHandle, content: &mut dyn Content<T>) -> Option<Box<dyn Content<T>>> {
+        if self.current_is_folder {
+            Some(Box::new(FolderContent::with_content_type(content.path(), content.content_type()?)))
+        } else {
+            Some(Box::new(FileContent::new(content.path())))
+        }
+    }
+
+    fn release(&mut self, handle: crate::ExtractionHandle) {
+        self.pool.release_slot(handle);
     }
 }
