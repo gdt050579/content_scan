@@ -109,11 +109,7 @@ pub trait ContentExtractor<T: ContentType> {
     /// `None` to skip this extractor entirely for the current parent.
     /// Every successful acquire is paired with a later
     /// [`release`](Self::release) on the same handle.
-    fn acquire(
-        &mut self,
-        content: &mut dyn Content<T>,
-        extract_context: &mut VarMap,
-    ) -> Option<ExtractionHandle>;
+    fn acquire(&mut self, content: &mut dyn Content<T>, extract_context: &mut VarMap) -> Option<ExtractionHandle>;
 
     /// Advances the session identified by `handle` to the next entry.
     ///
@@ -122,11 +118,7 @@ pub trait ContentExtractor<T: ContentType> {
     /// The scanner may consult the entry's path and size against the
     /// active [`Filter`](crate::Filter) and skip the following
     /// [`extract`](Self::extract) call accordingly.
-    fn advance(
-        &mut self,
-        handle: ExtractionHandle,
-        content: &mut dyn Content<T>,
-    ) -> Option<&Entry>;
+    fn advance(&mut self, handle: ExtractionHandle, content: &mut dyn Content<T>) -> Option<&Entry>;
 
     /// Materializes the [`Content`] for the entry most recently
     /// announced by [`advance`](Self::advance) on `handle`.
@@ -134,11 +126,7 @@ pub trait ContentExtractor<T: ContentType> {
     /// Returning `None` skips the current entry without aborting the
     /// enumeration (the scanner will still call `advance` again to
     /// look for the following entry).
-    fn extract(
-        &mut self,
-        handle: ExtractionHandle,
-        content: &mut dyn Content<T>,
-    ) -> Option<Box<dyn Content<T>>>;
+    fn extract(&mut self, handle: ExtractionHandle, content: &mut dyn Content<T>) -> Option<Box<dyn Content<T>>>;
 
     /// Ends the extraction session identified by `handle`.
     ///
@@ -148,7 +136,6 @@ pub trait ContentExtractor<T: ContentType> {
     /// cursors, pooled buffers, …) keyed by the handle.
     fn release(&mut self, handle: ExtractionHandle);
 }
-
 
 /// Fast, declarative way to identify a content type without running
 /// custom code.

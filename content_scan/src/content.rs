@@ -302,6 +302,16 @@ pub struct FolderExtractor<T: ContentType> {
     entry: crate::Entry,
     current_is_folder: bool,
 }
+impl<T: ContentType> FolderExtractor<T> {
+    pub fn new() -> Self {
+        Self {
+            _marker: PhantomData,
+            pool: ExtractionPool::new(4),
+            entry: crate::Entry::default(),
+            current_is_folder: false
+        }
+    }
+}
 impl<T: ContentType + 'static> ContentExtractor<T> for FolderExtractor<T> {
     fn acquire(&mut self, content: &mut dyn Content<T>, _: &mut varmap::VarMap) -> Option<crate::ExtractionHandle> {
         let obj = fs::read_dir(content.path()).ok()?;
