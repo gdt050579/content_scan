@@ -15,8 +15,8 @@ use varmap::VarMap;
 ///   be inspected via [`ScanResult::global`] after the scan finishes.
 /// - **[`extract`](Self::extract)** – lives for the duration of a
 ///   single extraction pass. Handed to
-///   [`ContentExtractor::init`](crate::ContentExtractor::init) so an
-///   extractor can hold per-run state without allocating.
+///   [`ContentExtractor::acquire`](crate::ContentExtractor::acquire) so
+///   an extractor can hold per-run state without allocating.
 /// - **[`local`](Self::local)** – attached to the currently scanned
 ///   content object. Retrievable per object from the result tree via
 ///   [`ScanResult::local`].

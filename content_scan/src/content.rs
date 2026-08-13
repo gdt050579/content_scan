@@ -197,6 +197,14 @@ enum FileContentStatus {
     Opened(FileCache<filecache::RandomAccessFile>),
     Error,
 }
+
+/// A [`Content`] backed by a file on disk.
+///
+/// The file is opened and memory-mapped lazily, on the first
+/// [`read`](Content::read); constructing a `FileContent` for a file
+/// that is never read costs nothing but the path. A file that cannot
+/// be opened behaves like an empty content: `size()` is `0` and every
+/// read returns `None`.
 pub struct FileContent<T: ContentType> {
     path: String,
     content_type: Option<T>,
@@ -204,6 +212,11 @@ pub struct FileContent<T: ContentType> {
     size: u64,
 }
 impl<T: ContentType> FileContent<T> {
+    /// Creates a `FileContent` for `path`, querying its size upfront.
+    ///
+    /// The content type is left unset, so the scanner identifies it
+    /// automatically. A path that cannot be stat'ed yields a size of
+    /// `0`.
     pub fn new(path: &str) -> Self {
         Self {
             path: path.to_string(),
@@ -212,6 +225,11 @@ impl<T: ContentType> FileContent<T> {
             size: fs::metadata(path).map(|m| m.len()).unwrap_or(0),
         }
     }
+
+    /// Creates a `FileContent` pinned to a known content type.
+    ///
+    /// The scanner skips identification and dispatches directly to the
+    /// plugins registered for `content_type`.
     pub fn with_content_type(path: &str, content_type: T) -> Self {
         Self {
             path: path.to_string(),
@@ -220,6 +238,13 @@ impl<T: ContentType> FileContent<T> {
             size: fs::metadata(path).map(|m| m.len()).unwrap_or(0),
         }
     }
+
+    /// Creates a `FileContent` with a size the caller already knows.
+    ///
+    /// Unlike [`new`](Self::new), this does not touch the filesystem at
+    /// construction time. Use it when the size comes from something
+    /// that has already been read — a directory entry's metadata, an
+    /// index, a manifest — to avoid a redundant `stat`.
     pub fn with_size(path: &str, size: u64) -> Self {
         Self {
             path: path.to_string(),
@@ -275,11 +300,27 @@ impl<T: ContentType> Content<T> for FileContent<T> {
         }
     }
 }
+/// A [`Content`] standing for a directory rather than a byte stream.
+///
+/// It carries only a path: [`size`](Content::size) is always `0` and
+/// [`read`](Content::read) always returns `None`. Its purpose is to
+/// give the scanner an object it can dispatch on, so that a
+/// [`FolderExtractor`] registered for the same content type can
+/// enumerate the directory's entries.
+///
+/// The content type is mandatory (there is nothing to identify a
+/// directory by), and callers supply a variant of their own enum:
+///
+/// ```ignore
+/// let mut root = FolderContent::<MyTypes>::with_content_type("./src", MyTypes::Folder);
+/// let result = scanner.scan(&mut root, false);
+/// ```
 pub struct FolderContent<T: ContentType> {
     path: String,
     content_type: T,
 }
 impl<T: ContentType> FolderContent<T> {
+    /// Creates a `FolderContent` for `path`, tagged as `content_type`.
     pub fn with_content_type(path: &str, content_type: T) -> Self {
         Self {
             path: path.to_string(),
@@ -304,6 +345,36 @@ impl<T: ContentType> Content<T> for FolderContent<T> {
         Some(self.content_type)
     }
 }
+/// A [`ContentExtractor`] that enumerates the entries of a directory.
+///
+/// Register it for the same content type the parent
+/// [`FolderContent`] carries, and the scanner will walk the directory
+/// tree for you:
+///
+/// ```ignore
+/// let mut scanner = ScannerBuilder::<MyTypes>::new()
+///     .add_extractor(MyTypes::Folder, 0, FolderExtractor::<MyTypes>::new(true))
+///     .build();
+/// ```
+///
+/// Each entry becomes a child content object: files are emitted as
+/// [`FileContent`] built with [`FileContent::with_size`] (reusing the
+/// size from the directory entry, so no extra `stat` is needed), and
+/// subdirectories as [`FolderContent`] carrying the parent's content
+/// type — which is what makes the walk recurse through this same
+/// extractor.
+///
+/// Notable behaviour:
+///
+/// - Symbolic links to directories are skipped, so link cycles cannot
+///   make the walk loop forever.
+/// - Subdirectory entries set
+///   [`Entry::skip_from_filtering`](crate::Entry::skip_from_filtering),
+///   so a [`Filter`](crate::Filter) restricted to certain file
+///   extensions narrows the files without blocking the descent.
+/// - Depth is bounded by the scanner's
+///   [`max_depth`](crate::ScannerBuilder::max_depth), which here
+///   counts directory nesting levels.
 pub struct FolderExtractor<T: ContentType> {
     _marker: PhantomData<T>,
     pool: ExtractionPool<fs::ReadDir>,
@@ -312,6 +383,11 @@ pub struct FolderExtractor<T: ContentType> {
     recursive: bool,
 }
 impl<T: ContentType> FolderExtractor<T> {
+    /// Creates a folder extractor.
+    ///
+    /// When `recursive` is `false`, subdirectories are not emitted at
+    /// all and only the files directly inside the parent folder are
+    /// scanned.
     pub fn new(recursive: bool) -> Self {
         Self {
             _marker: PhantomData,

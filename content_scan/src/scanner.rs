@@ -33,11 +33,19 @@ impl<T: ContentType> Scanner<T> {
     /// 1. Clears its internal [`Context`] so that no state leaks
     ///    between calls.
     /// 2. Applies the configured [`Filter`], if any, to the top-level
-    ///    content. If the filter rejects it, the returned
-    ///    [`ScanResult`] contains no objects.
+    ///    content — but only when `filter_root` is `true`. If the
+    ///    filter rejects it, the returned [`ScanResult`] contains no
+    ///    objects.
     /// 3. Recursively identifies, analyzes, and extracts nested
     ///    content up to the configured
     ///    [`max_depth`](ScannerBuilder::max_depth).
+    ///
+    /// Pass `filter_root = false` when the root is a container the
+    /// filter was not written to accept, such as a
+    /// [`FolderContent`](crate::FolderContent) scanned with a filter
+    /// that only allows certain file extensions. Extracted children
+    /// are filtered either way, unless their
+    /// [`Entry`](crate::Entry) sets `skip_from_filtering`.
     ///
     /// The returned [`ScanResult`] borrows from `self` and stays
     /// valid until the next call on this scanner. Copy anything you

@@ -9,6 +9,7 @@ Typical use cases:
 - File-type / MIME-like detection based on magic bytes, extensions or file names.
 - Static analysis pipelines (metrics, heuristics, feature extraction).
 - Recursive scanning of container formats (archives, bundles, embedded blobs) with a configurable depth limit.
+- Walking a directory tree and scanning every file in it (`FolderContent` + `FolderExtractor`).
 - Building custom "scanners" (antivirus-like tools, indexers, linters, forensics tools, …) on top of a common core.
 
 > Status: early / experimental (`0.1.x`).
@@ -32,6 +33,8 @@ Typical use cases:
     - [`ContentIdentifier`](#contentidentifier)
     - [`ContentAnalyzer`](#contentanalyzer)
     - [`ContentExtractor`](#contentextractor)
+    - [`ExtractionPool`](#extractionpool)
+    - [Walking the file system](#walking-the-file-system)
     - [`Filter` / `FilterBuilder`](#filter--filterbuilder)
     - [`Scanner` / `ScannerBuilder`](#scanner--scannerbuilder)
   - [`Context` / `ScanResult`](#context--scanresult)
@@ -61,10 +64,10 @@ You normally only depend on `content_scan` — the proc-macro is re-exported for
 The framework is built around a few small traits:
 
 - **`ContentType`** — a `#[repr(u16)]` enum describing the kinds of content your scanner knows about. Derived with `#[derive(ContentType)]`.
-- **`Content<T>`** — an abstract, seekable, read-only byte source with a path and a size. Ready-made `BufferContent<T>` (in-memory) and `FileContent<T>` (memory-mapped file) implementations are provided.
+- **`Content<T>`** — an abstract, seekable, read-only byte source with a path and a size. Ready-made `BufferContent<T>` (in-memory), `FileContent<T>` (memory-mapped file) and `FolderContent<T>` (a directory, used as a container) implementations are provided.
 - **`ContentIdentifier<T>`** — decides *what* a piece of content is (by magic bytes, extension, or file name) and validates the guess.
 - **`ContentAnalyzer<T>`** — reads content and produces information (stored in a shared `Context`).
-- **`ContentExtractor<T>`** — pulls sub-contents out of a container through an `acquire` / `advance` / `extract` / `release` session keyed by an `ExtractionHandle`, then hands children back to the scanner for recursion.
+- **`ContentExtractor<T>`** — pulls sub-contents out of a container through an `acquire` / `advance` / `extract` / `release` session keyed by an `ExtractionHandle`, then hands children back to the scanner for recursion. `ExtractionPool<T>` is the helper that mints those handles and stores the per-session state behind them. `FolderExtractor<T>` is a ready-made extractor that enumerates a directory.
 - **`Filter`** — decides which paths / sizes should be processed at all.
 - **`Scanner<T>`** — the orchestrator; built via `ScannerBuilder<T>`.
 - **`ScanResult<T>` / `ScanContentHandle`** — after a scan, the framework exposes the full **tree** of visited objects (parent / child / sibling links), each with its interned path, resolved content type and its own local `VarMap`.
@@ -109,7 +112,8 @@ fn main() {
         .build();
 
     let mut content = BufferContent::<MyType>::new(b"...", "input.bin");
-    let result = scanner.scan(&mut content);
+    // the second argument decides whether the Filter is applied to the root object itself
+    let result = scanner.scan(&mut content, true);
 
     println!("scanned {} objects", result.objects_scanned());
 }
@@ -125,6 +129,7 @@ The [`examples/`](examples) directory contains runnable programs. From the works
 cargo run --example vowals
 cargo run --example sum
 cargo run --example image_size -- path/to/image.png
+cargo run --example image_size -- path/to/folder
 ```
 
 ### Counting vowels
@@ -175,14 +180,14 @@ fn main() {
     let mut b = BufferContent::<MyType>::with_content_type(
         b"TXBF   Hellow World !", "test.txt", MyType::TextBuffer,
     );
-    let res = scanner.scan(&mut b);
+    let res = scanner.scan(&mut b, true);
     println!("count_vowels: {}", res.global().get::<u32>(var!("count_vowels")).unwrap());
 }
 ```
 
 ### Summing numbers extracted from text
 
-This example shows the full pipeline — a text container is *identified* by magic bytes, an *extractor* pulls numeric substrings out of it as independent `Number` contents, and a numeric *analyzer* both sums them into a shared **global** variable and stashes each value into a per-object **local** `VarMap`. After the scan, the example walks the resulting tree via `ScanResult`. See [`examples/sum/main.rs`](examples/sum/main.rs).
+This example shows the full pipeline — a text container is *identified* by magic bytes, an *extractor* pulls numeric substrings out of it as independent `Number` contents, and a numeric *analyzer* both sums them into a shared **global** variable and stashes each value into a per-object **local** `VarMap`. After the scan, the example walks the resulting tree via `ScanResult`. The extractor keeps its cursor in an [`ExtractionPool`](#extractionpool), so it can be re-entered while a previous session is still open. See [`examples/sum/main.rs`](examples/sum/main.rs).
 
 ```rust
 struct NumericAnalyzer;
@@ -211,7 +216,7 @@ fn main() {
         .build();
 
     let mut b = BufferContent::<MyTypes>::new(b"TXT   1+2+3=", "test.txt");
-    let res = scanner.scan(&mut b);
+    let res = scanner.scan(&mut b, true);
     println!("sum: {}", res.global().get::<u32>(var!("sum")).unwrap_or(0)); // -> 6
 
     // Walk the scan tree: root ("test.txt") -> children ("number", "number", "number")
@@ -231,12 +236,39 @@ fn main() {
 
 ### Reading PNG / BMP / JPEG dimensions
 
-The [`image_size`](examples/image_size) example registers one identifier + analyzer pair per image format (`png.rs`, `bmp.rs`, `jpeg.rs`), scans a file via `FileContent`, and prints `{width}x{height}` from the global `VarMap`:
+The [`image_size`](examples/image_size) example registers one identifier + analyzer pair per image format (`png.rs`, `bmp.rs`, `jpeg.rs`) and each analyzer stores a `Size { width, height }` in the object's **local** `VarMap`. It accepts either a single file or a whole directory:
 
 ```bash
 cargo run --example image_size -- photo.jpg
-# -> 1920x1080
+cargo run --example image_size -- ./pictures
 ```
+
+A file is wrapped in a `FileContent` and scanned directly. A directory is wrapped in a `FolderContent` tagged with the user's own `ImageType::Folder` variant, and a `FolderExtractor` registered for that type turns each directory entry into a child content object:
+
+```rust
+let mut scanner = ScannerBuilder::new()
+    .filter(
+        FilterBuilder::new()
+            .include_extensions(Precedence::Medium, &["jpg", "bmp", "png"])
+            .deny_the_rest()
+            .build(),
+    )
+    .add_identifier(ImageType::Png, png::PngIdentifier {})
+    .add_analyzer(ImageType::Png, 0, png::PngAnalyzer {})
+    // ...bmp / jpeg...
+    .add_extractor(ImageType::Folder, 0, FolderExtractor::<ImageType>::new(false))
+    .build();
+
+let res = if Path::new(&path).is_dir() {
+    let mut content = FolderContent::<ImageType>::with_content_type(&path, ImageType::Folder);
+    scanner.scan(&mut content, false)  // don't filter the root: a folder has no image extension
+} else {
+    let mut content = FileContent::<ImageType>::new(&path);
+    scanner.scan(&mut content, true)
+};
+```
+
+Note the `false` passed to `scan` for the directory case: the filter only allows image extensions, so applying it to the root folder would reject the scan before it starts. The example then prints the resulting tree, indented by depth, with `{width} x {height}` next to every recognized image.
 
 ---
 
@@ -274,7 +306,7 @@ pub trait Content<T: ContentType> {
 
 A `Content` is any addressable byte source. It exposes a logical `path` (used for identification and filtering), a `size`, and a `read(offset, count)` method that returns a borrowed slice.
 
-An in-memory implementation and a file-backed one are provided:
+Three implementations ship with the crate — an in-memory one, a file-backed one, and a directory marker:
 
 ```rust
 BufferContent::<MyType>::new(buffer, "path.ext");
@@ -283,7 +315,14 @@ BufferContent::<MyType>::from_parts(vec, "path".into(), Some(MyType::Text));
 
 FileContent::<MyType>::new("path/to/file.bin");
 FileContent::<MyType>::with_content_type("path/to/file.bin", MyType::Text);
+FileContent::<MyType>::with_size("path/to/file.bin", 4096);   // size already known, skip the stat
+
+FolderContent::<MyType>::with_content_type("path/to/dir", MyType::Folder);
 ```
+
+`FileContent` opens and memory-maps the file lazily, on the first `read()`. `with_size` is useful when the size is already known (a directory walk has just stat'ed the entry, for instance) and you want to avoid a second filesystem call.
+
+`FolderContent` represents a directory rather than bytes: its `size()` is `0` and `read()` always returns `None`. It always reports the content type you give it, so the scanner dispatches straight to the extractor registered for that type — see [Walking the file system](#walking-the-file-system).
 
 You can also implement `Content<T>` for memory-mapped regions, network streams, archive entries, etc.
 
@@ -357,22 +396,96 @@ pub trait ContentExtractor<T: ContentType> {
 pub struct Entry {
     pub path: String,
     pub size: u64,
+    pub skip_from_filtering: bool,
 }
 
 pub struct ExtractionHandle { /* opaque */ }
-impl ExtractionHandle {
-    pub const fn new(index: u32, uid: u32) -> Self;
-}
 ```
 
 Extractors turn a container into a stream of children, driven as a short session keyed by an opaque `ExtractionHandle`:
 
-1. `acquire` — called once per parent. Receives a scratch `VarMap` (`context.extract()`) valid until the next object is scanned. Return `Some(handle)` to start the session, or `None` to skip this extractor. Simple extractors that only run one session at a time can return a constant handle such as `ExtractionHandle::new(0, 0)`.
+1. `acquire` — called once per parent. Receives a scratch `VarMap` (`context.extract()`) valid until the next object is scanned. Return `Some(handle)` to start the session, or `None` to skip this extractor. Handles are minted by an [`ExtractionPool`](#extractionpool); `ExtractionHandle` is opaque and cannot be constructed directly.
 2. `advance` — advances the session to the next child and returns a lightweight `Entry` describing its path/size. Returning `None` ends the stream.
-3. `extract` — materializes the current child as a boxed `Content<T>`. The scanner then recursively scans it (subject to `max_depth`).
+3. `extract` — materializes the current child as a boxed `Content<T>`. The scanner then recursively scans it (subject to `max_depth`). Returning `None` skips just this entry; enumeration continues with the next `advance`.
 4. `release` — called exactly once for every successfully acquired handle (including when the scan stops early via `NextAction::Skip` / `NextAction::Exit`). Use it to free per-session resources.
 
+Set `Entry::skip_from_filtering` to `true` to exempt an entry from the active `Filter`. This matters for container entries that would never pass the filter themselves: a `FolderExtractor` restricted to `*.png` files, for example, still has to descend into subdirectories, whose names carry no `.png` extension.
+
 The handle lets one extractor instance keep per-session state even when extractions nest or interleave. Extractors are registered with `add_extractor` / `add_generic_extractor`, mirroring analyzers.
+
+### `ExtractionPool`
+
+Because one extractor instance is shared by every object of its type, per-session state cannot live in plain fields — a nested or re-entered extraction would overwrite it. `ExtractionPool<T>` solves this: it stores one `T` per live session and hands back the `ExtractionHandle` that identifies it.
+
+```rust
+pub struct ExtractionPool<T> { /* ... */ }
+
+impl<T> ExtractionPool<T> {
+    pub fn new(capacity: usize) -> Self;
+    pub fn acquire_slot(&mut self, obj: T) -> ExtractionHandle;
+    pub fn release_slot(&mut self, handle: ExtractionHandle);
+    pub fn get(&self, handle: ExtractionHandle) -> Option<&T>;
+    pub fn get_mut(&mut self, handle: ExtractionHandle) -> Option<&mut T>;
+
+    // convenience storage for the Entry returned by `advance`
+    pub fn entry(&self) -> &Entry;
+    pub fn update_entry(&mut self, path: &str, size: u64);
+}
+```
+
+Slots are recycled through a free list, and every handle carries a monotonically increasing uid, so a stale handle whose slot has already been reused resolves to `None` instead of silently aliasing another session's data. The pool also owns a reusable `Entry` you can fill in from `advance` via `update_entry`, which avoids re-allocating the path `String` on every entry.
+
+```rust
+struct ExtractData { pos: u64, start: u64, len: u64 }
+
+#[derive(Default)]
+struct NumericExtractor {
+    e: ExtractionPool<ExtractData>,
+}
+
+impl ContentExtractor<MyTypes> for NumericExtractor {
+    fn acquire(&mut self, _: &mut dyn Content<MyTypes>, _: &mut VarMap) -> Option<ExtractionHandle> {
+        Some(self.e.acquire_slot(ExtractData { pos: 0, start: u64::MAX, len: 0 }))
+    }
+    fn advance(&mut self, handle: ExtractionHandle, content: &mut dyn Content<MyTypes>) -> Option<&Entry> {
+        let data = self.e.get_mut(handle)?;
+        // ...scan forward through `content`, updating `data`...
+        self.e.update_entry("number", len);
+        Some(self.e.entry())
+    }
+    fn extract(&mut self, handle: ExtractionHandle, content: &mut dyn Content<MyTypes>) -> Option<Box<dyn Content<MyTypes>>> {
+        let data = self.e.get(handle)?;
+        let buf = content.read(data.start, data.len as u32)?;
+        Some(Box::new(BufferContent::<MyTypes>::with_content_type(buf, "number", MyTypes::Number)))
+    }
+    fn release(&mut self, handle: ExtractionHandle) {
+        self.e.release_slot(handle);
+    }
+}
+```
+
+### Walking the file system
+
+`FolderExtractor<T>` is a built-in extractor that enumerates a directory and emits one child per entry. Pair it with a `FolderContent` root and a `ContentType` variant of your own that stands for "directory":
+
+```rust
+let mut scanner = ScannerBuilder::<MyType>::new()
+    .add_extractor(MyType::Folder, 0, FolderExtractor::<MyType>::new(true)) // true = recursive
+    .add_identifier(MyType::Png, PngIdentifier {})
+    .add_analyzer(MyType::Png, 0, PngAnalyzer {})
+    .build();
+
+let mut root = FolderContent::<MyType>::with_content_type("C:/pictures", MyType::Folder);
+let res = scanner.scan(&mut root, false);
+```
+
+Behaviour worth knowing:
+
+- The `recursive` flag passed to `new` decides whether subdirectories are emitted at all. When `false`, only files directly inside the folder are scanned.
+- Subdirectories are emitted as `FolderContent` carrying the **same** content type as their parent, so the same extractor picks them up again. Files become `FileContent` built with `with_size`, reusing the size from the directory entry's metadata.
+- Directory symlinks are skipped, which keeps cyclic link structures from looping forever.
+- Subdirectory entries are marked `skip_from_filtering`, so an extension-based `Filter` narrows down the files without preventing the walk from descending.
+- Recursion is still bounded by the scanner's `max_depth` (default `8`), which here translates into directory nesting levels.
 
 ### `Filter` / `FilterBuilder`
 
@@ -429,10 +542,14 @@ let scanner = ScannerBuilder::<MyType>::new()
 Then scan:
 
 ```rust
-let result: ScanResult = scanner.scan(&mut content);
+let result: ScanResult = scanner.scan(&mut content, /* filter_root */ true);
 ```
 
 `max_depth` limits how deep the scanner is allowed to recurse into extracted children (default `8`, minimum `1`).
+
+The second argument to `scan` decides whether the configured `Filter` is applied to the root object itself. Pass `true` for a normal file — the scan then returns an empty `ScanResult` if the filter rejects it. Pass `false` when the root is a container that the filter was never written to accept, such as a folder being walked with a filter that only allows `png` files. Extracted children are always filtered regardless of this flag (unless their `Entry` opts out via `skip_from_filtering`).
+
+A scanner is reusable: `scan` clears its internal `Context` on entry, so one instance can process many inputs in sequence.
 
 ### `Context` / `ScanResult`
 
@@ -447,12 +564,19 @@ The `Context` passed to analyzers exposes three `VarMap`s (from the [`varmap`](h
 After `scan()` returns, you can read results from the `ScanResult<T>`. In addition to the classic aggregate view, it also exposes the full **tree of scanned objects**:
 
 ```rust
-let res = scanner.scan(&mut content);
+let res = scanner.scan(&mut content, true);
 let sum = res.global().get::<u32>(var!("sum")).unwrap_or(0);
 println!("scanned {} objects, sum = {}", res.objects_scanned(), sum);
 ```
 
-`var!("name")` is a compile-time typed key macro provided by `varmap`.
+`var!("name")` is a compile-time typed key macro provided by `varmap`. Custom types can be stored in a `VarMap` by deriving `VarMapValue`, which is re-exported from `content_scan` as well:
+
+```rust
+#[derive(Debug, Copy, Clone, Eq, PartialEq, VarMapValue)]
+pub struct Size { pub width: u32, pub height: u32 }
+
+context.local().set(var!("size"), Size { width, height });
+```
 
 ### Navigating the scan result tree
 
@@ -510,7 +634,7 @@ Because paths and local `VarMap`s live in pools owned by the scanner's `Context`
 
 For every scanned object, the scanner performs the following steps (see [`content_scan/src/scanner.rs`](content_scan/src/scanner.rs)):
 
-1. **Top-level filter check.** If a `Filter` is configured, the root content is tested first; if rejected, the scan returns immediately.
+1. **Top-level filter check.** If a `Filter` is configured *and* `scan` was called with `filter_root = true`, the root content is tested first; if rejected, the scan returns immediately with an empty result.
 2. **Type resolution.** If the content already reports a `content_type()`, it is used as-is. Otherwise the scanner tries, in order:
    1. magic bytes (first 16 bytes),
    2. exact file name,
@@ -519,7 +643,7 @@ For every scanned object, the scanner performs the following steps (see [`conten
    Each candidate is confirmed via the corresponding identifier's `validate()` method.
 3. **Type-specific analyzers** for the resolved type run in priority order.
 4. **Generic analyzers** run for every object in priority order.
-5. **Type-specific extractors** run (`acquire` → `advance`/`extract` loop → `release`) and, for each entry they emit, the scanner recurses (subject to `max_depth` and `Filter`).
+5. **Type-specific extractors** run (`acquire` → `advance`/`extract` loop → `release`) and, for each entry they emit, the scanner recurses (subject to `max_depth` and `Filter`). Entries marked `skip_from_filtering` bypass the `Filter` check.
 6. **Generic extractors** run the same session lifecycle and recurse in the same way.
 
 While this is happening, the scanner also **records the object** into `Context::objects` — allocating its path in an internal arena, tagging it with the resolved content type, and linking it into its parent's child list. After `scan()` returns, that tree is exposed to the caller through [`ScanResult`](#navigating-the-scan-result-tree).

@@ -40,7 +40,14 @@ pub struct Entry {
     pub path: String,
     /// Size of the entry in bytes, when known.
     pub size: u64,
-    /// If true, the entry was skipped from filtering. This is used for subfolders if you are filtering by extensions.
+    /// When `true`, the scanner does not test this entry against the
+    /// active [`Filter`](crate::Filter).
+    ///
+    /// Use it for entries that are containers rather than payloads and
+    /// would never pass the filter on their own — for example
+    /// subfolders enumerated by
+    /// [`FolderExtractor`](crate::FolderExtractor) while the filter
+    /// only allows a set of file extensions.
     pub skip_from_filtering: bool,
 }
 
@@ -91,9 +98,14 @@ pub trait ContentAnalyzer<T: ContentType> {
 ///
 /// The handle lets a single extractor instance keep per-session state
 /// (cursor, buffers, open archive handles, …) even when extractions
-/// nest or interleave. Simple extractors that only ever run one
-/// session at a time can ignore the handle values and return a
-/// constant [`ExtractionHandle::new`]`(0, 0)` from `acquire`.
+/// nest or interleave. Handles are minted by an
+/// [`ExtractionPool`](crate::ExtractionPool), which owns the state
+/// behind them: call
+/// [`acquire_slot`](crate::ExtractionPool::acquire_slot) in `acquire`,
+/// [`get`](crate::ExtractionPool::get) /
+/// [`get_mut`](crate::ExtractionPool::get_mut) in `advance` and
+/// `extract`, and
+/// [`release_slot`](crate::ExtractionPool::release_slot) in `release`.
 ///
 /// Extractors can be registered per [`ContentType`] via
 /// [`ScannerBuilder::add_extractor`](crate::ScannerBuilder::add_extractor)
@@ -105,6 +117,8 @@ pub trait ContentExtractor<T: ContentType> {
     /// The `extract_context` [`VarMap`] is scoped to the current
     /// parent object and can be used to stash per-extraction state
     /// alongside plugin-owned fields keyed by the returned handle.
+    /// The handle itself should come from an
+    /// [`ExtractionPool`](crate::ExtractionPool).
     ///
     /// Return `Some(handle)` to proceed with
     /// [`advance`](Self::advance) / [`extract`](Self::extract), or
