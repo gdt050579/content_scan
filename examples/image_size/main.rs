@@ -51,7 +51,7 @@ fn main() {
     let mut scanner = ScannerBuilder::new()
         .filter(
             FilterBuilder::new()
-                .include_extensions(Precedence::Medium, &[".jpg", ".bmp", ".png"])
+                .include_extensions(Precedence::Medium, &["jpg", "bmp", "png"])
                 .deny_the_rest()
                 .build(),
         )
@@ -66,10 +66,10 @@ fn main() {
 
     let res = if Path::new(&path).is_dir() {
         let mut content = FolderContent::<ImageType>::with_content_type(&path, ImageType::Folder);
-        scanner.scan(&mut content)
+        scanner.scan(&mut content, false)
     } else {
         let mut content = FileContent::<ImageType>::new(&path);
-        scanner.scan(&mut content)
+        scanner.scan(&mut content, true)
     };
 
     println!("Scanned : {} files", res.objects_scanned());

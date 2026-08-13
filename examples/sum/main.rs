@@ -100,7 +100,7 @@ fn main() {
         .add_identifier(MyTypes::Text, TextIdentifier {})
         .build();
     let mut b = BufferContent::<MyTypes>::new(b"TXT   10+20+30=", "test.txt");
-    let res = scanner.scan(&mut b);
+    let res = scanner.scan(&mut b, true);
     println!("sum: {}", res.global().get::<u32>(var!("sum")).unwrap_or(0));
     // navigate
     let root = res.root().unwrap();

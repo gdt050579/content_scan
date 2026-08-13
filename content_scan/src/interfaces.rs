@@ -40,6 +40,8 @@ pub struct Entry {
     pub path: String,
     /// Size of the entry in bytes, when known.
     pub size: u64,
+    /// If true, the entry was skipped from filtering. This is used for subfolders if you are filtering by extensions.
+    pub skip_from_filtering: bool,
 }
 
 /// A plugin that inspects a piece of content and records information.

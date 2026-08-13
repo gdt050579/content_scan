@@ -40,6 +40,6 @@ fn main() {
         .add_identifier(MyType::TextBuffer, TextBufferItdentifier {})
         .build();
     let mut b = BufferContent::<MyType>::with_content_type(b"TXBF   Hellow World !", "test.txt", MyType::TextBuffer);
-    let res = scanner.scan(&mut b);
+    let res = scanner.scan(&mut b, true);
     println!("count_vowels: {}", res.global().get::<u32>(var!("count_vowels")).unwrap());
 }

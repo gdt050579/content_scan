@@ -42,11 +42,13 @@ impl<T: ContentType> Scanner<T> {
     /// The returned [`ScanResult`] borrows from `self` and stays
     /// valid until the next call on this scanner. Copy anything you
     /// need to keep out before starting another scan.
-    pub fn scan<'a>(&'a mut self, content: &mut dyn Content<T>) -> ScanResult<'a, T> {
+    pub fn scan<'a>(&'a mut self, content: &mut dyn Content<T>, filter_root: bool) -> ScanResult<'a, T> {
         self.context.clear();
-        if let Some(filter) = &self.filter {
-            if !filter.should_process(content.path(), content.size()) {
-                return ScanResult::new(&self.context);
+        if filter_root {
+            if let Some(filter) = &self.filter {
+                if !filter.should_process(content.path(), content.size()) {
+                    return ScanResult::new(&self.context);
+                }
             }
         }
         self.inner_scan(content, 1, Object::INVALID_INDEX);
@@ -165,10 +167,12 @@ impl<T: ContentType> Scanner<T> {
         let mut extractor = unsafe { self.extractors.get(index) };
         if let Some(handle) = extractor.acquire(content, &mut self.context.extract()) {
             while let Some(entry) = unsafe { self.extractors.get(index).advance(handle, content) } {
-                if let Some(filter) = &self.filter {
-                    if !filter.should_process(&entry.path, entry.size) {
-                        println!("Skip: {:?}", &entry.path);
-                        continue;
+                if !entry.skip_from_filtering {
+                    if let Some(filter) = &self.filter {
+                        if !filter.should_process(&entry.path, entry.size) {
+                            println!("Skip: {:?}", &entry.path);
+                            continue;
+                        }
                     }
                 }
                 extractor = unsafe { self.extractors.get(index) };
@@ -176,8 +180,7 @@ impl<T: ContentType> Scanner<T> {
                     let result = self.inner_scan(&mut *extracted_content, depth + 1, parent_index);
                     match result {
                         NextAction::Continue => continue,
-                        NextAction::Exit => 
-                        {
+                        NextAction::Exit => {
                             extractor = unsafe { self.extractors.get(index) };
                             extractor.release(handle);
                             return NextAction::Exit;
