@@ -61,7 +61,7 @@ fn main() {
         .add_analyzer(ImageType::Bmp, 0, bmp::BmpAnalyzer {})
         .add_identifier(ImageType::Jpeg, jpeg::JpegIdentifier {})
         .add_analyzer(ImageType::Jpeg, 0, jpeg::JpegAnalyzer {})
-        .add_extractor(ImageType::Folder, 0, FolderExtractor::<ImageType>::new(false))
+        .add_extractor(ImageType::Folder, 0, FolderExtractor::<ImageType>::new(true))
         .build();
 
     let res = if Path::new(&path).is_dir() {
