@@ -41,17 +41,17 @@ impl<T> PluginsList<T> {
                 continue;
             }
             if type_id != last_type_id {
-                fast_map[last_type_id as usize] = VecRange::new(start_pos as u16, pos as u16);
+                fast_map[last_type_id as usize] = VecRange::new(start_pos, pos as u16);
                 last_type_id = type_id;
                 start_pos = pos as u16;
                 continue;
             }
         }
         if (last_type_id < max_count) && (start_pos != u16::MAX) {
-            fast_map[last_type_id as usize] = VecRange::new(start_pos as u16, p.len() as u16);
+            fast_map[last_type_id as usize] = VecRange::new(start_pos, p.len() as u16);
         }
         let generic_range = if last_type_id == 0xFFFF {
-            Some((start_pos as usize, p.len() as usize))
+            Some((start_pos as usize, p.len()))
         } else {
             None
         };

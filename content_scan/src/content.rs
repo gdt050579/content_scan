@@ -405,9 +405,7 @@ impl<T: ContentType + 'static> ContentExtractor<T> for FolderExtractor<T> {
     }
 
     fn advance(&mut self, handle: crate::ExtractionHandle, _: &mut dyn Content<T>) -> Option<&crate::Entry> {
-        let Some(rd) = self.pool.get_mut(handle) else {
-            return None;
-        };
+        let rd = self.pool.get_mut(handle)?;
         loop {
             let folder_ent = rd.next()?.ok()?;
             let ft = folder_ent.file_type().ok()?;

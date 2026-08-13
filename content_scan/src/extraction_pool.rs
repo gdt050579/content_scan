@@ -1,5 +1,3 @@
-use crate::Entry;
-
 /// Opaque token identifying one extraction session on a
 /// [`ContentExtractor`](crate::ContentExtractor).
 ///
@@ -116,11 +114,7 @@ impl<T> ExtractionPool<T> {
             return;
         }
         let index_checked = if let Some((id, _)) = &self.pool[idx] {
-            if *id == handle.uid {
-                true
-            } else {
-                false
-            }
+            *id == handle.uid
         } else {
             false
         };

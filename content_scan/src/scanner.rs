@@ -173,7 +173,7 @@ impl<T: ContentType> Scanner<T> {
             return NextAction::Continue;
         }
         let mut extractor = unsafe { self.extractors.get(index) };
-        if let Some(handle) = extractor.acquire(content, &mut self.context.extract()) {
+        if let Some(handle) = extractor.acquire(content, self.context.extract()) {
             while let Some(entry) = unsafe { self.extractors.get(index).advance(handle, content) } {
                 if !entry.skip_from_filtering {
                     if let Some(filter) = &self.filter {

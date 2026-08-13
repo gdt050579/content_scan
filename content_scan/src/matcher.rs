@@ -57,7 +57,7 @@ impl<T: ContentType> MatcherBuilder<T> {
     }
     pub fn build(mut self) -> Matcher<T> {
         self.data.sort_by_key(|(_, data)| data.len());
-        if self.data.len() == 0 {
+        if self.data.is_empty() {
             return Matcher::None;
         }
         if self.data.len() == 1 {
@@ -74,6 +74,6 @@ impl<T: ContentType> MatcherBuilder<T> {
         for (ct, data) in self.data {
             trie_builder.add(data, ct.as_u16());
         }
-        return Matcher::Trie(trie_builder.build());
+        Matcher::Trie(trie_builder.build())
     }
 }

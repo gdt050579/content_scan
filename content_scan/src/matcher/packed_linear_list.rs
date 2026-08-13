@@ -53,7 +53,7 @@ impl<T: ContentType, K: Key> PackedLinearList<T, K> {
         let mut values: [T; 16] = [patterns[0].0; 16];
         let mut len = 0usize;
 
-        for (i, (ct, data)) in patterns.into_iter().enumerate() {
+        for (i, (ct, data)) in patterns.iter().enumerate() {
             keys[i] = K::pack(data);
             values[i] = *ct;
             len += 1;
