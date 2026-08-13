@@ -71,7 +71,6 @@ impl ExtractionHandle {
 /// ```
 #[derive(Default)]
 pub struct ExtractionPool<T> {
-    entry: Entry,
     pool: Vec<Option<(u32, T)>>,
     free_list: Vec<u32>,
     last_uid: u32,
@@ -81,7 +80,6 @@ impl<T> ExtractionPool<T> {
     /// sessions before it needs to grow.
     pub fn new(capacity: usize) -> Self {
         Self {
-            entry: Entry::default(),
             pool: Vec::with_capacity(capacity),
             free_list: Vec::with_capacity(capacity),
             last_uid: 0,
@@ -130,24 +128,6 @@ impl<T> ExtractionPool<T> {
             self.pool[idx] = None;
             self.free_list.push(handle.index);
         }
-    }
-    /// Returns the reusable [`Entry`] owned by this pool, ready to be
-    /// handed back from
-    /// [`advance`](crate::ContentExtractor::advance).
-    #[inline(always)]
-    pub fn entry(&self) -> &Entry {
-        &self.entry
-    }
-
-    /// Overwrites the pool's [`Entry`] in place.
-    ///
-    /// Reusing the same `Entry` keeps `advance` from re-allocating the
-    /// path `String` for every child it announces.
-    #[inline(always)]
-    pub fn update_entry(&mut self, path: &str, size: u64) {
-        self.entry.path.clear();
-        self.entry.path.push_str(path);
-        self.entry.size = size;
     }
     /// Borrows the state behind `handle`, or `None` if the handle no
     /// longer refers to a live session.

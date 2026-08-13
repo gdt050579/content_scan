@@ -227,13 +227,6 @@ mod extraction_pool {
     use crate::extraction_pool::{ExtractionHandle, ExtractionPool};
 
     #[test]
-    fn new_has_empty_entry() {
-        let pool = ExtractionPool::<u32>::new(4);
-        assert_eq!(pool.entry().path, "");
-        assert_eq!(pool.entry().size, 0);
-    }
-
-    #[test]
     fn acquire_assigns_monotonic_uids_and_growing_indices() {
         let mut pool = ExtractionPool::new(2);
         let a = pool.acquire_slot(10u32);
@@ -343,17 +336,6 @@ mod extraction_pool {
         let h = pool.acquire_slot(String::from("old"));
         *pool.get_mut(h).unwrap() = String::from("new");
         assert_eq!(pool.get(h), Some(&String::from("new")));
-    }
-
-    #[test]
-    fn update_entry_replaces_path_and_size() {
-        let mut pool = ExtractionPool::<()>::new(0);
-        pool.update_entry("first", 10);
-        assert_eq!(pool.entry().path, "first");
-        assert_eq!(pool.entry().size, 10);
-        pool.update_entry("second", 20);
-        assert_eq!(pool.entry().path, "second");
-        assert_eq!(pool.entry().size, 20);
     }
 
     #[test]

@@ -27,6 +27,7 @@ struct ExtractData {
 #[derive(Default)]
 struct NumericExtractor {
     e: ExtractionPool<ExtractData>,
+    entry: Entry,
 }
 impl ContentExtractor<MyTypes> for NumericExtractor {
     fn acquire(&mut self, _: &mut dyn Content<MyTypes>, _: &mut VarMap) -> Option<ExtractionHandle> {
@@ -64,8 +65,8 @@ impl ContentExtractor<MyTypes> for NumericExtractor {
             return None;
         }
         let len = data.len;
-        self.e.update_entry("number", len);
-        Some(&self.e.entry())
+        self.entry.update("number", len, false);
+        Some(&self.entry)
     }
     fn extract(&mut self, handle: ExtractionHandle, content: &mut dyn Content<MyTypes>) -> Option<Box<dyn Content<MyTypes>>> {
         let data = self.e.get(handle)?;

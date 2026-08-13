@@ -50,6 +50,14 @@ pub struct Entry {
     /// only allows a set of file extensions.
     pub skip_from_filtering: bool,
 }
+impl Entry {
+    pub fn update(&mut self, path: &str, size: u64, skip_from_filtering: bool) {
+        self.path.clear();
+        self.path.push_str(path);
+        self.size = size;
+        self.skip_from_filtering = skip_from_filtering;
+    }
+}
 
 /// A plugin that inspects a piece of content and records information.
 ///
