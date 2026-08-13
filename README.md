@@ -243,7 +243,7 @@ cargo run --example image_size -- photo.jpg
 cargo run --example image_size -- ./pictures
 ```
 
-A file is wrapped in a `FileContent` and scanned directly. A directory is wrapped in a `FolderContent` tagged with the user's own `ImageType::Folder` variant, and a `FolderExtractor` registered for that type turns each directory entry into a child content object:
+A file is wrapped in a `FileContent` and scanned directly. A directory is wrapped in a `FolderContent` tagged with the user's own `ImageType::Folder` variant, and a recursive `FolderExtractor` registered for that type turns each directory entry (including nested folders) into a child content object:
 
 ```rust
 let mut scanner = ScannerBuilder::new()
@@ -256,7 +256,7 @@ let mut scanner = ScannerBuilder::new()
     .add_identifier(ImageType::Png, png::PngIdentifier {})
     .add_analyzer(ImageType::Png, 0, png::PngAnalyzer {})
     // ...bmp / jpeg...
-    .add_extractor(ImageType::Folder, 0, FolderExtractor::<ImageType>::new(false))
+    .add_extractor(ImageType::Folder, 0, FolderExtractor::<ImageType>::new(true))
     .build();
 
 let res = if Path::new(&path).is_dir() {
@@ -399,6 +399,10 @@ pub struct Entry {
     pub skip_from_filtering: bool,
 }
 
+impl Entry {
+    pub fn update(&mut self, path: &str, size: u64, skip_from_filtering: bool);
+}
+
 pub struct ExtractionHandle { /* opaque */ }
 ```
 
@@ -409,9 +413,9 @@ Extractors turn a container into a stream of children, driven as a short session
 3. `extract` — materializes the current child as a boxed `Content<T>`. The scanner then recursively scans it (subject to `max_depth`). Returning `None` skips just this entry; enumeration continues with the next `advance`.
 4. `release` — called exactly once for every successfully acquired handle (including when the scan stops early via `NextAction::Skip` / `NextAction::Exit`). Use it to free per-session resources.
 
-Set `Entry::skip_from_filtering` to `true` to exempt an entry from the active `Filter`. This matters for container entries that would never pass the filter themselves: a `FolderExtractor` restricted to `*.png` files, for example, still has to descend into subdirectories, whose names carry no `.png` extension.
+Set `Entry::skip_from_filtering` to `true` to exempt an entry from the active `Filter`. This matters for container entries that would never pass the filter themselves: a `FolderExtractor` restricted to `*.png` files, for example, still has to descend into subdirectories, whose names carry no `.png` extension. `Entry::update` fills the three fields in place so `advance` can reuse the same `String` instead of allocating a new path every time.
 
-The handle lets one extractor instance keep per-session state even when extractions nest or interleave. Extractors are registered with `add_extractor` / `add_generic_extractor`, mirroring analyzers.
+The handle lets one extractor instance keep per-session state even when extractions nest or interleave. The `Entry` itself is owned by the extractor (not the pool), because `advance` has to return `&Entry` while the pool may be borrowed mutably for session data. Extractors are registered with `add_extractor` / `add_generic_extractor`, mirroring analyzers.
 
 ### `ExtractionPool`
 
@@ -426,14 +430,10 @@ impl<T> ExtractionPool<T> {
     pub fn release_slot(&mut self, handle: ExtractionHandle);
     pub fn get(&self, handle: ExtractionHandle) -> Option<&T>;
     pub fn get_mut(&mut self, handle: ExtractionHandle) -> Option<&mut T>;
-
-    // convenience storage for the Entry returned by `advance`
-    pub fn entry(&self) -> &Entry;
-    pub fn update_entry(&mut self, path: &str, size: u64);
 }
 ```
 
-Slots are recycled through a free list, and every handle carries a monotonically increasing uid, so a stale handle whose slot has already been reused resolves to `None` instead of silently aliasing another session's data. The pool also owns a reusable `Entry` you can fill in from `advance` via `update_entry`, which avoids re-allocating the path `String` on every entry.
+Slots are recycled through a free list, and every handle carries a monotonically increasing uid, so a stale handle whose slot has already been reused resolves to `None` instead of silently aliasing another session's data. The `Entry` announced by `advance` lives on the extractor itself — reuse it with `Entry::update` so the path `String` is not reallocated for every child.
 
 ```rust
 struct ExtractData { pos: u64, start: u64, len: u64 }
@@ -441,6 +441,7 @@ struct ExtractData { pos: u64, start: u64, len: u64 }
 #[derive(Default)]
 struct NumericExtractor {
     e: ExtractionPool<ExtractData>,
+    entry: Entry,
 }
 
 impl ContentExtractor<MyTypes> for NumericExtractor {
@@ -450,8 +451,8 @@ impl ContentExtractor<MyTypes> for NumericExtractor {
     fn advance(&mut self, handle: ExtractionHandle, content: &mut dyn Content<MyTypes>) -> Option<&Entry> {
         let data = self.e.get_mut(handle)?;
         // ...scan forward through `content`, updating `data`...
-        self.e.update_entry("number", len);
-        Some(self.e.entry())
+        self.entry.update("number", len, false);
+        Some(&self.entry)
     }
     fn extract(&mut self, handle: ExtractionHandle, content: &mut dyn Content<MyTypes>) -> Option<Box<dyn Content<MyTypes>>> {
         let data = self.e.get(handle)?;

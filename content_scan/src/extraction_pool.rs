@@ -45,10 +45,16 @@ impl ExtractionHandle {
 /// [`get_mut`](Self::get_mut) instead of silently aliasing another
 /// session's state.
 ///
+/// The [`Entry`](crate::Entry) announced by `advance` is **not** stored
+/// in the pool: keep it as a field on the extractor and fill it with
+/// [`Entry::update`](crate::Entry::update). That avoids borrowing the
+/// pool while returning `&Entry`.
+///
 /// ```ignore
 /// #[derive(Default)]
 /// struct MyExtractor {
 ///     pool: ExtractionPool<Cursor>,
+///     entry: Entry,
 /// }
 ///
 /// impl ContentExtractor<MyTypes> for MyExtractor {
@@ -57,9 +63,9 @@ impl ExtractionHandle {
 ///     }
 ///     fn advance(&mut self, handle: ExtractionHandle, _: &mut dyn Content<MyTypes>) -> Option<&Entry> {
 ///         let cursor = self.pool.get_mut(handle)?;
-///         // ...advance the cursor...
-///         self.pool.update_entry("child", size);
-///         Some(self.pool.entry())
+///         // ...advance the cursor, then fill a field-owned Entry...
+///         self.entry.update("child", size, false);
+///         Some(&self.entry)
 ///     }
 ///     // ...
 ///     fn release(&mut self, handle: ExtractionHandle) {

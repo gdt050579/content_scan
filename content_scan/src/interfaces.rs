@@ -51,6 +51,11 @@ pub struct Entry {
     pub skip_from_filtering: bool,
 }
 impl Entry {
+    /// Overwrites this entry in place.
+    ///
+    /// Extractors typically keep one `Entry` as a field and call
+    /// `update` from [`ContentExtractor::advance`] so the path
+    /// [`String`] is reused instead of reallocated for every child.
     pub fn update(&mut self, path: &str, size: u64, skip_from_filtering: bool) {
         self.path.clear();
         self.path.push_str(path);
