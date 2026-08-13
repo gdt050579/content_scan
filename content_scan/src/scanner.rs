@@ -170,7 +170,7 @@ impl<T: ContentType> Scanner<T> {
                 if !entry.skip_from_filtering {
                     if let Some(filter) = &self.filter {
                         if !filter.should_process(&entry.path, entry.size) {
-                            println!("Skip: {:?}", &entry.path);
+                            // println!("Skip: {:?}", &entry.path);
                             continue;
                         }
                     }

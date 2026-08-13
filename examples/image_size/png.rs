@@ -22,8 +22,8 @@ impl ContentAnalyzer<ImageType> for PngAnalyzer {
         if d.len() < 24 {
             return NextAction::Continue;
         }
-        let w = u32::from_le_bytes(d[16..20].try_into().unwrap());
-        let h = u32::from_le_bytes(d[20..24].try_into().unwrap());
+        let w = u32::from_be_bytes(d[16..20].try_into().unwrap());
+        let h = u32::from_be_bytes(d[20..24].try_into().unwrap());
         context.local().set(var!("size"), Size { width: w, height: h });
         NextAction::Continue
     }

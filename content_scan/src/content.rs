@@ -346,7 +346,8 @@ impl<T: ContentType + 'static> ContentExtractor<T> for FolderExtractor<T> {
             self.entry.path.clear();
             // to review (no allocation)
             self.entry.path.push_str(folder_ent.path().to_str().unwrap_or_default());
-            self.entry.size = 0; // folder
+            self.entry.size = if self.current_is_folder { 0 } else { folder_ent.metadata().map(|m| m.len()).unwrap_or(0) }; // folder
+            self.entry.skip_from_filtering = self.current_is_folder;
             return Some(&self.entry);
         }
     }
