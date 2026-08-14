@@ -1,5 +1,6 @@
 use crate::matcher::{Matcher, MatcherBuilder};
 use crate::utils;
+use crate::ContentPath;
 
 /// Precedence of a [`Filter`] rule.
 ///
@@ -26,8 +27,8 @@ enum FilterRule {
     ExcludeExtensions(Matcher<bool>),
     IncludeFileNames(Matcher<bool>),
     ExcludeFileNames(Matcher<bool>),
-    Include(fn(&str, u64) -> bool),
-    Exclude(fn(&str, u64) -> bool),
+    Include(fn(&ContentPath, u64) -> bool),
+    Exclude(fn(&ContentPath, u64) -> bool),
 }
 
 /// Compiled inclusion/exclusion policy applied to every content item
@@ -45,19 +46,7 @@ pub struct Filter {
     check_file_names: bool,
 }
 impl Filter {
-    /// Decides whether the content at `path` (of `size` bytes) should
-    /// be processed.
-    ///
-    /// Rules are evaluated in precedence order (as configured on the
-    /// builder). The first rule that matches determines the outcome:
-    ///
-    /// - `Include*` rules return `true` on match.
-    /// - `Exclude*` rules return `false` on match.
-    ///
-    /// If no rule matches, the default outcome
-    /// ([`FilterBuilder::deny_the_rest`] or
-    /// [`FilterBuilder::allow_the_rest`]) is returned.
-    pub fn should_process(&self, path: &str, size: u64) -> bool {
+    pub(crate) fn should_process(&self, path: &ContentPath, size: u64) -> bool {
         let file_name = if self.check_file_names { utils::get_file_name(path.as_bytes()) } else { b"" };
         let ext = if self.check_extensions { utils::get_extension(file_name) } else { b"" };
         
@@ -153,7 +142,7 @@ impl FilterBuilder {
     /// `callback` receives the full path and the size of a content
     /// item and should return `true` to include it. Returning `false`
     /// simply lets the next rule decide (it is *not* an exclusion).
-    pub fn include(mut self, prec: Precedence, callback: fn(&str, u64) -> bool) -> Self {
+    pub fn include(mut self, prec: Precedence, callback: fn(&ContentPath, u64) -> bool) -> Self {
         self.rules.push((prec, FilterRule::Include(callback)));
         self
     }
@@ -163,7 +152,7 @@ impl FilterBuilder {
     /// `callback` receives the full path and the size of a content
     /// item and should return `true` to reject it. Returning `false`
     /// simply lets the next rule decide (it is *not* an inclusion).
-    pub fn exclude(mut self, prec: Precedence, callback: fn(&str, u64) -> bool) -> Self {
+    pub fn exclude(mut self, prec: Precedence, callback: fn(&ContentPath, u64) -> bool) -> Self {
         self.rules.push((prec, FilterRule::Exclude(callback)));
         self
     }

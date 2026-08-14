@@ -13,6 +13,7 @@ use std::ffi::OsString;
 ///
 /// Construct one with [`from_str`](Self::from_str) for caller-supplied or
 /// synthetic paths, or [`from_os`](Self::from_os) for real OS paths.
+#[derive(Default)]
 pub struct ContentPath {
     /// Always valid UTF-8. For a non-UTF-8 OS path this is the *lossy*
     /// rendering (invalid sequences replaced with U+FFFD); the faithful
@@ -36,6 +37,11 @@ impl ContentPath {
     #[inline]
     pub fn from_str(s: &str) -> Self {
         Self { path: s.to_string(), os: None }
+    }
+
+    #[inline]
+    pub(crate) fn with_string(s: String) -> Self {
+        Self { path: s, os: None }
     }
 
     /// Builds a `ContentPath` from a real OS path.

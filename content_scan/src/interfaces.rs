@@ -1,5 +1,5 @@
 use crate::ExtractionHandle;
-
+use crate::ContentPath;
 use super::{Content, ContentType, Context};
 use varmap::VarMap;
 
@@ -37,7 +37,7 @@ pub enum NextAction {
 pub struct Entry {
     /// Virtual path of the entry (for example, the name inside an
     /// archive).
-    pub path: String,
+    pub path: ContentPath,
     /// Size of the entry in bytes, when known.
     pub size: u64,
     /// When `true`, the scanner does not test this entry against the
@@ -49,19 +49,6 @@ pub struct Entry {
     /// [`FolderExtractor`](crate::FolderExtractor) while the filter
     /// only allows a set of file extensions.
     pub skip_from_filtering: bool,
-}
-impl Entry {
-    /// Overwrites this entry in place.
-    ///
-    /// Extractors typically keep one `Entry` as a field and call
-    /// `update` from [`ContentExtractor::advance`] so the path
-    /// [`String`] is reused instead of reallocated for every child.
-    pub fn update(&mut self, path: &str, size: u64, skip_from_filtering: bool) {
-        self.path.clear();
-        self.path.push_str(path);
-        self.size = size;
-        self.skip_from_filtering = skip_from_filtering;
-    }
 }
 
 /// A plugin that inspects a piece of content and records information.
