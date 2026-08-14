@@ -77,7 +77,7 @@
 //! # #[repr(u16)]
 //! # enum MyTypes { Text, Folder }
 //! let mut scanner = ScannerBuilder::<MyTypes>::new()
-//!     .add_extractor(MyTypes::Folder, 0, FolderExtractor::<MyTypes>::new(true))
+//!     .add_extractor(MyTypes::Folder, 0, FolderExtractor::<MyTypes>::new(true, false))
 //!     .build();
 //!
 //! let mut root = FolderContent::<MyTypes>::with_content_type("./src", MyTypes::Folder);

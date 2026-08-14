@@ -61,14 +61,14 @@ fn main() {
         .add_analyzer(ImageType::Bmp, 0, bmp::BmpAnalyzer {})
         .add_identifier(ImageType::Jpeg, jpeg::JpegIdentifier {})
         .add_analyzer(ImageType::Jpeg, 0, jpeg::JpegAnalyzer {})
-        .add_extractor(ImageType::Folder, 0, FolderExtractor::<ImageType>::new(true))
+        .add_extractor(ImageType::Folder, 0, FolderExtractor::<ImageType>::new(true, false))
         .build();
 
     let res = if Path::new(&path).is_dir() {
         let mut content = FolderContent::<ImageType>::with_content_type(&path, ImageType::Folder);
         scanner.scan(&mut content, false)
     } else {
-        let mut content = FileContent::<ImageType>::new(&path);
+        let mut content = FileContent::<ImageType>::new(&path, false);
         scanner.scan(&mut content, true)
     };
 

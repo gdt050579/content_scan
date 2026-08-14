@@ -51,27 +51,49 @@ impl<T: ContentType> FastMagicMatcher<T> {
         Some(Self { two, three, four })
     }
     #[inline(always)]
+    fn test_four(&self, data: &[u8]) -> Option<T> {
+        if let Some(list) = self.four.as_ref() {
+            if let Some(ct) = list.find(u32::pack(&data[..4])) {
+                return Some(ct);
+            }
+        }
+        None
+    }
+    #[inline(always)]
+    fn test_three(&self, data: &[u8]) -> Option<T> {
+        if let Some(list) = self.three.as_ref() {
+            if let Some(ct) = list.find(u32::pack(&data[..3])) {
+                return Some(ct);
+            }
+        }
+        None
+    }
+    #[inline(always)]
+    fn test_two(&self, data: &[u8]) -> Option<T> {
+        if let Some(list) = self.two.as_ref() {
+            if let Some(ct) = list.find(u32::pack(&data[..2])) {
+                return Some(ct);
+            }
+        }
+        None
+    }
+    #[inline(always)]
     pub(crate) fn starts_with(&self, data: &[u8]) -> Option<T> {
-        if data.len() >= 2 {
-            if let Some(list) = self.two.as_ref() {
-                if let Some(ct) = list.find(u32::pack(&data[..2])) {
-                    return Some(ct);
-                }
-            }
-        }
-        if data.len() >= 3 {
-            if let Some(list) = self.three.as_ref() {
-                if let Some(ct) = list.find(u32::pack(&data[..3])) {
-                    return Some(ct);
-                }
-            }
-        }
         if data.len() >= 4 {
-            if let Some(list) = self.four.as_ref() {
-                if let Some(ct) = list.find(u32::pack(&data[..4])) {
-                    return Some(ct);
-                }
-            }
+            let result = self.test_four(data); 
+            if result.is_some() { return result; }
+            let result = self.test_three(data);
+            if result.is_some() { return result; }
+            let result = self.test_two(data);
+            if result.is_some() { return result; }
+        } else if data.len() >= 3 {
+            let result = self.test_three(data);
+            if result.is_some() { return result; }
+            let result = self.test_two(data);
+            if result.is_some() { return result; }
+        } else if data.len() >= 2 {
+            let result = self.test_two(data);
+            if result.is_some() { return result; }
         }
         None
     }

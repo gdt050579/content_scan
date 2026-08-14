@@ -1,5 +1,5 @@
-use crate::{Content, ContentType, ContentPath};
-use filecache::{FileCache, CacheType, RandomAccessFile, RandomAccessFlags};
+use crate::{Content, ContentPath, ContentType};
+use filecache::{CacheType, FileCache, RandomAccessFile, RandomAccessFlags};
 use std::{fs, path::Path};
 
 enum FileContentStatus {
@@ -10,16 +10,26 @@ enum FileContentStatus {
 
 /// A [`Content`] backed by a file on disk.
 ///
-/// The file is opened and memory-mapped lazily, on the first
-/// [`read`](Content::read); constructing a `FileContent` for a file
-/// that is never read costs nothing but the path. A file that cannot
-/// be opened behaves like an empty content: `size()` is `0` and every
-/// read returns `None`.
+/// The file is opened lazily, on the first [`read`](Content::read);
+/// constructing a `FileContent` for a file that is never read costs
+/// nothing but the path. A file that cannot be opened behaves like an
+/// empty content: `size()` is `0` and every read returns `None`.
+///
+/// The `exclusive` flag on the constructors chooses how the file is
+/// opened:
+///
+/// - `true` — exclusive access and a memory map (filecache requires
+///   exclusive mode for mmap). On Windows this is share mode 0; on
+///   Unix a non-blocking exclusive `flock`. Files already open
+///   elsewhere will fail to open.
+/// - `false` — shared read access and an LRU page cache. Use this
+///   when scanning files that may be in use by another process.
 pub struct FileContent<T: ContentType> {
     path: ContentPath,
-    content_type: Option<T>,    
+    content_type: Option<T>,
     status: FileContentStatus,
     size: u64,
+    exclusive: bool,
 }
 impl<T: ContentType> FileContent<T> {
     /// Creates a `FileContent` for `path`, querying its size upfront.
@@ -28,12 +38,16 @@ impl<T: ContentType> FileContent<T> {
     /// filesystem name stays openable. The content type is left unset,
     /// so the scanner identifies it automatically. A path that cannot
     /// be stat'ed yields a size of `0`.
-    pub fn new(path: impl AsRef<Path>) -> Self {
+    ///
+    /// `exclusive` selects mmap + exclusive lock (`true`) or shared
+    /// LRU reads (`false`); see the type-level docs.
+    pub fn new(path: impl AsRef<Path>, exclusive: bool) -> Self {
         Self {
             path: ContentPath::from_os(path.as_ref()),
             content_type: None,
             status: FileContentStatus::NotOpened,
             size: fs::metadata(path).map(|m| m.len()).unwrap_or(0),
+            exclusive,
         }
     }
 
@@ -41,12 +55,13 @@ impl<T: ContentType> FileContent<T> {
     ///
     /// The scanner skips identification and dispatches directly to the
     /// plugins registered for `content_type`.
-    pub fn with_content_type(path: impl AsRef<Path>, content_type: T) -> Self {
+    pub fn with_content_type(path: impl AsRef<Path>, content_type: T, exclusive: bool) -> Self {
         Self {
             path: ContentPath::from_os(path.as_ref()),
             content_type: Some(content_type),
             status: FileContentStatus::NotOpened,
             size: fs::metadata(path).map(|m| m.len()).unwrap_or(0),
+            exclusive,
         }
     }
 
@@ -56,17 +71,23 @@ impl<T: ContentType> FileContent<T> {
     /// construction time. Use it when the size comes from something
     /// that has already been read — a directory entry's metadata, an
     /// index, a manifest — to avoid a redundant `stat`.
-    pub fn with_size(path: impl AsRef<Path>, size: u64) -> Self {
+    pub fn with_size(path: impl AsRef<Path>, size: u64, exclusive: bool) -> Self {
         Self {
             path: ContentPath::from_os(path.as_ref()),
             content_type: None,
             status: FileContentStatus::NotOpened,
             size,
+            exclusive,
         }
     }
     fn open(&mut self) {
-        match RandomAccessFile::open(self.path.as_path(), RandomAccessFlags::Exclusive) {
-            Ok(reader) => match FileCache::new(CacheType::MemoryMap, reader) {
+        let (cache, flags)  = if self.exclusive {
+            (CacheType::MemoryMap, RandomAccessFlags::Exclusive)
+        } else {
+            (CacheType::LRU { max_pages: 32 }, RandomAccessFlags::None)
+        };
+        match RandomAccessFile::open(self.path.as_path(), flags) {
+            Ok(reader) => match FileCache::new(cache, reader) {
                 Ok(file) => {
                     self.status = FileContentStatus::Opened(file);
                 }

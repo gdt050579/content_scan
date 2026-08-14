@@ -676,17 +676,35 @@ mod fast_magic {
     }
 
     #[test]
-    fn starts_with_prefers_shorter_match() {
-        // Length-2 is checked before length-4.
+    fn starts_with_prefers_longer_match() {
+        // Length-4 is checked before length-2.
         let matcher = FastMagicMatcher::new(&[
             (TestType::Pk, b"PK"),
             (TestType::Riff, b"PK\x03\x04"),
         ])
         .unwrap();
 
-        assert_eq!(matcher.starts_with(b"PK\x03\x04"), Some(TestType::Pk));
+        assert_eq!(matcher.starts_with(b"PK\x03\x04"), Some(TestType::Riff));
+        assert_eq!(matcher.starts_with(b"PK\x03\x04extra"), Some(TestType::Riff));
+        // Too short for the 4-byte pattern: fall through to length-2.
+        assert_eq!(matcher.starts_with(b"PK"), Some(TestType::Pk));
+        // 4-byte prefix does not match; fall through to length-2.
+        assert_eq!(matcher.starts_with(b"PKxxxx"), Some(TestType::Pk));
         assert_eq!(matcher.matches_exactly(b"PK"), Some(TestType::Pk));
         assert_eq!(matcher.matches_exactly(b"PK\x03\x04"), Some(TestType::Riff));
+    }
+
+    #[test]
+    fn starts_with_prefers_three_byte_over_two() {
+        let matcher = FastMagicMatcher::new(&[
+            (TestType::Pk, b"GI"),
+            (TestType::Gif, b"GIF"),
+        ])
+        .unwrap();
+
+        assert_eq!(matcher.starts_with(b"GIF89a"), Some(TestType::Gif));
+        assert_eq!(matcher.starts_with(b"GI"), Some(TestType::Pk));
+        assert_eq!(matcher.starts_with(b"GIxx"), Some(TestType::Pk));
     }
 
     #[test]
@@ -750,7 +768,8 @@ mod fast_magic {
 
         assert_eq!(matcher.matches_exactly(b"ab"), Some(TestType::Pk));
         assert_eq!(matcher.matches_exactly(b"abcd"), Some(TestType::Pdf));
-        assert_eq!(matcher.starts_with(b"abcdef"), Some(TestType::Pk));
+        assert_eq!(matcher.starts_with(b"ab"), Some(TestType::Pk));
+        assert_eq!(matcher.starts_with(b"abcdef"), Some(TestType::Pdf));
     }
 }
 

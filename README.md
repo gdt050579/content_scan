@@ -258,14 +258,14 @@ let mut scanner = ScannerBuilder::new()
     .add_identifier(ImageType::Png, png::PngIdentifier {})
     .add_analyzer(ImageType::Png, 0, png::PngAnalyzer {})
     // ...bmp / jpeg...
-    .add_extractor(ImageType::Folder, 0, FolderExtractor::<ImageType>::new(true))
+    .add_extractor(ImageType::Folder, 0, FolderExtractor::<ImageType>::new(true, false))
     .build();
 
 let res = if Path::new(&path).is_dir() {
     let mut content = FolderContent::<ImageType>::with_content_type(&path, ImageType::Folder);
     scanner.scan(&mut content, false)  // don't filter the root: a folder has no image extension
 } else {
-    let mut content = FileContent::<ImageType>::new(&path);
+    let mut content = FileContent::<ImageType>::new(&path, false);
     scanner.scan(&mut content, true)
 };
 ```
@@ -315,16 +315,16 @@ BufferContent::<MyType>::new(buffer, "path.ext");
 BufferContent::<MyType>::with_content_type(buffer, "path.ext", MyType::Text);
 BufferContent::<MyType>::from_parts(vec, "path".into(), Some(MyType::Text));
 
-FileContent::<MyType>::new("path/to/file.bin");           // impl AsRef<Path>
-FileContent::<MyType>::with_content_type("path/to/file.bin", MyType::Text);
-FileContent::<MyType>::with_size("path/to/file.bin", 4096);   // size already known, skip the stat
+FileContent::<MyType>::new("path/to/file.bin", false);           // impl AsRef<Path>; false = shared read
+FileContent::<MyType>::with_content_type("path/to/file.bin", MyType::Text, false);
+FileContent::<MyType>::with_size("path/to/file.bin", 4096, false);   // size already known, skip the stat
 
 FolderContent::<MyType>::with_content_type("path/to/dir", MyType::Folder);
 ```
 
 `BufferContent` constructors take a `&str` and treat it as a **synthetic** address (always UTF-8). `FileContent` and `FolderContent` take `impl AsRef<Path>` and go through `ContentPath::from_os`, so a real filesystem name that is not valid UTF-8 stays openable.
 
-`FileContent` opens and memory-maps the file lazily, on the first `read()`. `with_size` is useful when the size is already known (a directory walk has just stat'ed the entry, for instance) and you want to avoid a second filesystem call.
+`FileContent` opens the file lazily on the first `read()`. Pass `exclusive = true` to memory-map with an exclusive lock (files already open elsewhere will fail). Pass `false` for shared access through an LRU page cache. `with_size` is useful when the size is already known (a directory walk has just stat'ed the entry, for instance) and you want to avoid a second filesystem call.
 
 `FolderContent` represents a directory rather than bytes: its `size()` is `0` and `read()` always returns `None`. It always reports the content type you give it, so the scanner dispatches straight to the extractor registered for that type — see [Walking the file system](#walking-the-file-system).
 
@@ -379,7 +379,7 @@ pub enum IdentifyMethod {
 }
 ```
 
-Fast identification is performed with an internal matcher (single-pattern, packed magic table, or trie depending on the number and shape of patterns). After a fast match, `validate()` is called to confirm the guess.
+Fast identification is performed with an internal matcher (single-pattern, packed magic table, or trie depending on the number and shape of patterns). After a fast match, `validate()` is called to confirm the guess. Overlapping magic prefixes resolve to the **longest** match in both the packed table and the trie.
 
 If `identify_method` returns `None`, `validate()` is still called — after magic, file name, and extension have all been considered — so you can classify content with custom logic (heuristics, path shape, size, …). Those identifiers are tried in the order they were registered.
 
@@ -504,7 +504,7 @@ impl ContentExtractor<MyTypes> for NumericExtractor {
 
 ```rust
 let mut scanner = ScannerBuilder::<MyType>::new()
-    .add_extractor(MyType::Folder, 0, FolderExtractor::<MyType>::new(true)) // true = recursive
+    .add_extractor(MyType::Folder, 0, FolderExtractor::<MyType>::new(true, false)) // recursive, shared file opens
     .add_identifier(MyType::Png, PngIdentifier {})
     .add_analyzer(MyType::Png, 0, PngAnalyzer {})
     .build();

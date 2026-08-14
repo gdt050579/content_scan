@@ -10,7 +10,7 @@ use super::{FolderContent, FileContent};
 ///
 /// ```ignore
 /// let mut scanner = ScannerBuilder::<MyTypes>::new()
-///     .add_extractor(MyTypes::Folder, 0, FolderExtractor::<MyTypes>::new(true))
+///     .add_extractor(MyTypes::Folder, 0, FolderExtractor::<MyTypes>::new(true, false))
 ///     .build();
 /// ```
 ///
@@ -41,20 +41,24 @@ pub struct FolderExtractor<T: ContentType> {
     entry: crate::Entry,
     current_is_folder: bool,
     recursive: bool,
+    open_files_exclusively: bool,
 }
 impl<T: ContentType> FolderExtractor<T> {
     /// Creates a folder extractor.
     ///
     /// When `recursive` is `false`, subdirectories are not emitted at
     /// all and only the files directly inside the parent folder are
-    /// scanned.
-    pub fn new(recursive: bool) -> Self {
+    /// scanned. `open_files_exclusively` is forwarded to
+    /// [`FileContent::with_size`]: `true` memory-maps with an exclusive
+    /// lock, `false` uses shared LRU reads.
+    pub fn new(recursive: bool, open_files_exclusively: bool) -> Self {
         Self {
             _marker: PhantomData,
             pool: ExtractionPool::new(4),
             entry: crate::Entry::default(),
             current_is_folder: false,
             recursive,
+            open_files_exclusively,
         }
     }
 }
@@ -96,7 +100,7 @@ impl<T: ContentType + 'static> ContentExtractor<T> for FolderExtractor<T> {
         if self.current_is_folder {
             Some(Box::new(FolderContent::with_content_type(self.entry.path.as_path(), content.content_type()?)))
         } else {
-            Some(Box::new(FileContent::with_size(self.entry.path.as_path(), self.entry.size)))
+            Some(Box::new(FileContent::with_size(self.entry.path.as_path(), self.entry.size, self.open_files_exclusively)))
         }
     }
 
