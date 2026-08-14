@@ -381,6 +381,8 @@ pub enum IdentifyMethod {
 
 Fast identification is performed with an internal matcher (single-pattern, packed magic table, or trie depending on the number and shape of patterns). After a fast match, `validate()` is called to confirm the guess.
 
+If `identify_method` returns `None`, `validate()` is still called — after magic, file name, and extension have all been considered — so you can classify content with custom logic (heuristics, path shape, size, …). Those identifiers are tried in the order they were registered.
+
 At most **one identifier per `ContentType`** may be registered; the builder will panic otherwise.
 
 ### `ContentAnalyzer`
@@ -673,9 +675,10 @@ For every scanned object, the scanner performs the following steps (see [`conten
 2. **Type resolution.** If the content already reports a `content_type()`, it is used as-is. Otherwise the scanner tries, in order, using `ContentPath::as_bytes()` for the name-based steps:
    1. magic bytes (first 16 bytes),
    2. exact file name,
-   3. file extension.
+   3. file extension,
+   4. identifiers that returned `None` from `identify_method` (each `validate()` is tried in registration order).
 
-   Each candidate is confirmed via the corresponding identifier's `validate()` method.
+   Each fast-matcher candidate is confirmed via the corresponding identifier's `validate()` method. Custom identifiers have no pre-filter; `validate()` is the identification.
 3. **Type-specific analyzers** for the resolved type run in priority order.
 4. **Generic analyzers** run for every object in priority order.
 5. **Type-specific extractors** run (`acquire` → `advance`/`extract` loop → `release`) and, for each entry they emit, the scanner recurses (subject to `max_depth` and `Filter`). Entries marked `skip_from_filtering` bypass the `Filter` check.

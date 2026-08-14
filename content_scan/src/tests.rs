@@ -472,3 +472,101 @@ mod filter {
     }
 }
 
+mod identify {
+    use crate::*;
+
+    #[derive(Debug, Copy, Clone, Eq, PartialEq, ContentType)]
+    #[repr(u16)]
+    enum Ty {
+        Tagged,
+        Custom,
+        Fallback,
+    }
+
+    struct TaggedId;
+    impl ContentIdentifier<Ty> for TaggedId {
+        fn identify_method(&self) -> Option<IdentifyMethod> {
+            Some(IdentifyMethod::Magic(b"TAG"))
+        }
+        fn validate(&self, _: &dyn Content<Ty>) -> bool {
+            true
+        }
+    }
+
+    struct TaggedButRejectsId;
+    impl ContentIdentifier<Ty> for TaggedButRejectsId {
+        fn identify_method(&self) -> Option<IdentifyMethod> {
+            Some(IdentifyMethod::Magic(b"TAG"))
+        }
+        fn validate(&self, _: &dyn Content<Ty>) -> bool {
+            false
+        }
+    }
+
+    /// Example: no `IdentifyMethod` — decide from the path in `validate`.
+    struct CustomPathId;
+    impl ContentIdentifier<Ty> for CustomPathId {
+        fn identify_method(&self) -> Option<IdentifyMethod> {
+            None
+        }
+        fn validate(&self, content: &dyn Content<Ty>) -> bool {
+            content.path().as_printable_string().ends_with(".custom")
+        }
+    }
+
+    /// Example: catch-all custom identifier (any non-empty payload).
+    struct NonEmptyId;
+    impl ContentIdentifier<Ty> for NonEmptyId {
+        fn identify_method(&self) -> Option<IdentifyMethod> {
+            None
+        }
+        fn validate(&self, content: &dyn Content<Ty>) -> bool {
+            content.size() > 0
+        }
+    }
+
+    fn identified_type(scanner: &mut Scanner<Ty>, buf: &[u8], path: &str) -> Option<Ty> {
+        let mut content = BufferContent::<Ty>::new(buf, path);
+        let res = scanner.scan(&mut content, true);
+        res.root().and_then(|h| res.content_type(h))
+    }
+
+    #[test]
+    fn custom_identifier_classifies_when_identify_method_is_none() {
+        let mut scanner = ScannerBuilder::new()
+            .add_identifier(Ty::Custom, CustomPathId)
+            .build();
+        assert_eq!(identified_type(&mut scanner, b"hello", "blob.custom"), Some(Ty::Custom));
+        assert_eq!(identified_type(&mut scanner, b"hello", "blob.bin"), None);
+    }
+
+    #[test]
+    fn custom_identifier_runs_after_magic_validate_rejects() {
+        let mut scanner = ScannerBuilder::new()
+            .add_identifier(Ty::Tagged, TaggedButRejectsId)
+            .add_identifier(Ty::Custom, CustomPathId)
+            .build();
+        assert_eq!(identified_type(&mut scanner, b"TAG payload", "blob.custom"), Some(Ty::Custom));
+    }
+
+    #[test]
+    fn magic_match_still_wins_over_custom_identifier() {
+        let mut scanner = ScannerBuilder::new()
+            .add_identifier(Ty::Custom, CustomPathId)
+            .add_identifier(Ty::Tagged, TaggedId)
+            .build();
+        assert_eq!(identified_type(&mut scanner, b"TAG payload", "blob.custom"), Some(Ty::Tagged));
+    }
+
+    #[test]
+    fn custom_identifiers_are_tried_in_registration_order() {
+        let mut scanner = ScannerBuilder::new()
+            .add_identifier(Ty::Custom, CustomPathId)
+            .add_identifier(Ty::Fallback, NonEmptyId)
+            .build();
+        assert_eq!(identified_type(&mut scanner, b"hello", "blob.custom"), Some(Ty::Custom));
+        assert_eq!(identified_type(&mut scanner, b"hello", "blob.bin"), Some(Ty::Fallback));
+        assert_eq!(identified_type(&mut scanner, b"", "empty.bin"), None);
+    }
+}
+

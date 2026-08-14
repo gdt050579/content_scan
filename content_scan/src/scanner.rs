@@ -239,6 +239,11 @@ impl<T: ContentType> Scanner<T> {
                 return Some(ty);
             }
         }
+        for &ty in self.identifiers.identifiers_without_prefilter() {
+            if self.validate_content_type(content, ty) {
+                return Some(ty);
+            }
+        }
         None
     }
     #[inline(always)]

@@ -7,6 +7,7 @@ pub(crate) struct IdentifierSet<T: ContentType> {
     magics: Matcher<T>,
     extensions: Matcher<T>,
     names: Matcher<T>,
+    no_prefilter_list: Vec<T>,
 }
 impl<T: ContentType> IdentifierSet<T> {
     pub(crate) fn new(identifiers: Vec<(T, Box<dyn ContentIdentifier<T>>)>) -> Self {
@@ -14,6 +15,7 @@ impl<T: ContentType> IdentifierSet<T> {
         let mut magics = MatcherBuilder::new();
         let mut extensions = MatcherBuilder::new();
         let mut names = MatcherBuilder::new();
+        let mut no_prefilter_list = Vec::new();
         for (content_type, identifier) in identifiers {
             if let Some(fast_id) = identifier.identify_method() {
                 match fast_id {
@@ -36,6 +38,8 @@ impl<T: ContentType> IdentifierSet<T> {
                         }
                     }
                 }
+            } else {
+                no_prefilter_list.push(content_type);
             }
             map.insert(content_type.as_u16(), identifier);
         }
@@ -44,6 +48,7 @@ impl<T: ContentType> IdentifierSet<T> {
             magics: magics.build(),
             extensions: extensions.build(),
             names: names.build(),
+            no_prefilter_list,
         }
     }
     #[inline(always)]
@@ -61,5 +66,11 @@ impl<T: ContentType> IdentifierSet<T> {
     #[inline(always)]
     pub(crate) fn type_from_magic(&self, buffer: &[u8]) -> Option<T> {
         self.magics.starts_with(buffer)
+    }
+    /// Identifiers with no [`IdentifyMethod`](crate::IdentifyMethod), in
+    /// registration order.
+    #[inline(always)]
+    pub(crate) fn identifiers_without_prefilter(&self) -> &[T] {
+        &self.no_prefilter_list
     }
 }

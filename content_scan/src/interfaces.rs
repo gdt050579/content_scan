@@ -190,7 +190,9 @@ pub enum IdentifyMethod {
 /// Identifiers pair a fast pre-filter ([`IdentifyMethod`]) with an
 /// optional custom [`validate`](Self::validate) step. The scanner
 /// first uses the pre-filter to narrow down candidate types and then
-/// calls `validate` to accept or reject each candidate.
+/// calls `validate` to accept or reject each candidate. Identifiers
+/// that return `None` from [`identify_method`](Self::identify_method)
+/// are tried afterwards, in registration order, via `validate` alone.
 ///
 /// Register identifiers via
 /// [`ScannerBuilder::add_identifier`](crate::ScannerBuilder::add_identifier).
@@ -199,7 +201,8 @@ pub trait ContentIdentifier<T: ContentType> {
     /// Returns the fast pre-filter used by the scanner, if any.
     ///
     /// Return `None` to disable pre-filtering and rely solely on
-    /// [`validate`](Self::validate).
+    /// [`validate`](Self::validate). Those identifiers are tried after
+    /// magic, file-name, and extension matching have all been considered.
     fn identify_method(&self) -> Option<IdentifyMethod>;
 
     /// Confirms that `content` is really of the type this identifier
