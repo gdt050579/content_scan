@@ -257,9 +257,9 @@ impl<'a, T: ContentType> ScanResult<'a, T> {
 
     /// Returns the path stored for the object referenced by `handle`.
     ///
-    /// This is the interned byte view of
+    /// This is the interned printable view of
     /// [`Content::path`](crate::Content::path) at the moment the object
-    /// was scanned (see [`ContentPath::as_bytes`](crate::ContentPath::as_bytes)).
+    /// was scanned (see [`ContentPath::as_printable_string`](crate::ContentPath::as_printable_string)).
     /// For a live content object, prefer
     /// [`ContentPath::as_printable_string`](crate::ContentPath::as_printable_string)
     /// (display) or [`ContentPath::as_path`](crate::ContentPath::as_path)
@@ -267,7 +267,7 @@ impl<'a, T: ContentType> ScanResult<'a, T> {
     pub fn path(&self, handle: ScanContentHandle) -> Option<&str> {
         let object = self.context.objects.get(handle.index as usize)?;
         let path = self.context.path_arena.get(object.path)?;
-        Some(unsafe { std::str::from_utf8_unchecked(path) })
+        std::str::from_utf8(path).ok()
     }
 
     /// Returns the identified [`ContentType`] of `handle`, if any.

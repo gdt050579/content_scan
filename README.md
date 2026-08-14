@@ -612,7 +612,7 @@ context.local().set(var!("size"), Size { width, height });
 
 ### Navigating the scan result tree
 
-Every object visited by the scanner is recorded, along with its resolved content type, its path (interned from `ContentPath::as_bytes()` into an internal arena) and its optional local `VarMap`. Objects are linked as a **parent / first-child / next-sibling** tree that mirrors the extraction hierarchy.
+Every object visited by the scanner is recorded, along with its resolved content type, its path (interned from `ContentPath::as_printable_string()` into an internal arena) and its optional local `VarMap`. Objects are linked as a **parent / first-child / next-sibling** tree that mirrors the extraction hierarchy.
 
 You navigate the tree with opaque `ScanContentHandle`s returned by `ScanResult<T>`:
 
@@ -636,7 +636,7 @@ impl<'a, T: ContentType> ScanResult<'a, T> {
 }
 ```
 
-`ScanResult::path` is the interned byte view of the object's `ContentPath` (`as_bytes()` at scan time). For a live content object, use `content.path().as_printable_string()` to display it or `content.path().as_path()` to open it.
+`ScanResult::path` is the interned printable view of the object's `ContentPath` (`as_printable_string()` at scan time). For a live content object, use `content.path().as_printable_string()` to display it or `content.path().as_path()` to open it.
 
 Typical walk:
 
@@ -680,7 +680,7 @@ For every scanned object, the scanner performs the following steps (see [`conten
 5. **Type-specific extractors** run (`acquire` → `advance`/`extract` loop → `release`) and, for each entry they emit, the scanner recurses (subject to `max_depth` and `Filter`). Entries marked `skip_from_filtering` bypass the `Filter` check.
 6. **Generic extractors** run the same session lifecycle and recurse in the same way.
 
-While this is happening, the scanner also **records the object** into `Context::objects` — interned from `ContentPath::as_bytes()` into an internal arena, tagged with the resolved content type, and linked into its parent's child list. After `scan()` returns, that tree is exposed to the caller through [`ScanResult`](#navigating-the-scan-result-tree).
+While this is happening, the scanner also **records the object** into `Context::objects` — interned from `ContentPath::as_printable_string()` into an internal arena, tagged with the resolved content type, and linked into its parent's child list. After `scan()` returns, that tree is exposed to the caller through [`ScanResult`](#navigating-the-scan-result-tree).
 
 Any analyzer or extractor may short-circuit the current object with `NextAction::Skip` or abort the entire scan with `NextAction::Exit`.
 

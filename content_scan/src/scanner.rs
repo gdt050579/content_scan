@@ -67,7 +67,7 @@ impl<T: ContentType> Scanner<T> {
         self.context.local_varmaps_index = Object::INVALID_INDEX; // so that next time someone ask for a local varmap, it will get one from the context varmap_pool
         let ty = self.retrieve_content_type(content);
 
-        let path_index = self.context.path_arena.alloc(content.path().as_bytes());
+        let path_index = self.context.path_arena.alloc(content.path().as_printable_string().as_bytes());
         let obj = Object {
             path: path_index,
             parent_index,
