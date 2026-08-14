@@ -22,6 +22,18 @@ pub enum Precedence {
     Highest,
 }
 
+impl Precedence {
+    fn rank(self) -> u8 {
+        match self {
+            Self::Lowest => 0,
+            Self::Low => 1,
+            Self::Medium => 2,
+            Self::High => 3,
+            Self::Highest => 4,
+        }
+    }
+}
+
 enum FilterRule {
     IncludeExtensions(Matcher<bool>),
     ExcludeExtensions(Matcher<bool>),
@@ -194,11 +206,15 @@ impl ReadyFilterBuilder {
     ///
     /// Rules are compiled into efficient matchers (tries / magic
     /// tables) so that [`Filter::should_process`] is cheap even when
-    /// many patterns are registered.
+    /// many patterns are registered. They are then ordered from
+    /// [`Precedence::Highest`] to [`Precedence::Lowest`]; rules that
+    /// share a precedence keep the order they were added.
     pub fn build(self) -> Filter {
         let check_extensions = self.builder.rules.iter().any(|(_, rule)| matches!(rule, FilterRule::IncludeExtensions(_) | FilterRule::ExcludeExtensions(_)));
         let check_file_names = self.builder.rules.iter().any(|(_, rule)| matches!(rule, FilterRule::IncludeFileNames(_) | FilterRule::ExcludeFileNames(_)));
-        let rules = self.builder.rules.into_iter().map(|(_, rule)| rule).collect();
+        let mut ranked = self.builder.rules;
+        ranked.sort_by(|a, b| b.0.rank().cmp(&a.0.rank()));
+        let rules = ranked.into_iter().map(|(_, rule)| rule).collect();
         Filter {
             rules,
             default_result: self.builder.default_result,

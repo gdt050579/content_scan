@@ -425,3 +425,50 @@ mod utils {
     }
 }
 
+mod filter {
+    use crate::{ContentPath, Filter, FilterBuilder, Precedence};
+
+    fn process(filter: &Filter, path: &str) -> bool {
+        filter.should_process(&ContentPath::from_str(path), 1)
+    }
+
+    #[test]
+    fn higher_precedence_exclude_overrides_earlier_include() {
+        let filter = FilterBuilder::new()
+            .include_extensions(Precedence::Low, &["txt"])
+            .exclude_extensions(Precedence::Highest, &["txt"])
+            .allow_the_rest()
+            .build();
+        assert!(!process(&filter, "notes.txt"));
+        assert!(process(&filter, "notes.rs"));
+    }
+
+    #[test]
+    fn higher_precedence_include_overrides_earlier_exclude() {
+        let filter = FilterBuilder::new()
+            .exclude_extensions(Precedence::Low, &["txt"])
+            .include_extensions(Precedence::High, &["txt"])
+            .deny_the_rest()
+            .build();
+        assert!(process(&filter, "notes.txt"));
+        assert!(!process(&filter, "notes.rs"));
+    }
+
+    #[test]
+    fn same_precedence_keeps_insertion_order() {
+        let include_first = FilterBuilder::new()
+            .include_extensions(Precedence::Medium, &["txt"])
+            .exclude_extensions(Precedence::Medium, &["txt"])
+            .deny_the_rest()
+            .build();
+        assert!(process(&include_first, "notes.txt"));
+
+        let exclude_first = FilterBuilder::new()
+            .exclude_extensions(Precedence::Medium, &["txt"])
+            .include_extensions(Precedence::Medium, &["txt"])
+            .allow_the_rest()
+            .build();
+        assert!(!process(&exclude_first, "notes.txt"));
+    }
+}
+

@@ -552,7 +552,7 @@ Available builder methods:
 | `exclude(prec, fn(&ContentPath, u64) -> bool)`  | Deny if the callback returns `true`.      |
 | `deny_the_rest()` / `allow_the_rest()`          | Set the default and finalize the builder. |
 
-Rules are evaluated in the order they were added; the first matching rule wins. The `Precedence` enum is provided to make the intent explicit.
+Rules are grouped by `Precedence` and evaluated from `Highest` to `Lowest`. Within the same precedence, rules keep the order they were added. The first matching rule wins.
 
 Filters are also applied to entries produced by extractors, so filtering works transparently for embedded content.
 
