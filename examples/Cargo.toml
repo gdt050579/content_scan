@@ -6,7 +6,6 @@ edition = "2021"
 
 [dev-dependencies]
 content_scan = { path = "../content_scan" }
-varmap = "*"
 
 
 [[example]]
