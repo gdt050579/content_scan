@@ -65,7 +65,9 @@ impl ContentExtractor<MyTypes> for NumericExtractor {
             return None;
         }
         let len = data.len;
-        self.entry.update("number", len, false);
+        self.entry.path.set_from_str("number");
+        self.entry.size = len;
+        self.entry.skip_from_filtering = false;
         Some(&self.entry)
     }
     fn extract(&mut self, handle: ExtractionHandle, content: &mut dyn Content<MyTypes>) -> Option<Box<dyn Content<MyTypes>>> {

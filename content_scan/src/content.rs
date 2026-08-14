@@ -1,7 +1,5 @@
-use filecache::*;
-use std::{fmt::Debug, fs, marker::PhantomData, path::Path};
-
-use crate::{ContentExtractor, ExtractionPool, ContentPath};
+use std::fmt::Debug;
+use crate::ContentPath;
 
 /// Enumeration of content kinds understood by a scanner.
 ///
