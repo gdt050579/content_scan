@@ -580,7 +580,7 @@ Then scan:
 let result: ScanResult = scanner.scan(&mut content, /* filter_root */ true);
 ```
 
-`max_depth` limits how deep the scanner is allowed to recurse into extracted children (default `8`, minimum `1`).
+`max_depth` limits how deep the scanner is allowed to recurse into extracted children (default `8`, minimum `1`). The root is depth `1`; a child of a depth-`N` object is depth `N + 1`. Extraction stops when that next child would exceed `max_depth`, so `max_depth(8)` visits at most eight objects on any path.
 
 The second argument to `scan` decides whether the configured `Filter` is applied to the root object itself. Pass `true` for a normal file — the scan then returns an empty `ScanResult` if the filter rejects it. Pass `false` when the root is a container that the filter was never written to accept, such as a folder being walked with a filter that only allows `png` files. Extracted children are always filtered regardless of this flag (unless their `Entry` opts out via `skip_from_filtering`).
 

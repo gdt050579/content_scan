@@ -570,3 +570,77 @@ mod identify {
     }
 }
 
+mod max_depth {
+    use crate::*;
+
+    #[derive(Debug, Copy, Clone, Eq, PartialEq, ContentType)]
+    #[repr(u16)]
+    enum Ty {
+        Nest,
+    }
+
+    /// Emits one smaller child so scans form a single chain of nested objects.
+    struct NestExtractor {
+        pool: ExtractionPool<bool>,
+        entry: Entry,
+    }
+    impl Default for NestExtractor {
+        fn default() -> Self {
+            Self {
+                pool: ExtractionPool::new(4),
+                entry: Entry::default(),
+            }
+        }
+    }
+    impl ContentExtractor<Ty> for NestExtractor {
+        fn acquire(&mut self, content: &mut dyn Content<Ty>, _: &mut VarMap) -> Option<ExtractionHandle> {
+            if content.size() == 0 {
+                return None;
+            }
+            Some(self.pool.acquire_slot(false))
+        }
+        fn advance(&mut self, handle: ExtractionHandle, content: &mut dyn Content<Ty>) -> Option<&Entry> {
+            let done = self.pool.get_mut(handle)?;
+            if *done {
+                return None;
+            }
+            *done = true;
+            self.entry.path.set_from_str("child");
+            self.entry.size = content.size().saturating_sub(1);
+            self.entry.skip_from_filtering = false;
+            Some(&self.entry)
+        }
+        fn extract(&mut self, _: ExtractionHandle, content: &mut dyn Content<Ty>) -> Option<Box<dyn Content<Ty>>> {
+            let n = content.size().saturating_sub(1) as usize;
+            Some(Box::new(BufferContent::<Ty>::with_content_type(&vec![0u8; n], "child", Ty::Nest)))
+        }
+        fn release(&mut self, handle: ExtractionHandle) {
+            self.pool.release_slot(handle);
+        }
+    }
+
+    fn scanned(max_depth: u32) -> u32 {
+        let mut scanner = ScannerBuilder::new()
+            .max_depth(max_depth)
+            .add_extractor(Ty::Nest, 0, NestExtractor::default())
+            .build();
+        let mut content = BufferContent::<Ty>::with_content_type(&[0u8; 16], "root", Ty::Nest);
+        scanner.scan(&mut content, true).objects_scanned()
+    }
+
+    #[test]
+    fn max_depth_one_scans_only_the_root() {
+        assert_eq!(scanned(1), 1);
+    }
+
+    #[test]
+    fn max_depth_three_scans_three_objects() {
+        assert_eq!(scanned(3), 3);
+    }
+
+    #[test]
+    fn max_depth_does_not_scan_an_extra_level() {
+        assert_eq!(scanned(8), 8);
+    }
+}
+

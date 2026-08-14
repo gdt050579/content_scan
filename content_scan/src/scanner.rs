@@ -165,7 +165,7 @@ impl<T: ContentType> Scanner<T> {
         NextAction::Continue
     }
     fn extract_content(&mut self, content: &mut dyn Content<T>, index: usize, depth: u32, parent_index: u32) -> NextAction {
-        if depth > self.max_depth {
+        if depth >= self.max_depth {
             return NextAction::Continue;
         }
         let len = self.extractors.len();
