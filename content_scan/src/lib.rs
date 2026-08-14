@@ -91,6 +91,7 @@ mod context;
 mod object;
 mod buffer_arena;
 mod extraction_pool;
+mod content_path;
 #[cfg(test)]
 mod tests;
 
@@ -113,4 +114,5 @@ pub use context::ScanContentHandle;
 pub use varmap::*;
 pub use extraction_pool::ExtractionHandle;
 pub use extraction_pool::ExtractionPool;
+pub use content_path::*;
 
