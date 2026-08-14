@@ -11,7 +11,7 @@ pub(crate) struct ArenaIndex {
 pub(crate) struct Object {
     pub(crate) path: ArenaIndex,
     pub(crate) parent_index: u32,
-    pub(crate) next_siblig_index: u32,
+    pub(crate) next_sibling_index: u32,
     pub(crate) varmap_index: u32,
     pub(crate) first_child_index: u32,
     pub(crate) last_child_index: u32,

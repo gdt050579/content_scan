@@ -71,7 +71,7 @@ impl<T: ContentType> Scanner<T> {
         let obj = Object {
             path: path_index,
             parent_index,
-            next_siblig_index: Object::INVALID_INDEX,
+            next_sibling_index: Object::INVALID_INDEX,
             varmap_index: Object::INVALID_INDEX,
             first_child_index: Object::INVALID_INDEX,
             last_child_index: Object::INVALID_INDEX,
@@ -79,7 +79,7 @@ impl<T: ContentType> Scanner<T> {
         };
         let my_index = self.context.objects.len() as u32;
         self.context.objects.push(obj);
-        // links to parent and siblig
+        // links to parent and sibling
         let mut last_sibling_index = Object::INVALID_INDEX;
         if parent_index != Object::INVALID_INDEX {
             if let Some(parent) = self.context.objects.get_mut(parent_index as usize) {
@@ -94,7 +94,7 @@ impl<T: ContentType> Scanner<T> {
         }
         if last_sibling_index != Object::INVALID_INDEX {
             if let Some(last_sibling) = self.context.objects.get_mut(last_sibling_index as usize) {
-                last_sibling.next_siblig_index = my_index;
+                last_sibling.next_sibling_index = my_index;
             }
         }
 
