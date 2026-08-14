@@ -516,6 +516,7 @@ Behaviour worth knowing:
 - The `recursive` flag passed to `new` decides whether subdirectories are emitted at all. When `false`, only files directly inside the folder are scanned.
 - Subdirectories are emitted as `FolderContent` carrying the **same** content type as their parent, so the same extractor picks them up again. Files become `FileContent` built with `with_size`, reusing the size from the directory entry's metadata. Each entry's path is filled with `ContentPath::set_from_os`, so non-UTF-8 filesystem names stay openable.
 - Directory symlinks are skipped, which keeps cyclic link structures from looping forever.
+- An unreadable entry (permission error, failed `file_type`) is skipped; the rest of the directory is still enumerated.
 - Subdirectory entries are marked `skip_from_filtering`, so an extension-based `Filter` narrows down the files without preventing the walk from descending.
 - Recursion is still bounded by the scanner's `max_depth` (default `8`), which here translates into directory nesting levels.
 

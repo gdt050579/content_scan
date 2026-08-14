@@ -23,6 +23,9 @@ use super::{FolderContent, FileContent};
 ///
 /// Notable behaviour:
 ///
+/// - Entries that cannot be read (permission errors, broken
+///   `file_type()`) are skipped; the rest of the directory is still
+///   enumerated.
 /// - Symbolic links to directories are skipped, so link cycles cannot
 ///   make the walk loop forever.
 /// - Subdirectory entries set
@@ -64,8 +67,15 @@ impl<T: ContentType + 'static> ContentExtractor<T> for FolderExtractor<T> {
     fn advance(&mut self, handle: crate::ExtractionHandle, _: &mut dyn Content<T>) -> Option<&crate::Entry> {
         let rd = self.pool.get_mut(handle)?;
         loop {
-            let folder_ent = rd.next()?.ok()?;
-            let ft = folder_ent.file_type().ok()?;
+            let folder_ent = match rd.next() {
+                Some(Ok(ent)) => ent,
+                Some(Err(_)) => continue, // skip unreadable entries
+                None => return None,
+            };
+            let ft = match folder_ent.file_type() {
+                Ok(ft) => ft,
+                Err(_) => continue, // skip entries whose type cannot be determined
+            };
             self.current_is_folder = ft.is_dir();
             let symlink = ft.is_symlink();
             if self.current_is_folder && symlink {
