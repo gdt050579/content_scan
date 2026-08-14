@@ -50,7 +50,10 @@ impl Context {
         self.extract.clear();
         self.objects.clear();
         self.path_arena.clear();
-        self.varmap_pool.clear();
+        self.varmap_pool.truncate(128);
+        for varmap in self.varmap_pool.iter_mut() {
+            varmap.clear();
+        }
         self.used_local_varmaps = 0;
         self.local_varmaps_index = Object::INVALID_INDEX;
     }
