@@ -48,15 +48,17 @@ pub trait ContentType: Copy + Eq + PartialEq + Debug {
 
 /// A byte-addressable piece of content the scanner can operate on.
 ///
-/// Implementors expose a virtual path, a total size, and a way to read
-/// arbitrary byte ranges. Analyzers and extractors receive a `&mut dyn
-/// Content<T>` so they can request the exact windows they need without
-/// requiring the whole payload to be buffered in memory up front.
+/// Implementors expose a [`ContentPath`], a total size, and a way to
+/// read arbitrary byte ranges. Analyzers and extractors receive a
+/// `&mut dyn Content<T>` so they can request the exact windows they
+/// need without requiring the whole payload to be buffered in memory
+/// up front.
 ///
-/// [`BufferContent`] is provided as a ready-to-use in-memory
-/// implementation; you can implement `Content` for your own types (for
-/// example a memory-mapped file, a network stream wrapper, or an entry
-/// inside an archive).
+/// Ready-made implementations: [`crate::BufferContent`] (in-memory),
+/// [`crate::FileContent`] (a file on disk), and [`crate::FolderContent`]
+/// (a directory). You can also implement `Content` for your own types
+/// (for example a memory-mapped region, a network stream wrapper, or
+/// an entry inside an archive).
 pub trait Content<T: ContentType> {
     /// Returns the content type if it is already known.
     ///
@@ -68,12 +70,16 @@ pub trait Content<T: ContentType> {
         None
     }
 
-    /// Returns the virtual path associated with this content.
+    /// Returns the path associated with this content.
     ///
-    /// The path is used by [`Filter`](crate::Filter) rules, stored in
-    /// the scan result tree, and is available to analyzers and
-    /// extractors. It does not need to correspond to a real filesystem
-    /// path.
+    /// The path is a [`ContentPath`]: a UTF-8 printable view always
+    /// exists, and a real OS path (including non-UTF-8 names) stays
+    /// openable via [`ContentPath::as_path`]. It is used by
+    /// [`Filter`](crate::Filter) rules, stored in the scan result tree,
+    /// and available to analyzers and extractors. It does not need to
+    /// correspond to a real filesystem path — archive members and
+    /// in-memory buffers typically use a synthetic address built with
+    /// [`ContentPath::from_str`].
     fn path(&self) -> &ContentPath;
 
     /// Returns the total size of the content in bytes.

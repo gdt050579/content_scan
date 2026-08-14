@@ -22,6 +22,8 @@ pub struct FolderContent<T: ContentType> {
 }
 impl<T: ContentType> FolderContent<T> {
     /// Creates a `FolderContent` for `path`, tagged as `content_type`.
+    ///
+    /// The path is stored via [`ContentPath::from_os`].
     pub fn with_content_type(path: impl AsRef<Path>, content_type: T) -> Self {
         Self {
             path: ContentPath::from_os(path.as_ref()),

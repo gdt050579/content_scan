@@ -255,12 +255,15 @@ impl<'a, T: ContentType> ScanResult<'a, T> {
         }
     }
 
-    /// Returns the virtual path stored for the object referenced by
-    /// `handle`.
+    /// Returns the path stored for the object referenced by `handle`.
     ///
-    /// The path is the one the object reported via
-    /// [`Content::path`](crate::Content::path) at the moment it was
-    /// scanned. Returns `None` for an invalid handle.
+    /// This is the interned byte view of
+    /// [`Content::path`](crate::Content::path) at the moment the object
+    /// was scanned (see [`ContentPath::as_bytes`](crate::ContentPath::as_bytes)).
+    /// For a live content object, prefer
+    /// [`ContentPath::as_printable_string`](crate::ContentPath::as_printable_string)
+    /// (display) or [`ContentPath::as_path`](crate::ContentPath::as_path)
+    /// (filesystem). Returns `None` for an invalid handle.
     pub fn path(&self, handle: ScanContentHandle) -> Option<&str> {
         let object = self.context.objects.get(handle.index as usize)?;
         let path = self.context.path_arena.get(object.path)?;

@@ -46,9 +46,12 @@ impl ExtractionHandle {
 /// session's state.
 ///
 /// The [`Entry`](crate::Entry) announced by `advance` is **not** stored
-/// in the pool: keep it as a field on the extractor and fill it with
-/// [`Entry::update`](crate::Entry::update). That avoids borrowing the
-/// pool while returning `&Entry`.
+/// in the pool: keep it as a field on the extractor and overwrite
+/// [`Entry::path`](crate::Entry::path) with
+/// [`ContentPath::set_from_str`](crate::ContentPath::set_from_str) or
+/// [`ContentPath::set_from_os`](crate::ContentPath::set_from_os). That
+/// avoids borrowing the pool while returning `&Entry`, and reuses the
+/// path allocation across children.
 ///
 /// ```ignore
 /// #[derive(Default)]
@@ -64,7 +67,9 @@ impl ExtractionHandle {
 ///     fn advance(&mut self, handle: ExtractionHandle, _: &mut dyn Content<MyTypes>) -> Option<&Entry> {
 ///         let cursor = self.pool.get_mut(handle)?;
 ///         // ...advance the cursor, then fill a field-owned Entry...
-///         self.entry.update("child", size, false);
+///         self.entry.path.set_from_str("child");
+///         self.entry.size = size;
+///         self.entry.skip_from_filtering = false;
 ///         Some(&self.entry)
 ///     }
 ///     // ...

@@ -24,9 +24,10 @@ pub struct FileContent<T: ContentType> {
 impl<T: ContentType> FileContent<T> {
     /// Creates a `FileContent` for `path`, querying its size upfront.
     ///
-    /// The content type is left unset, so the scanner identifies it
-    /// automatically. A path that cannot be stat'ed yields a size of
-    /// `0`.
+    /// The path is stored via [`ContentPath::from_os`], so a non-UTF-8
+    /// filesystem name stays openable. The content type is left unset,
+    /// so the scanner identifies it automatically. A path that cannot
+    /// be stat'ed yields a size of `0`.
     pub fn new(path: impl AsRef<Path>) -> Self {
         Self {
             path: ContentPath::from_os(path.as_ref()),

@@ -15,9 +15,15 @@
 //!   `#[derive(ContentType)]`) that enumerates the content kinds your
 //!   application understands.
 //! - **[`Content`]** – a trait describing a byte-addressable piece of
-//!   content with a path and a size. Use [`BufferContent`] for in-memory
-//!   data, [`FileContent`] for a file on disk, [`FolderContent`] for a
-//!   directory, or implement it for your own sources.
+//!   content with a [`ContentPath`] and a size. Use [`BufferContent`]
+//!   for in-memory data, [`FileContent`] for a file on disk,
+//!   [`FolderContent`] for a directory, or implement it for your own
+//!   sources.
+//! - **[`ContentPath`]** – the path (or synthetic address) of a piece
+//!   of content. UTF-8 strings and real OS paths, including non-UTF-8
+//!   names, are both representable; use [`ContentPath::as_path`] to
+//!   open a file and [`ContentPath::as_printable_string`] to display
+//!   it.
 //! - **[`ContentIdentifier`]** – classifies a piece of content into a
 //!   `ContentType` (via magic bytes, file name, or extension) and
 //!   validates the guess.

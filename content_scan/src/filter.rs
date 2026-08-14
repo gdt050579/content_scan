@@ -139,9 +139,12 @@ impl FilterBuilder {
 
     /// Adds a custom inclusion callback.
     ///
-    /// `callback` receives the full path and the size of a content
-    /// item and should return `true` to include it. Returning `false`
-    /// simply lets the next rule decide (it is *not* an exclusion).
+    /// `callback` receives the [`ContentPath`] and the size of a
+    /// content item and should return `true` to include it. Returning
+    /// `false` simply lets the next rule decide (it is *not* an
+    /// exclusion). Use [`ContentPath::as_printable_string`] to inspect
+    /// the UTF-8 view, or [`ContentPath::as_path`] for a filesystem
+    /// path.
     pub fn include(mut self, prec: Precedence, callback: fn(&ContentPath, u64) -> bool) -> Self {
         self.rules.push((prec, FilterRule::Include(callback)));
         self
@@ -149,9 +152,12 @@ impl FilterBuilder {
 
     /// Adds a custom exclusion callback.
     ///
-    /// `callback` receives the full path and the size of a content
-    /// item and should return `true` to reject it. Returning `false`
-    /// simply lets the next rule decide (it is *not* an inclusion).
+    /// `callback` receives the [`ContentPath`] and the size of a
+    /// content item and should return `true` to reject it. Returning
+    /// `false` simply lets the next rule decide (it is *not* an
+    /// inclusion). Use [`ContentPath::as_printable_string`] to inspect
+    /// the UTF-8 view, or [`ContentPath::as_path`] for a filesystem
+    /// path.
     pub fn exclude(mut self, prec: Precedence, callback: fn(&ContentPath, u64) -> bool) -> Self {
         self.rules.push((prec, FilterRule::Exclude(callback)));
         self

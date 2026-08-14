@@ -35,8 +35,13 @@ pub enum NextAction {
 /// the extractor to materialize the actual [`Content`].
 #[derive(Default)]
 pub struct Entry {
-    /// Virtual path of the entry (for example, the name inside an
-    /// archive).
+    /// Path of the entry (a filesystem path, or a synthetic address
+    /// such as the name inside an archive).
+    ///
+    /// Extractors typically keep one `Entry` as a field and overwrite
+    /// this path in place with [`ContentPath::set_from_str`] (virtual
+    /// names) or [`ContentPath::set_from_os`] (real OS paths) so the
+    /// allocation is reused across children.
     pub path: ContentPath,
     /// Size of the entry in bytes, when known.
     pub size: u64,

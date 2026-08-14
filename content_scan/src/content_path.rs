@@ -81,8 +81,10 @@ impl ContentPath {
     /// Overwrites this path in place from a UTF-8 string, reusing the
     /// existing allocation.
     ///
-    /// Mirrors the reuse pattern of [`Entry::update`](crate::Entry::update)
-    /// so hot loops (e.g. directory walks) don't reallocate per item.
+    /// Typical use: fill [`Entry::path`](crate::Entry::path) from
+    /// [`ContentExtractor::advance`](crate::ContentExtractor::advance)
+    /// so a hot loop (directory walk, archive enumeration) does not
+    /// reallocate per item.
     #[inline]
     pub fn set_from_str(&mut self, s: &str) {
         self.path.clear();

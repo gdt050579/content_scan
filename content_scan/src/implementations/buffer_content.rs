@@ -15,8 +15,10 @@ pub struct BufferContent<T: ContentType> {
 impl<T: ContentType> BufferContent<T> {
     /// Creates a new `BufferContent` by copying `buffer`.
     ///
-    /// The content type is left unset, so the scanner will identify it
-    /// automatically using magic bytes, file name, or extension.
+    /// `path` is a synthetic UTF-8 address stored via
+    /// [`ContentPath::from_str`]. The content type is left unset, so
+    /// the scanner will identify it automatically using magic bytes,
+    /// file name, or extension.
     pub fn new(buffer: &[u8], path: &str) -> Self {
         Self {
             buffer: buffer.to_vec(),
@@ -43,9 +45,11 @@ impl<T: ContentType> BufferContent<T> {
     /// copy of the buffer.
     ///
     /// Use this constructor when you already own a `Vec<u8>` and a
-    /// `String` and want to move them into the `BufferContent` without
-    /// paying an extra allocation. Passing `content_type = None` lets
-    /// the scanner identify the type automatically.
+    /// UTF-8 path `String` and want to move them into the
+    /// `BufferContent` without paying an extra allocation. The path is
+    /// stored as a lossless [`ContentPath`]. Passing
+    /// `content_type = None` lets the scanner identify the type
+    /// automatically.
     pub fn from_parts(buffer: Vec<u8>, path: String, content_type: Option<T>) -> Self {
         Self { buffer, path: ContentPath::with_string(path), content_type }
     }

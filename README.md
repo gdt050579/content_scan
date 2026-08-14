@@ -30,6 +30,7 @@ Typical use cases:
   - [API overview](#api-overview)
     - [`ContentType`](#contenttype)
     - [`Content`](#content)
+    - [`ContentPath`](#contentpath)
     - [`ContentIdentifier`](#contentidentifier)
     - [`ContentAnalyzer`](#contentanalyzer)
     - [`ContentExtractor`](#contentextractor)
@@ -64,7 +65,8 @@ You normally only depend on `content_scan` — the proc-macro is re-exported for
 The framework is built around a few small traits:
 
 - **`ContentType`** — a `#[repr(u16)]` enum describing the kinds of content your scanner knows about. Derived with `#[derive(ContentType)]`.
-- **`Content<T>`** — an abstract, seekable, read-only byte source with a path and a size. Ready-made `BufferContent<T>` (in-memory), `FileContent<T>` (memory-mapped file) and `FolderContent<T>` (a directory, used as a container) implementations are provided.
+- **`Content<T>`** — an abstract, seekable, read-only byte source with a `ContentPath` and a size. Ready-made `BufferContent<T>` (in-memory), `FileContent<T>` (memory-mapped file) and `FolderContent<T>` (a directory, used as a container) implementations are provided.
+- **`ContentPath`** — the path or synthetic address of a piece of content. Holds a UTF-8 printable view always, and keeps the original OS path when the name is not valid UTF-8 so the file can still be opened.
 - **`ContentIdentifier<T>`** — decides *what* a piece of content is (by magic bytes, extension, or file name) and validates the guess.
 - **`ContentAnalyzer<T>`** — reads content and produces information (stored in a shared `Context`).
 - **`ContentExtractor<T>`** — pulls sub-contents out of a container through an `acquire` / `advance` / `extract` / `release` session keyed by an `ExtractionHandle`, then hands children back to the scanner for recursion. `ExtractionPool<T>` is the helper that mints those handles and stores the per-session state behind them. `FolderExtractor<T>` is a ready-made extractor that enumerates a directory.
@@ -298,13 +300,13 @@ enum MyTypes {
 ```rust
 pub trait Content<T: ContentType> {
     fn content_type(&self) -> Option<T> { None }
-    fn path(&self) -> &str;
+    fn path(&self) -> &ContentPath;
     fn size(&self) -> u64;
     fn read(&mut self, offset: u64, count: u32) -> Option<&[u8]>;
 }
 ```
 
-A `Content` is any addressable byte source. It exposes a logical `path` (used for identification and filtering), a `size`, and a `read(offset, count)` method that returns a borrowed slice.
+A `Content` is any addressable byte source. It exposes a [`ContentPath`](#contentpath) (used for identification, filtering, and display), a `size`, and a `read(offset, count)` method that returns a borrowed slice.
 
 Three implementations ship with the crate — an in-memory one, a file-backed one, and a directory marker:
 
@@ -313,18 +315,49 @@ BufferContent::<MyType>::new(buffer, "path.ext");
 BufferContent::<MyType>::with_content_type(buffer, "path.ext", MyType::Text);
 BufferContent::<MyType>::from_parts(vec, "path".into(), Some(MyType::Text));
 
-FileContent::<MyType>::new("path/to/file.bin");
+FileContent::<MyType>::new("path/to/file.bin");           // impl AsRef<Path>
 FileContent::<MyType>::with_content_type("path/to/file.bin", MyType::Text);
 FileContent::<MyType>::with_size("path/to/file.bin", 4096);   // size already known, skip the stat
 
 FolderContent::<MyType>::with_content_type("path/to/dir", MyType::Folder);
 ```
 
+`BufferContent` constructors take a `&str` and treat it as a **synthetic** address (always UTF-8). `FileContent` and `FolderContent` take `impl AsRef<Path>` and go through `ContentPath::from_os`, so a real filesystem name that is not valid UTF-8 stays openable.
+
 `FileContent` opens and memory-maps the file lazily, on the first `read()`. `with_size` is useful when the size is already known (a directory walk has just stat'ed the entry, for instance) and you want to avoid a second filesystem call.
 
 `FolderContent` represents a directory rather than bytes: its `size()` is `0` and `read()` always returns `None`. It always reports the content type you give it, so the scanner dispatches straight to the extractor registered for that type — see [Walking the file system](#walking-the-file-system).
 
 You can also implement `Content<T>` for memory-mapped regions, network streams, archive entries, etc.
+
+### `ContentPath`
+
+`ContentPath` is the path type used everywhere a piece of content is named: `Content::path()`, `Entry::path`, filter callbacks, and (as interned bytes) the scan result tree. It covers both **virtual addresses** (`archive.zip://inner/file.txt`, `"number"`) and **real OS paths**, including names that are not valid UTF-8.
+
+```rust
+pub struct ContentPath { /* ... */ }
+
+impl ContentPath {
+    pub fn from_str(s: &str) -> Self;            // synthetic / known UTF-8
+    pub fn from_os(p: &Path) -> Self;            // real filesystem path
+    pub fn set_from_str(&mut self, s: &str);     // reuse allocation
+    pub fn set_from_os(&mut self, p: &Path);     // reuse allocation
+    pub fn as_printable_string(&self) -> &str;   // always valid UTF-8 (lossy if needed)
+    pub fn as_path(&self) -> &Path;              // openable OS path
+    pub fn as_bytes(&self) -> &[u8];             // filtering / identification
+    pub fn is_lossless(&self) -> bool;
+}
+```
+
+- **`from_str` / `set_from_str`** — use for archive members, in-memory buffers, and any label you already know is UTF-8. Do **not** stringify a real OS path and pass it here: a non-UTF-8 filesystem name would lose the bytes needed to reopen it.
+- **`from_os` / `set_from_os`** — use for `DirEntry`, `PathBuf`, and anything that came from the filesystem. When the path is valid UTF-8 only the string is stored. Otherwise the original `OsString` is kept alongside a lossy printable view (`U+FFFD` for invalid sequences), so `as_path()` still names the original file and `is_lossless()` is `false`.
+- **`as_printable_string`** — always available, never fails. Safe to log or print. Exact only when `is_lossless()` is `true`.
+- **`as_path`** — the `&Path` to hand to `fs::read_dir`, `File::open`, and similar. For a non-UTF-8 path this is the preserved OS name, not the lossy string.
+- **`as_bytes`** — what identification and `Filter` inspect (file name / extension). On Unix this is the faithful path bytes; on Windows it is the printable string's bytes.
+
+`IntoContentPath` lets an API accept `&str`, `&Path`, or an owned `ContentPath` and route each to the cheapest correct constructor.
+
+`FolderExtractor` fills each `Entry` with `set_from_os`, so a directory walk does not drop non-UTF-8 names the way a `to_str().unwrap_or_default()` conversion would.
 
 ### `ContentIdentifier`
 
@@ -394,13 +427,9 @@ pub trait ContentExtractor<T: ContentType> {
 }
 
 pub struct Entry {
-    pub path: String,
+    pub path: ContentPath,
     pub size: u64,
     pub skip_from_filtering: bool,
-}
-
-impl Entry {
-    pub fn update(&mut self, path: &str, size: u64, skip_from_filtering: bool);
 }
 
 pub struct ExtractionHandle { /* opaque */ }
@@ -413,7 +442,7 @@ Extractors turn a container into a stream of children, driven as a short session
 3. `extract` — materializes the current child as a boxed `Content<T>`. The scanner then recursively scans it (subject to `max_depth`). Returning `None` skips just this entry; enumeration continues with the next `advance`.
 4. `release` — called exactly once for every successfully acquired handle (including when the scan stops early via `NextAction::Skip` / `NextAction::Exit`). Use it to free per-session resources.
 
-Set `Entry::skip_from_filtering` to `true` to exempt an entry from the active `Filter`. This matters for container entries that would never pass the filter themselves: a `FolderExtractor` restricted to `*.png` files, for example, still has to descend into subdirectories, whose names carry no `.png` extension. `Entry::update` fills the three fields in place so `advance` can reuse the same `String` instead of allocating a new path every time.
+Set `Entry::skip_from_filtering` to `true` to exempt an entry from the active `Filter`. This matters for container entries that would never pass the filter themselves: a `FolderExtractor` restricted to `*.png` files, for example, still has to descend into subdirectories, whose names carry no `.png` extension. Keep one `Entry` as a field on the extractor and overwrite `entry.path` in place with `ContentPath::set_from_str` (synthetic names) or `ContentPath::set_from_os` (real OS paths) so `advance` does not allocate a new path for every child.
 
 The handle lets one extractor instance keep per-session state even when extractions nest or interleave. The `Entry` itself is owned by the extractor (not the pool), because `advance` has to return `&Entry` while the pool may be borrowed mutably for session data. Extractors are registered with `add_extractor` / `add_generic_extractor`, mirroring analyzers.
 
@@ -433,7 +462,7 @@ impl<T> ExtractionPool<T> {
 }
 ```
 
-Slots are recycled through a free list, and every handle carries a monotonically increasing uid, so a stale handle whose slot has already been reused resolves to `None` instead of silently aliasing another session's data. The `Entry` announced by `advance` lives on the extractor itself — reuse it with `Entry::update` so the path `String` is not reallocated for every child.
+Slots are recycled through a free list, and every handle carries a monotonically increasing uid, so a stale handle whose slot has already been reused resolves to `None` instead of silently aliasing another session's data. The `Entry` announced by `advance` lives on the extractor itself — overwrite `entry.path` with `set_from_str` / `set_from_os` so the path is not reallocated for every child.
 
 ```rust
 struct ExtractData { pos: u64, start: u64, len: u64 }
@@ -451,7 +480,9 @@ impl ContentExtractor<MyTypes> for NumericExtractor {
     fn advance(&mut self, handle: ExtractionHandle, content: &mut dyn Content<MyTypes>) -> Option<&Entry> {
         let data = self.e.get_mut(handle)?;
         // ...scan forward through `content`, updating `data`...
-        self.entry.update("number", len, false);
+        self.entry.path.set_from_str("number");
+        self.entry.size = len;
+        self.entry.skip_from_filtering = false;
         Some(&self.entry)
     }
     fn extract(&mut self, handle: ExtractionHandle, content: &mut dyn Content<MyTypes>) -> Option<Box<dyn Content<MyTypes>>> {
@@ -483,14 +514,14 @@ let res = scanner.scan(&mut root, false);
 Behaviour worth knowing:
 
 - The `recursive` flag passed to `new` decides whether subdirectories are emitted at all. When `false`, only files directly inside the folder are scanned.
-- Subdirectories are emitted as `FolderContent` carrying the **same** content type as their parent, so the same extractor picks them up again. Files become `FileContent` built with `with_size`, reusing the size from the directory entry's metadata.
+- Subdirectories are emitted as `FolderContent` carrying the **same** content type as their parent, so the same extractor picks them up again. Files become `FileContent` built with `with_size`, reusing the size from the directory entry's metadata. Each entry's path is filled with `ContentPath::set_from_os`, so non-UTF-8 filesystem names stay openable.
 - Directory symlinks are skipped, which keeps cyclic link structures from looping forever.
 - Subdirectory entries are marked `skip_from_filtering`, so an extension-based `Filter` narrows down the files without preventing the walk from descending.
 - Recursion is still bounded by the scanner's `max_depth` (default `8`), which here translates into directory nesting levels.
 
 ### `Filter` / `FilterBuilder`
 
-Filters decide whether a given `(path, size)` should be processed. They combine typed rules (extension / file-name allow- and deny-lists, powered by fast matchers) with arbitrary predicate callbacks, plus a default fallback:
+Filters decide whether a given `(ContentPath, size)` should be processed. They combine typed rules (extension / file-name allow- and deny-lists, powered by fast matchers) with arbitrary predicate callbacks, plus a default fallback:
 
 ```rust
 use content_scan::*;
@@ -510,15 +541,15 @@ let scanner = ScannerBuilder::<MyType>::new()
 
 Available builder methods:
 
-| Method                                   | Effect                                    |
-| ---------------------------------------- | ----------------------------------------- |
-| `include_extensions(prec, &["ext", …])`  | Allow if the file's extension matches.    |
-| `exclude_extensions(prec, &["ext", …])`  | Deny if the file's extension matches.     |
-| `include_file_names(prec, &["name", …])` | Allow if the file name matches exactly.   |
-| `exclude_file_names(prec, &["name", …])` | Deny if the file name matches exactly.    |
-| `include(prec, fn(&str, u64) -> bool)`   | Allow if the callback returns `true`.     |
-| `exclude(prec, fn(&str, u64) -> bool)`   | Deny if the callback returns `true`.      |
-| `deny_the_rest()` / `allow_the_rest()`   | Set the default and finalize the builder. |
+| Method                                          | Effect                                    |
+| ----------------------------------------------- | ----------------------------------------- |
+| `include_extensions(prec, &["ext", …])`         | Allow if the file's extension matches.    |
+| `exclude_extensions(prec, &["ext", …])`         | Deny if the file's extension matches.     |
+| `include_file_names(prec, &["name", …])`        | Allow if the file name matches exactly.   |
+| `exclude_file_names(prec, &["name", …])`        | Deny if the file name matches exactly.    |
+| `include(prec, fn(&ContentPath, u64) -> bool)`  | Allow if the callback returns `true`.     |
+| `exclude(prec, fn(&ContentPath, u64) -> bool)`  | Deny if the callback returns `true`.      |
+| `deny_the_rest()` / `allow_the_rest()`          | Set the default and finalize the builder. |
 
 Rules are evaluated in the order they were added; the first matching rule wins. The `Precedence` enum is provided to make the intent explicit.
 
@@ -581,7 +612,7 @@ context.local().set(var!("size"), Size { width, height });
 
 ### Navigating the scan result tree
 
-Every object visited by the scanner is recorded, along with its resolved content type, its path (interned in an internal arena) and its optional local `VarMap`. Objects are linked as a **parent / first-child / next-sibling** tree that mirrors the extraction hierarchy.
+Every object visited by the scanner is recorded, along with its resolved content type, its path (interned from `ContentPath::as_bytes()` into an internal arena) and its optional local `VarMap`. Objects are linked as a **parent / first-child / next-sibling** tree that mirrors the extraction hierarchy.
 
 You navigate the tree with opaque `ScanContentHandle`s returned by `ScanResult<T>`:
 
@@ -604,6 +635,8 @@ impl<'a, T: ContentType> ScanResult<'a, T> {
     pub fn local(&self, handle: ScanContentHandle) -> Option<&VarMap>;
 }
 ```
+
+`ScanResult::path` is the interned byte view of the object's `ContentPath` (`as_bytes()` at scan time). For a live content object, use `content.path().as_printable_string()` to display it or `content.path().as_path()` to open it.
 
 Typical walk:
 
@@ -636,7 +669,7 @@ Because paths and local `VarMap`s live in pools owned by the scanner's `Context`
 For every scanned object, the scanner performs the following steps (see [`content_scan/src/scanner.rs`](content_scan/src/scanner.rs)):
 
 1. **Top-level filter check.** If a `Filter` is configured *and* `scan` was called with `filter_root = true`, the root content is tested first; if rejected, the scan returns immediately with an empty result.
-2. **Type resolution.** If the content already reports a `content_type()`, it is used as-is. Otherwise the scanner tries, in order:
+2. **Type resolution.** If the content already reports a `content_type()`, it is used as-is. Otherwise the scanner tries, in order, using `ContentPath::as_bytes()` for the name-based steps:
    1. magic bytes (first 16 bytes),
    2. exact file name,
    3. file extension.
@@ -647,7 +680,7 @@ For every scanned object, the scanner performs the following steps (see [`conten
 5. **Type-specific extractors** run (`acquire` → `advance`/`extract` loop → `release`) and, for each entry they emit, the scanner recurses (subject to `max_depth` and `Filter`). Entries marked `skip_from_filtering` bypass the `Filter` check.
 6. **Generic extractors** run the same session lifecycle and recurse in the same way.
 
-While this is happening, the scanner also **records the object** into `Context::objects` — allocating its path in an internal arena, tagging it with the resolved content type, and linking it into its parent's child list. After `scan()` returns, that tree is exposed to the caller through [`ScanResult`](#navigating-the-scan-result-tree).
+While this is happening, the scanner also **records the object** into `Context::objects` — interned from `ContentPath::as_bytes()` into an internal arena, tagged with the resolved content type, and linked into its parent's child list. After `scan()` returns, that tree is exposed to the caller through [`ScanResult`](#navigating-the-scan-result-tree).
 
 Any analyzer or extractor may short-circuit the current object with `NextAction::Skip` or abort the entire scan with `NextAction::Exit`.
 
