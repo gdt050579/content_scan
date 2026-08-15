@@ -51,32 +51,91 @@ enum FilterRule {
 /// [`ScannerBuilder::filter`](crate::ScannerBuilder::filter). The
 /// scanner consults it both for the top-level content and for every
 /// item returned by an extractor.
+///
+/// Extension and file-name rules are ASCII case-insensitive: both the
+/// registered patterns and the path basename / extension are compared
+/// in lowercase. `Photo.JPG` matches a filter that allows `jpg`.
 pub struct Filter {
     rules: Vec<FilterRule>,
     default_result: bool,
     check_extensions: bool,
     check_file_names: bool,
+    temp_ext: Vec<u8>,
+    temp_filename: Vec<u8>,
 }
 impl Filter {
-    pub(crate) fn should_process(&self, path: &ContentPath, size: u64) -> bool {
-        let file_name = if self.check_file_names { utils::get_file_name(path.as_bytes()) } else { b"" };
-        let ext = if self.check_extensions { utils::get_extension(file_name) } else { b"" };
-        
+    fn contains_uppercase(buf: &[u8]) -> bool {
+        for b in buf {
+            if *b >= b'A' && *b <= b'Z' {
+                return true;
+            }
+        }
+        return false;
+    }
+    fn copy_lowercase<'a>(source: &[u8], output: &'a mut Vec<u8>) -> &'a [u8] {
+        output.clear();
+        output.extend_from_slice(source);
+        output.make_ascii_lowercase();
+        output.as_slice()
+    }
+    /// ASCII-lowercases a `'static` pattern for the matcher.
+    ///
+    /// Already-lowercase strings are returned as-is (no allocation).
+    /// Mixed-case patterns are leaked once at filter build time.
+    fn ascii_lower_static(s: &'static str) -> &'static [u8] {
+        let bytes = s.as_bytes();
+        if !Self::contains_uppercase(bytes) {
+            bytes
+        } else {
+            let mut owned = bytes.to_vec();
+            owned.make_ascii_lowercase();
+            Box::leak(owned.into_boxed_slice())
+        }
+    }
+    pub(crate) fn should_process(&mut self, path: &ContentPath, size: u64) -> bool {
+        let file_name = if self.check_file_names {
+            let res = utils::get_file_name(path.as_bytes());
+            if Self::contains_uppercase(res) {
+                Self::copy_lowercase(res, &mut self.temp_filename)
+            } else {
+                res
+            }
+        } else {
+            b""
+        };
+        let ext = if self.check_extensions {
+            let res = utils::get_extension(file_name);
+            if Self::contains_uppercase(res) {
+                Self::copy_lowercase(res, &mut self.temp_ext)
+            } else {
+                res
+            }
+        } else {
+            b""
+        };
 
         for rule in &self.rules {
             match rule {
-                FilterRule::IncludeExtensions(matcher) | FilterRule::ExcludeExtensions(matcher)=> {
+                FilterRule::IncludeExtensions(matcher) | FilterRule::ExcludeExtensions(matcher) => {
                     if let Some(res) = matcher.matches_exactly(ext) {
                         return res;
                     }
-                },
+                }
                 FilterRule::IncludeFileNames(matcher) | FilterRule::ExcludeFileNames(matcher) => {
                     if let Some(res) = matcher.matches_exactly(file_name) {
                         return res;
                     }
-                },
-                FilterRule::Include(cb) => if cb(path, size) { return true; },
-                FilterRule::Exclude(cb) => if cb(path, size) { return false; },
+                }
+                FilterRule::Include(cb) => {
+                    if cb(path, size) {
+                        return true;
+                    }
+                }
+                FilterRule::Exclude(cb) => {
+                    if cb(path, size) {
+                        return false;
+                    }
+                }
             };
         }
         self.default_result
@@ -102,48 +161,51 @@ impl FilterBuilder {
     /// Until at least one rule is added, the resulting filter will
     /// simply return the default outcome for every input.
     pub fn new() -> Self {
-        Self { rules: Vec::with_capacity(4), default_result: true }
+        Self {
+            rules: Vec::with_capacity(4),
+            default_result: true,
+        }
     }
 
-    /// Accepts content whose extension is one of `extensions` (case
-    /// sensitive, without the leading dot).
+    /// Accepts content whose extension is one of `extensions` (ASCII
+    /// case-insensitive, without the leading dot).
     pub fn include_extensions(mut self, prec: Precedence, extensions: &[&'static str]) -> Self {
         let mut matcher_builder = MatcherBuilder::new();
         for extension in extensions {
-            matcher_builder.add(true, extension.as_bytes());
+            matcher_builder.add(true, Filter::ascii_lower_static(extension));
         }
         self.rules.push((prec, FilterRule::IncludeExtensions(matcher_builder.build())));
         self
     }
 
-    /// Rejects content whose extension is one of `extensions` (case
-    /// sensitive, without the leading dot).
+    /// Rejects content whose extension is one of `extensions` (ASCII
+    /// case-insensitive, without the leading dot).
     pub fn exclude_extensions(mut self, prec: Precedence, extensions: &[&'static str]) -> Self {
         let mut matcher_builder = MatcherBuilder::new();
         for extension in extensions {
-            matcher_builder.add(false, extension.as_bytes());
+            matcher_builder.add(false, Filter::ascii_lower_static(extension));
         }
         self.rules.push((prec, FilterRule::ExcludeExtensions(matcher_builder.build())));
         self
     }
 
     /// Accepts content whose file name (basename) is one of
-    /// `file_names`.
+    /// `file_names` (ASCII case-insensitive).
     pub fn include_file_names(mut self, prec: Precedence, file_names: &[&'static str]) -> Self {
         let mut matcher_builder = MatcherBuilder::new();
         for file_name in file_names {
-            matcher_builder.add(true, file_name.as_bytes());
+            matcher_builder.add(true, Filter::ascii_lower_static(file_name));
         }
         self.rules.push((prec, FilterRule::IncludeFileNames(matcher_builder.build())));
         self
     }
 
     /// Rejects content whose file name (basename) is one of
-    /// `file_names`.
+    /// `file_names` (ASCII case-insensitive).
     pub fn exclude_file_names(mut self, prec: Precedence, file_names: &[&'static str]) -> Self {
         let mut matcher_builder = MatcherBuilder::new();
         for file_name in file_names {
-            matcher_builder.add(false, file_name.as_bytes());
+            matcher_builder.add(false, Filter::ascii_lower_static(file_name));
         }
         self.rules.push((prec, FilterRule::ExcludeFileNames(matcher_builder.build())));
         self
@@ -210,8 +272,16 @@ impl ReadyFilterBuilder {
     /// [`Precedence::Highest`] to [`Precedence::Lowest`]; rules that
     /// share a precedence keep the order they were added.
     pub fn build(self) -> Filter {
-        let check_extensions = self.builder.rules.iter().any(|(_, rule)| matches!(rule, FilterRule::IncludeExtensions(_) | FilterRule::ExcludeExtensions(_)));
-        let check_file_names = self.builder.rules.iter().any(|(_, rule)| matches!(rule, FilterRule::IncludeFileNames(_) | FilterRule::ExcludeFileNames(_)));
+        let check_extensions = self
+            .builder
+            .rules
+            .iter()
+            .any(|(_, rule)| matches!(rule, FilterRule::IncludeExtensions(_) | FilterRule::ExcludeExtensions(_)));
+        let check_file_names = self
+            .builder
+            .rules
+            .iter()
+            .any(|(_, rule)| matches!(rule, FilterRule::IncludeFileNames(_) | FilterRule::ExcludeFileNames(_)));
         let mut ranked = self.builder.rules;
         ranked.sort_by(|a, b| b.0.rank().cmp(&a.0.rank()));
         let rules = ranked.into_iter().map(|(_, rule)| rule).collect();
@@ -220,6 +290,8 @@ impl ReadyFilterBuilder {
             default_result: self.builder.default_result,
             check_extensions,
             check_file_names: check_file_names || check_extensions, // if we check extensions, we also check file names
+            temp_ext: Vec::with_capacity(16),
+            temp_filename: Vec::with_capacity(64),
         }
     }
 }

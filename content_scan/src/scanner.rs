@@ -53,7 +53,7 @@ impl<T: ContentType> Scanner<T> {
     pub fn scan<'a>(&'a mut self, content: &mut dyn Content<T>, filter_root: bool) -> ScanResult<'a, T> {
         self.context.clear();
         if filter_root {
-            if let Some(filter) = &self.filter {
+            if let Some(filter) = self.filter.as_mut() {
                 if !filter.should_process(content.path(), content.size()) {
                     return ScanResult::new(&self.context);
                 }
@@ -176,7 +176,7 @@ impl<T: ContentType> Scanner<T> {
         if let Some(handle) = extractor.acquire(content, self.context.extract()) {
             while let Some(entry) = unsafe { self.extractors.get(index).advance(handle, content) } {
                 if !entry.skip_from_filtering {
-                    if let Some(filter) = &self.filter {
+                    if let Some(filter) = self.filter.as_mut() {
                         if !filter.should_process(&entry.path, entry.size) {
                             // println!("Skip: {:?}", &entry.path);
                             continue;

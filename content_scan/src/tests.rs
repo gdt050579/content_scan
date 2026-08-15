@@ -428,47 +428,126 @@ mod utils {
 mod filter {
     use crate::{ContentPath, Filter, FilterBuilder, Precedence};
 
-    fn process(filter: &Filter, path: &str) -> bool {
+    fn process(filter: &mut Filter, path: &str) -> bool {
         filter.should_process(&ContentPath::from_str(path), 1)
     }
 
     #[test]
     fn higher_precedence_exclude_overrides_earlier_include() {
-        let filter = FilterBuilder::new()
+        let mut filter = FilterBuilder::new()
             .include_extensions(Precedence::Low, &["txt"])
             .exclude_extensions(Precedence::Highest, &["txt"])
             .allow_the_rest()
             .build();
-        assert!(!process(&filter, "notes.txt"));
-        assert!(process(&filter, "notes.rs"));
+        assert!(!process(&mut filter, "notes.txt"));
+        assert!(process(&mut filter, "notes.rs"));
     }
 
     #[test]
     fn higher_precedence_include_overrides_earlier_exclude() {
-        let filter = FilterBuilder::new()
+        let mut filter = FilterBuilder::new()
             .exclude_extensions(Precedence::Low, &["txt"])
             .include_extensions(Precedence::High, &["txt"])
             .deny_the_rest()
             .build();
-        assert!(process(&filter, "notes.txt"));
-        assert!(!process(&filter, "notes.rs"));
+        assert!(process(&mut filter, "notes.txt"));
+        assert!(!process(&mut filter, "notes.rs"));
     }
 
     #[test]
     fn same_precedence_keeps_insertion_order() {
-        let include_first = FilterBuilder::new()
+        let mut include_first = FilterBuilder::new()
             .include_extensions(Precedence::Medium, &["txt"])
             .exclude_extensions(Precedence::Medium, &["txt"])
             .deny_the_rest()
             .build();
-        assert!(process(&include_first, "notes.txt"));
+        assert!(process(&mut include_first, "notes.txt"));
 
-        let exclude_first = FilterBuilder::new()
+        let mut exclude_first = FilterBuilder::new()
             .exclude_extensions(Precedence::Medium, &["txt"])
             .include_extensions(Precedence::Medium, &["txt"])
             .allow_the_rest()
             .build();
-        assert!(!process(&exclude_first, "notes.txt"));
+        assert!(!process(&mut exclude_first, "notes.txt"));
+    }
+
+    #[test]
+    fn include_extensions_match_regardless_of_path_case() {
+        let mut filter = FilterBuilder::new()
+            .include_extensions(Precedence::Medium, &["jpg"])
+            .deny_the_rest()
+            .build();
+        assert!(process(&mut filter, "Photo.JPG"));
+        assert!(process(&mut filter, "photo.jpg"));
+        assert!(process(&mut filter, "photo.Jpg"));
+        assert!(process(&mut filter, r"C:\Photos\IMG.JPG"));
+        assert!(process(&mut filter, "/home/me/pic.JpG"));
+        assert!(!process(&mut filter, "notes.txt"));
+    }
+
+    #[test]
+    fn include_extensions_lowercase_registered_patterns() {
+        let mut filter = FilterBuilder::new()
+            .include_extensions(Precedence::Medium, &["JPG", "Bmp"])
+            .deny_the_rest()
+            .build();
+        assert!(process(&mut filter, "photo.jpg"));
+        assert!(process(&mut filter, "photo.JPG"));
+        assert!(process(&mut filter, "x.bmp"));
+        assert!(process(&mut filter, "x.BMP"));
+        assert!(!process(&mut filter, "x.png"));
+    }
+
+    #[test]
+    fn exclude_extensions_are_ascii_case_insensitive() {
+        let mut filter = FilterBuilder::new()
+            .exclude_extensions(Precedence::High, &["tmp"])
+            .allow_the_rest()
+            .build();
+        assert!(!process(&mut filter, "scratch.TMP"));
+        assert!(!process(&mut filter, "scratch.tmp"));
+        assert!(!process(&mut filter, "scratch.Tmp"));
+        assert!(process(&mut filter, "notes.txt"));
+    }
+
+    #[test]
+    fn include_file_names_are_ascii_case_insensitive() {
+        let mut filter = FilterBuilder::new()
+            .include_file_names(Precedence::Medium, &["Makefile"])
+            .deny_the_rest()
+            .build();
+        assert!(process(&mut filter, "Makefile"));
+        assert!(process(&mut filter, "makefile"));
+        assert!(process(&mut filter, "MAKEFILE"));
+        assert!(process(&mut filter, "/src/Makefile"));
+        assert!(process(&mut filter, r"C:\src\makefile"));
+        assert!(!process(&mut filter, "makefile.txt"));
+        assert!(!process(&mut filter, "notes.rs"));
+    }
+
+    #[test]
+    fn exclude_file_names_are_ascii_case_insensitive() {
+        let mut filter = FilterBuilder::new()
+            .exclude_file_names(Precedence::High, &["Cargo.lock"])
+            .allow_the_rest()
+            .build();
+        assert!(!process(&mut filter, "Cargo.lock"));
+        assert!(!process(&mut filter, "cargo.lock"));
+        assert!(!process(&mut filter, "CARGO.LOCK"));
+        assert!(!process(&mut filter, r"C:\proj\Cargo.lock"));
+        assert!(process(&mut filter, "Cargo.toml"));
+    }
+
+    #[test]
+    fn last_extension_component_is_matched_case_insensitively() {
+        let mut filter = FilterBuilder::new()
+            .include_extensions(Precedence::Medium, &["gz"])
+            .deny_the_rest()
+            .build();
+        assert!(process(&mut filter, "archive.tar.gz"));
+        assert!(process(&mut filter, "archive.TAR.GZ"));
+        assert!(process(&mut filter, "archive.Tar.Gz"));
+        assert!(!process(&mut filter, "archive.tar"));
     }
 }
 

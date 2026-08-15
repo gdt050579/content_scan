@@ -546,15 +546,15 @@ Available builder methods:
 
 | Method                                          | Effect                                    |
 | ----------------------------------------------- | ----------------------------------------- |
-| `include_extensions(prec, &["ext", …])`         | Allow if the file's extension matches.    |
-| `exclude_extensions(prec, &["ext", …])`         | Deny if the file's extension matches.     |
-| `include_file_names(prec, &["name", …])`        | Allow if the file name matches exactly.   |
-| `exclude_file_names(prec, &["name", …])`        | Deny if the file name matches exactly.    |
+| `include_extensions(prec, &["ext", …])`         | Allow if the file's extension matches (ASCII case-insensitive). |
+| `exclude_extensions(prec, &["ext", …])`         | Deny if the file's extension matches (ASCII case-insensitive).  |
+| `include_file_names(prec, &["name", …])`        | Allow if the basename matches (ASCII case-insensitive).         |
+| `exclude_file_names(prec, &["name", …])`        | Deny if the basename matches (ASCII case-insensitive).          |
 | `include(prec, fn(&ContentPath, u64) -> bool)`  | Allow if the callback returns `true`.     |
 | `exclude(prec, fn(&ContentPath, u64) -> bool)`  | Deny if the callback returns `true`.      |
 | `deny_the_rest()` / `allow_the_rest()`          | Set the default and finalize the builder. |
 
-Rules are grouped by `Precedence` and evaluated from `Highest` to `Lowest`. Within the same precedence, rules keep the order they were added. The first matching rule wins.
+Rules are grouped by `Precedence` and evaluated from `Highest` to `Lowest`. Within the same precedence, rules keep the order they were added. The first matching rule wins. Extension and file-name rules are ASCII case-insensitive (`Photo.JPG` matches `jpg`).
 
 Filters are also applied to entries produced by extractors, so filtering works transparently for embedded content.
 
