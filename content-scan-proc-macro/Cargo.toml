@@ -3,11 +3,11 @@ name = "content_scan_proc_macro"
 version = "0.1.2"
 edition = "2021"
 authors = ["Gavrilut Dragos <gavrilut.dragos@gmail.com>"]
-description = "Procedural macros for the content_scan_proc_macro library."
+description = "Procedural macros for the content_scan library."
 license = "MIT"
 repository = "https://github.com/gdt050579/content_scan"
 readme = "../README.md"
-keywords = ["varmap", "proc-macro"]
+keywords = ["content-scan", "proc-macro", "derive"]
 categories = ["development-tools::procedural-macro-helpers"]
 documentation = "https://docs.rs/content-scan-proc-macro"
 
