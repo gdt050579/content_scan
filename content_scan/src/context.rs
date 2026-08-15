@@ -13,10 +13,10 @@ use varmap::VarMap;
 ///
 /// - **[`global`](Self::global)** – lives for the entire scan and can
 ///   be inspected via [`ScanResult::global`] after the scan finishes.
-/// - **[`extract`](Self::extract)** – lives for the duration of a
-///   single extraction pass. Handed to
-///   [`ContentExtractor::acquire`](crate::ContentExtractor::acquire) so
-///   an extractor can hold per-run state without allocating.
+/// - **[`extract`](Self::extract)** – per-object analyzer-to-extractor
+///   channel. Analyzers write hints here (for example the offset of
+///   an embedded ZIP); extractors read them in
+///   [`ContentExtractor::acquire`](crate::ContentExtractor::acquire).
 /// - **[`local`](Self::local)** – attached to the currently scanned
 ///   content object. Retrievable per object from the result tree via
 ///   [`ScanResult::local`].
@@ -72,13 +72,23 @@ impl Context {
         &mut self.global
     }
 
-    /// Returns the [`VarMap`] scoped to the current extraction.
+    /// Returns the [`VarMap`] that carries analyzer hints to extractors
+    /// of the current object.
     ///
-    /// This map is cleared each time the scanner moves to a new
-    /// content object and is passed to
+    /// This is the analyzer-to-extractor channel for one content
+    /// object, not a parent-session store. Typical use: an analyzer
+    /// locates an embedded blob (a ZIP starting at some offset) and
+    /// records that offset here so a *generic* extractor — one that
+    /// is not tied to the parent's [`ContentType`] — can open it from
+    /// the right place.
+    ///
+    /// The map is cleared at the start of every object's scan,
+    /// including nested children. Analyzers on this object run first
+    /// and write hints; extractors then receive the same map in
     /// [`ContentExtractor::acquire`](crate::ContentExtractor::acquire).
-    /// Analyzers may also read/write it while an extraction is in
-    /// progress.
+    /// Copy anything you need into your [`ExtractionPool`](crate::ExtractionPool)
+    /// slot during `acquire` — nested child scans reuse this map for
+    /// their own handoff.
     #[inline(always)]
     pub fn extract(&mut self) -> &mut VarMap {
         &mut self.extract

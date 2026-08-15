@@ -59,9 +59,13 @@ pub struct Entry {
 /// A plugin that inspects a piece of content and records information.
 ///
 /// Analyzers are the "read-only" half of the framework: they observe
-/// content and write findings into the [`Context`] (global, per-scan,
-/// or per-object [`VarMap`]s). They do not produce new content — for
-/// that, use a [`ContentExtractor`].
+/// content and write findings into the [`Context`]. Use
+/// [`Context::local`] for per-object results,
+/// [`Context::global`] for scan-wide aggregates, and
+/// [`Context::extract`] for hints meant for extractors of this same
+/// object (for example the byte offset of an embedded ZIP that a
+/// generic extractor should open). They do not produce new content —
+/// for that, use a [`ContentExtractor`].
 ///
 /// Analyzers can be registered per [`ContentType`] via
 /// [`ScannerBuilder::add_analyzer`](crate::ScannerBuilder::add_analyzer)
@@ -119,9 +123,14 @@ pub trait ContentAnalyzer<T: ContentType> {
 pub trait ContentExtractor<T: ContentType> {
     /// Begins an extraction session over `content`.
     ///
-    /// The `extract_context` [`VarMap`] is scoped to the current
-    /// parent object and can be used to stash per-extraction state
-    /// alongside plugin-owned fields keyed by the returned handle.
+    /// `extract_context` is the analyzer-to-extractor [`VarMap`] for
+    /// this object: analyzers have already run and may have recorded
+    /// hints here (for example where an embedded ZIP starts). A
+    /// generic extractor can read those hints and decide whether —
+    /// and from which offset — to extract. Copy anything you need
+    /// into the session state keyed by the returned handle; nested
+    /// child scans clear this map for the child's own handoff.
+    ///
     /// The handle itself should come from an
     /// [`ExtractionPool`](crate::ExtractionPool).
     ///

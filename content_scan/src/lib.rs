@@ -28,7 +28,7 @@
 //!   `ContentType` (via magic bytes, file name, or extension) and
 //!   validates the guess.
 //! - **[`ContentAnalyzer`]** – inspects content and records information
-//!   into the [`Context`] (global, per-extraction, or per-object
+//!   into the [`Context`] (global, analyzer-to-extractor, or per-object
 //!   variable maps).
 //! - **[`ContentExtractor`]** – produces child [`Content`] items from a
 //!   parent (e.g. entries of an archive). Extracted children are scanned

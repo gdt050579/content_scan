@@ -393,7 +393,7 @@ pub trait ContentAnalyzer<T: ContentType> {
 }
 ```
 
-Analyzers inspect content and write results into the shared `Context`. The returned `NextAction` controls the pipeline:
+Analyzers inspect content and write results into the shared `Context`. Use `context.local()` for per-object findings, `context.global()` for scan-wide aggregates, and `context.extract()` for hints aimed at extractors of **this same object** — for example an analyzer that locates an embedded ZIP and records its start offset so a generic ZIP extractor can open it. The returned `NextAction` controls the pipeline:
 
 - `NextAction::Continue` — run the next analyzer / extractor.
 - `NextAction::Skip` — stop processing the current object (do not run further analyzers/extractors on it), but keep scanning siblings.
@@ -439,7 +439,7 @@ pub struct ExtractionHandle { /* opaque */ }
 
 Extractors turn a container into a stream of children, driven as a short session keyed by an opaque `ExtractionHandle`:
 
-1. `acquire` — called once per parent. Receives a scratch `VarMap` (`context.extract()`) valid until the next object is scanned. Return `Some(handle)` to start the session, or `None` to skip this extractor. Handles are minted by an [`ExtractionPool`](#extractionpool); `ExtractionHandle` is opaque and cannot be constructed directly.
+1. `acquire` — called once per parent, after that object's analyzers have run. Receives `context.extract()`, the analyzer-to-extractor `VarMap` for this object (for example a ZIP start offset recorded by an analyzer). Copy anything you need into session state; nested child scans clear the map for the child's own handoff. Return `Some(handle)` to start the session, or `None` to skip this extractor. Handles are minted by an [`ExtractionPool`](#extractionpool); `ExtractionHandle` is opaque and cannot be constructed directly.
 2. `advance` — advances the session to the next child and returns a lightweight `Entry` describing its path/size. Returning `None` ends the stream.
 3. `extract` — materializes the current child as a boxed `Content<T>`. The scanner then recursively scans it (subject to `max_depth`). Returning `None` skips just this entry; enumeration continues with the next `advance`.
 4. `release` — called exactly once for every successfully acquired handle (including when the scan stops early via `NextAction::Skip` / `NextAction::Exit`). Use it to free per-session resources.
@@ -592,7 +592,7 @@ The `Context` passed to analyzers exposes three `VarMap`s (from the [`varmap`](h
 
 - `context.global()` — persists for the entire `scan()` call. Use it to accumulate results across all analyzed objects.
 - `context.local()` — per-object scratch storage. The first call from an analyzer on a given object lazily grabs a `VarMap` from an internal pool, clears it, and attaches it to that object; subsequent calls (from other analyzers running on the same object) return the same map. It is kept alive after the scan and can be looked up on the corresponding `ScanContentHandle` via `ScanResult::local(handle)`.
-- `context.extract()` — a scratch map handed to a single extractor's `acquire` call.
+- `context.extract()` — per-object analyzer-to-extractor channel. Analyzers write hints here (for example the offset of an embedded ZIP); extractors read them from the `VarMap` passed to `acquire`. It is cleared at the start of every object's scan, including nested children, so copy values you need into your `ExtractionPool` slot during `acquire`.
 
 `context.objects_scanned()` returns how many objects have been visited so far.
 

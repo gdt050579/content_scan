@@ -723,3 +723,98 @@ mod max_depth {
     }
 }
 
+mod extract_varmap {
+    use crate::*;
+
+    #[derive(Debug, Copy, Clone, Eq, PartialEq, ContentType)]
+    #[repr(u16)]
+    enum Ty {
+        Blob,
+        Nested,
+    }
+
+    /// Records an embedded-blob offset for a generic extractor.
+    struct ZipHint;
+    impl ContentAnalyzer<Ty> for ZipHint {
+        fn analyze(&mut self, _: &mut dyn Content<Ty>, context: &mut Context) -> NextAction {
+            context.extract().set(var!("zip_start"), 42u64);
+            NextAction::Continue
+        }
+    }
+
+    /// Notes whether the child's extract map still carries the parent's hint.
+    struct ChildSawHint;
+    impl ContentAnalyzer<Ty> for ChildSawHint {
+        fn analyze(&mut self, _: &mut dyn Content<Ty>, context: &mut Context) -> NextAction {
+            let leftover = context.extract().get::<u64>(var!("zip_start"));
+            context.local().set(var!("child_saw_parent_hint"), leftover.is_some());
+            NextAction::Continue
+        }
+    }
+
+    /// Generic extractor that only runs when an analyzer supplied `zip_start`.
+    struct HintedExtractor {
+        pool: ExtractionPool<bool>,
+        entry: Entry,
+    }
+    impl Default for HintedExtractor {
+        fn default() -> Self {
+            Self {
+                pool: ExtractionPool::new(4),
+                entry: Entry::default(),
+            }
+        }
+    }
+    impl ContentExtractor<Ty> for HintedExtractor {
+        fn acquire(&mut self, _: &mut dyn Content<Ty>, extract_context: &mut VarMap) -> Option<ExtractionHandle> {
+            extract_context.get::<u64>(var!("zip_start"))?;
+            Some(self.pool.acquire_slot(false))
+        }
+        fn advance(&mut self, handle: ExtractionHandle, _: &mut dyn Content<Ty>) -> Option<&Entry> {
+            let done = self.pool.get_mut(handle)?;
+            if *done {
+                return None;
+            }
+            *done = true;
+            self.entry.path.set_from_str("embedded.zip");
+            self.entry.size = 1;
+            Some(&self.entry)
+        }
+        fn extract(&mut self, _: ExtractionHandle, _: &mut dyn Content<Ty>) -> Option<Box<dyn Content<Ty>>> {
+            Some(Box::new(BufferContent::<Ty>::with_content_type(b"x", "embedded.zip", Ty::Nested)))
+        }
+        fn release(&mut self, handle: ExtractionHandle) {
+            self.pool.release_slot(handle);
+        }
+    }
+
+    #[test]
+    fn analyzer_hint_enables_generic_extractor() {
+        let mut scanner = ScannerBuilder::new()
+            .add_analyzer(Ty::Blob, 0, ZipHint)
+            .add_analyzer(Ty::Nested, 0, ChildSawHint)
+            .add_generic_extractor(0, HintedExtractor::default())
+            .build();
+        let mut content = BufferContent::<Ty>::with_content_type(b"payload", "blob.bin", Ty::Blob);
+        let res = scanner.scan(&mut content, true);
+        assert_eq!(res.objects_scanned(), 2);
+        let child = res.child(res.root().unwrap()).unwrap();
+        assert_eq!(res.path(child).unwrap(), "embedded.zip");
+        assert_eq!(
+            res.local(child).and_then(|v| v.get::<bool>(var!("child_saw_parent_hint"))),
+            Some(false)
+        );
+    }
+
+    #[test]
+    fn generic_extractor_skips_without_analyzer_hint() {
+        let mut scanner = ScannerBuilder::new()
+            .add_generic_extractor(0, HintedExtractor::default())
+            .build();
+        let mut content = BufferContent::<Ty>::with_content_type(b"payload", "blob.bin", Ty::Blob);
+        let res = scanner.scan(&mut content, true);
+        assert_eq!(res.objects_scanned(), 1);
+        assert!(res.child(res.root().unwrap()).is_none());
+    }
+}
+
