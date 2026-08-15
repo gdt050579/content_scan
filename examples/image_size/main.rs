@@ -51,7 +51,7 @@ fn main() {
     let mut scanner = ScannerBuilder::new()
         .filter(
             FilterBuilder::new()
-                .include_extensions(Precedence::Medium, &["jpg", "bmp", "png"])
+                .include_extensions(Precedence::Medium, &["jpg", "jpeg", "bmp", "png"])
                 .deny_the_rest()
                 .build(),
         )
