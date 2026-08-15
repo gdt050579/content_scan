@@ -64,12 +64,12 @@ impl<T: ContentType> MatcherBuilder<T> {
             return Matcher::One(OneMatcher::new(self.data[0].0, self.data[0].1));
         }
         if self.data.len() < 16 {
-            // verific daca toate sunt sub 4 bytes
+            // FastMagic: every pattern is 2–4 bytes
             if self.data.iter().all(|(_, data)| data.len() <= 4 && data.len() >= 2) {
                 return Matcher::FastMagic(FastMagicMatcher::new(&self.data).expect("Invalid fast magic matcher !"));
             }
         }
-        // altfel fac un trie
+        // otherwise a trie
         let mut trie_builder = TrieBuilder::new();
         for (ct, data) in self.data {
             trie_builder.add(data, ct.as_u16());

@@ -17,7 +17,7 @@ impl<T: ContentType> FastMagicMatcher<T> {
         if min_len < 2 || max_len > 4 {
             return None;
         }
-        // assume sortted
+        // patterns are sorted by length
         let mut two = None;
         let mut three = None;
         let mut four = None;

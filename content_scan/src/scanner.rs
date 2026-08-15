@@ -115,7 +115,7 @@ impl<T: ContentType> Scanner<T> {
                 NextAction::Exit => return NextAction::Exit,
             }
         }
-        // extractors (specfic)
+        // type-specific extractors
         if let Some(ty) = ty {
             if let Some((start, end)) = self.extractors.range(ty) {
                 match self.extract_range(content, start, end, depth, my_index) {
@@ -125,7 +125,7 @@ impl<T: ContentType> Scanner<T> {
                 }
             }
         }
-        // extractors (generc)
+        // generic extractors
         let range = self.extractors.generic_range();
         if let Some((start, end)) = range {
             match self.extract_range(content, start, end, depth, my_index) {

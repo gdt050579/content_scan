@@ -35,7 +35,7 @@ Check an item when it is fixed.
 - [ ] 20. Doctests are `ignore`
 - [x] 21. `image_size` filter misses `jpeg` / `JPG`
 - [x] 22. Workspace release profile sets `debug = true`
-- [ ] 23. Romanian comments in the matcher
+- [x] 23. Romanian comments in the matcher
 - [x] 24. `FolderExtractor` session fields are not in the pool (FAD)
 - [ ] 25. `IntoContentPath` is incomplete
 - [x] 26. Temporary junk file in the crate directory
@@ -200,11 +200,11 @@ The example filter now allows `jpg` and `jpeg`. Uppercase `.JPG` is accepted as 
 
 The `[profile.release]` `debug = true` override is gone. Release builds use Cargo’s default (no debug info).
 
-### 23. Romanian comments in the matcher
+### 23. Romanian comments in the matcher — fixed
 
 **Where:** `content_scan/src/scanner.rs`, `content_scan/src/matcher.rs`
 
-Mixed language (`specfic`, `generc`, “verific daca…”, “altfel fac un trie”). Harmless, inconsistent.
+Comments are English (`type-specific` / `generic` extractors; FastMagic vs trie).
 
 ### 24. `FolderExtractor` session fields are not in the pool — FAD
 
