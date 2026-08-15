@@ -43,7 +43,7 @@ extern crate proc_macro;
 /// }
 /// ```
 #[proc_macro_derive(ContentType)]
-pub fn derive_enum_var_map(input: TokenStream) -> TokenStream {
+pub fn derive_content_type(input: TokenStream) -> TokenStream {
     match derive::process_content_type(input) {
         Ok(ts) => ts,
         Err(msg) => format!("compile_error!({:?});", msg).parse().unwrap(),
