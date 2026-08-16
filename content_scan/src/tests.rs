@@ -698,6 +698,36 @@ mod identify {
         }
     }
 
+    struct Exact16MagicId;
+    impl ContentIdentifier<Ty> for Exact16MagicId {
+        fn identify_method(&self) -> Option<IdentifyMethod> {
+            Some(IdentifyMethod::Magic(b"0123456789ABCDEF"))
+        }
+        fn validate(&self, _: &mut dyn Content<Ty>) -> bool {
+            true
+        }
+    }
+
+    struct TooLongMagicId;
+    impl ContentIdentifier<Ty> for TooLongMagicId {
+        fn identify_method(&self) -> Option<IdentifyMethod> {
+            Some(IdentifyMethod::Magic(b"0123456789ABCDEF!"))
+        }
+        fn validate(&self, _: &mut dyn Content<Ty>) -> bool {
+            true
+        }
+    }
+
+    struct TooLongMultipleMagicId;
+    impl ContentIdentifier<Ty> for TooLongMultipleMagicId {
+        fn identify_method(&self) -> Option<IdentifyMethod> {
+            Some(IdentifyMethod::MultipleMagic(&[b"OK", b"0123456789ABCDEF!"]))
+        }
+        fn validate(&self, _: &mut dyn Content<Ty>) -> bool {
+            true
+        }
+    }
+
     fn identified_type(scanner: &mut Scanner<Ty>, buf: &[u8], path: &str) -> Option<Ty> {
         let mut content = BufferContent::<Ty>::new(buf, path);
         let res = scanner.scan(&mut content, true);
@@ -812,6 +842,34 @@ mod identify {
         assert_eq!(identified_type(&mut scanner, b"hello", "CARGO.LOCK"), Some(Ty::ByName));
         assert_eq!(identified_type(&mut scanner, b"hello", r"C:\proj\Cargo.lock"), Some(Ty::ByName));
         assert_eq!(identified_type(&mut scanner, b"hello", "Cargo.toml"), None);
+    }
+
+    #[test]
+    fn magic_of_exactly_16_bytes_still_matches() {
+        let mut scanner = ScannerBuilder::new()
+            .add_identifier(Ty::Tagged, Exact16MagicId)
+            .build();
+        assert_eq!(
+            identified_type(&mut scanner, b"0123456789ABCDEF rest", "blob.bin"),
+            Some(Ty::Tagged)
+        );
+        assert_eq!(identified_type(&mut scanner, b"0123456789ABCDE?", "blob.bin"), None);
+    }
+
+    #[test]
+    #[should_panic(expected = "at most 16 bytes")]
+    fn magic_longer_than_16_bytes_panics_at_build() {
+        ScannerBuilder::new()
+            .add_identifier(Ty::Tagged, TooLongMagicId)
+            .build();
+    }
+
+    #[test]
+    #[should_panic(expected = "at most 16 bytes")]
+    fn multiple_magic_item_longer_than_16_bytes_panics_at_build() {
+        ScannerBuilder::new()
+            .add_identifier(Ty::Tagged, TooLongMultipleMagicId)
+            .build();
     }
 }
 

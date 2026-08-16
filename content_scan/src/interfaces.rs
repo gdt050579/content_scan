@@ -191,10 +191,24 @@ pub trait ContentExtractor<T: ContentType> {
 /// If none of the variants fit your identifier, return `None` from
 /// `identify_method` and perform your own check inside
 /// [`validate`](ContentIdentifier::validate).
+///
+/// Magic patterns ([`Magic`](Self::Magic),
+/// [`MultipleMagic`](Self::MultipleMagic)) must be at most 16 bytes.
+/// The scanner only feeds the matcher the first 16 bytes of content;
+/// [`ScannerBuilder::build`](crate::ScannerBuilder::build) panics if a
+/// registered magic is longer. To match bytes past that window, return
+/// `None` from `identify_method` and call [`Content::read`] in
+/// `validate`.
 pub enum IdentifyMethod {
     /// Content whose first bytes exactly match this magic sequence.
+    ///
+    /// The sequence must be at most 16 bytes. Longer patterns can never
+    /// match (the scanner reads only `content.read(0, 16)`) and cause
+    /// [`ScannerBuilder::build`](crate::ScannerBuilder::build) to panic.
     Magic(&'static [u8]),
     /// Content whose first bytes match any of these magic sequences.
+    ///
+    /// Each sequence must be at most 16 bytes; see [`Magic`](Self::Magic).
     MultipleMagic(&'static [&'static [u8]]),
     /// Content whose file extension matches this string (ASCII
     /// case-insensitive, without the leading dot).
@@ -227,6 +241,9 @@ pub enum IdentifyMethod {
 /// Register identifiers via
 /// [`ScannerBuilder::add_identifier`](crate::ScannerBuilder::add_identifier).
 /// Only one identifier is allowed per [`ContentType`].
+/// [`ScannerBuilder::build`](crate::ScannerBuilder::build) panics if a
+/// [`IdentifyMethod::Magic`] / [`IdentifyMethod::MultipleMagic`]
+/// pattern is longer than 16 bytes.
 pub trait ContentIdentifier<T: ContentType> {
     /// Returns the fast pre-filter used by the scanner, if any.
     ///

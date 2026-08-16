@@ -468,7 +468,9 @@ impl<T: ContentType> ScannerBuilder<T> {
     ///
     /// Only one identifier is allowed per content type; registering
     /// two identifiers for the same type will cause
-    /// [`build`](Self::build) to panic.
+    /// [`build`](Self::build) to panic. An [`IdentifyMethod::Magic`]
+    /// or [`IdentifyMethod::MultipleMagic`] pattern longer than 16
+    /// bytes also panics at build.
     pub fn add_identifier<I>(mut self, content_type: T, identifier: I) -> Self
     where
         I: ContentIdentifier<T> + 'static,
@@ -505,7 +507,9 @@ impl<T: ContentType> ScannerBuilder<T> {
     /// # Panics
     ///
     /// Panics if two identifiers are registered for the same
-    /// [`ContentType`].
+    /// [`ContentType`], or if an [`IdentifyMethod::Magic`] /
+    /// [`IdentifyMethod::MultipleMagic`] pattern is longer than 16
+    /// bytes.
     pub fn build(self) -> Scanner<T> {
         self.check_unique_identifiers();
         let analyzers = AnalyzerList::new(self.analyzers, T::COUNT);

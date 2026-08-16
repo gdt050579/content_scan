@@ -20,10 +20,10 @@ impl<T: ContentType> IdentifierSet<T> {
         for (content_type, identifier) in identifiers {
             if let Some(fast_id) = identifier.identify_method() {
                 match fast_id {
-                    IdentifyMethod::Magic(magic) => magics.add(content_type, magic),
+                    IdentifyMethod::Magic(magic) => Self::add_magic(&mut magics, content_type, magic),
                     IdentifyMethod::MultipleMagic(items) => {
                         for item in items {
-                            magics.add(content_type, item);
+                            Self::add_magic(&mut magics, content_type, item);
                         }
                     }
                     IdentifyMethod::Extension(extension) => extensions.add(content_type, utils::ascii_lower_static(extension)),
@@ -52,6 +52,16 @@ impl<T: ContentType> IdentifierSet<T> {
             no_prefilter_list,
             temp_buffer: Vec::with_capacity(64),
         }
+    }
+    fn add_magic(magics: &mut MatcherBuilder<T>, content_type: T, magic: &'static [u8]) {
+        if magic.len() > 16 {
+            panic!(
+                "IdentifyMethod magic must be at most 16 bytes (the scanner only reads the first 16); type {:?} has a {}-byte pattern",
+                content_type,
+                magic.len()
+            );
+        }
+        magics.add(content_type, magic);
     }
     #[inline(always)]
     pub(crate) fn get(&self, content_type: T) -> Option<&Box<dyn ContentIdentifier<T>>> {

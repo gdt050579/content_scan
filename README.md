@@ -384,11 +384,11 @@ pub enum IdentifyMethod {
 
 Fast identification is performed with an internal matcher (single-pattern, packed magic table, or trie depending on the number and shape of patterns). After a fast match, `validate()` is called to confirm the guess. Overlapping magic prefixes resolve to the **longest** match in both the packed table and the trie.
 
-Extension and file-name methods are ASCII case-insensitive: both the registered pattern and the path basename / extension are compared in lowercase. `Notes.TXT` matches `Extension("txt")`; `makefile` matches `Name("Makefile")`. Magic methods remain exact byte matches.
+Extension and file-name methods are ASCII case-insensitive: both the registered pattern and the path basename / extension are compared in lowercase. `Notes.TXT` matches `Extension("txt")`; `makefile` matches `Name("Makefile")`. Magic methods remain exact byte matches. A magic sequence (`Magic` / `MultipleMagic`) must be at most **16 bytes** — that is the window the scanner reads (`content.read(0, 16)`). `ScannerBuilder::build` panics if a registered magic is longer. To inspect bytes past that window, return `None` from `identify_method` and call `content.read` in `validate`.
 
-If `identify_method` returns `None`, `validate()` is still called — after magic, file name, and extension have all been considered — so you can classify content with custom logic (payload bytes via `content.read`, path shape, size, …). Those identifiers are tried in the order they were registered. `validate` takes `&mut dyn Content`, so it can call `read`; the scanner's own magic matcher still only looks at the first 16 bytes.
+If `identify_method` returns `None`, `validate()` is still called — after magic, file name, and extension have all been considered — so you can classify content with custom logic (payload bytes via `content.read`, path shape, size, …). Those identifiers are tried in the order they were registered.
 
-At most **one identifier per `ContentType`** may be registered; the builder will panic otherwise.
+At most **one identifier per `ContentType`** may be registered; the builder will panic otherwise. It also panics if a `Magic` / `MultipleMagic` pattern is longer than 16 bytes.
 
 ### `ContentAnalyzer`
 
@@ -745,7 +745,7 @@ For every scanned object, the scanner performs the following steps (see [`conten
 
 1. **Top-level filter check.** If a `Filter` is configured *and* `scan` was called with `filter_root = true`, the root content is tested first; if rejected, the scan returns immediately with an empty result.
 2. **Type resolution.** If the content already reports a `content_type()`, it is used as-is. Otherwise the scanner tries, in order, using `ContentPath::as_bytes()` for the name-based steps:
-   1. magic bytes (first 16 bytes),
+   1. magic bytes (first 16 bytes; `build` panics if a registered magic is longer),
    2. exact file name,
    3. file extension,
    4. identifiers that returned `None` from `identify_method` (each `validate()` is tried in registration order).
