@@ -425,6 +425,37 @@ mod utils {
     }
 }
 
+mod content_path {
+    use crate::ContentPath;
+    use std::path::{Path, PathBuf};
+
+    #[test]
+    fn from_str_and_owned_string_are_lossless() {
+        let from_ref: ContentPath = "virtual://a".into();
+        let owned = String::from("virtual://b");
+        let from_owned: ContentPath = owned.clone().into();
+        let from_string_ref: ContentPath = (&owned).into();
+        assert!(from_ref.is_lossless());
+        assert_eq!(from_ref.as_printable_string(), "virtual://a");
+        assert!(from_owned.is_lossless());
+        assert_eq!(from_owned.as_printable_string(), "virtual://b");
+        assert_eq!(from_string_ref.as_printable_string(), "virtual://b");
+    }
+
+    #[test]
+    fn from_path_and_pathbuf_use_from_os() {
+        let p = Path::new("C:\\docs\\file.txt");
+        let from_ref: ContentPath = p.into();
+        let buf = PathBuf::from("C:\\docs\\file.txt");
+        let from_owned: ContentPath = buf.clone().into();
+        let from_buf_ref: ContentPath = (&buf).into();
+        assert!(from_ref.is_lossless());
+        assert_eq!(from_ref.as_path(), p);
+        assert_eq!(from_owned.as_path(), p);
+        assert_eq!(from_buf_ref.as_printable_string(), "C:\\docs\\file.txt");
+    }
+}
+
 mod filter {
     use crate::{ContentPath, Filter, FilterBuilder, Precedence};
 

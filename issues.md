@@ -37,7 +37,7 @@ Check an item when it is fixed.
 - [x] 22. Workspace release profile sets `debug = true`
 - [x] 23. Romanian comments in the matcher
 - [x] 24. `FolderExtractor` session fields are not in the pool (FAD)
-- [ ] 25. `IntoContentPath` is incomplete
+- [x] 25. `IntoContentPath` is incomplete
 - [x] 26. Temporary junk file in the crate directory
 
 ---
@@ -210,11 +210,11 @@ Comments are English (`type-specific` / `generic` extractors; FastMagic vs trie)
 
 `entry` and `current_is_folder` live on the extractor, not in `ExtractionPool`. Accepted as designed: the scanner’s DFS (extract before recurse) keeps a single in-flight entry, so pooling those fields is unnecessary.
 
-### 25. `IntoContentPath` is incomplete
+### 25. `IntoContentPath` is incomplete — fixed
 
 **Where:** `content_scan/src/content_path.rs`
 
-Implements `&str`, `&Path`, `ContentPath`. Missing `String`, `PathBuf`, `&String`.
+The `IntoContentPath` trait is gone. `ContentPath` implements `From` for `&str`, `String`, `&String`, `&Path`, `PathBuf`, and `&PathBuf`. `FileContent` / `FolderContent` take `impl AsRef<Path>`, so owned paths work there too.
 
 ### 26. Temporary junk file in the crate directory — fixed
 

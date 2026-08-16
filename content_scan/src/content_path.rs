@@ -1,5 +1,5 @@
-use std::path::Path;
 use std::ffi::OsString;
+use std::path::{Path, PathBuf};
 
 /// A path or address identifying a piece of content.
 ///
@@ -13,6 +13,8 @@ use std::ffi::OsString;
 ///
 /// Construct one with [`from_str`](Self::from_str) for caller-supplied or
 /// synthetic paths, or [`from_os`](Self::from_os) for real OS paths.
+/// [`From`] is implemented for `&str`, [`String`], [`&Path`](Path), and
+/// [`PathBuf`] so those types convert the same way.
 #[derive(Default)]
 pub struct ContentPath {
     /// Always valid UTF-8. For a non-UTF-8 OS path this is the *lossy*
@@ -183,6 +185,37 @@ impl ContentPath {
     }
 }
 
+impl From<&str> for ContentPath {
+    fn from(s: &str) -> Self {
+        Self::from_str(s)
+    }
+}
+impl From<String> for ContentPath {
+    fn from(s: String) -> Self {
+        Self::with_string(s)
+    }
+}
+impl From<&String> for ContentPath {
+    fn from(s: &String) -> Self {
+        Self::from_str(s)
+    }
+}
+impl From<&Path> for ContentPath {
+    fn from(p: &Path) -> Self {
+        Self::from_os(p)
+    }
+}
+impl From<PathBuf> for ContentPath {
+    fn from(p: PathBuf) -> Self {
+        Self::from_os(&p)
+    }
+}
+impl From<&PathBuf> for ContentPath {
+    fn from(p: &PathBuf) -> Self {
+        Self::from_os(p)
+    }
+}
+
 impl std::fmt::Debug for ContentPath {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // Show the printable form and flag lossiness so debugging a
@@ -193,26 +226,4 @@ impl std::fmt::Debug for ContentPath {
             write!(f, "ContentPath({:?}, lossy)", self.path)
         }
     }
-}
-
-/// Ergonomic construction: accept `&str`, `&Path`, or an owned
-/// `ContentPath` wherever a path argument is taken.
-///
-/// Each impl routes to the constructor that does the cheapest correct
-/// thing for its input, so `&str` never pays a validity scan and `&Path`
-/// gets the platform-correct handling.
-pub trait IntoContentPath {
-    fn into_content_path(self) -> ContentPath;
-}
-impl IntoContentPath for &str {
-    #[inline]
-    fn into_content_path(self) -> ContentPath { ContentPath::from_str(self) }
-}
-impl IntoContentPath for &Path {
-    #[inline]
-    fn into_content_path(self) -> ContentPath { ContentPath::from_os(self) }
-}
-impl IntoContentPath for ContentPath {
-    #[inline]
-    fn into_content_path(self) -> ContentPath { self }
 }

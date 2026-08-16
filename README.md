@@ -355,7 +355,7 @@ impl ContentPath {
 - **`as_path`** — the `&Path` to hand to `fs::read_dir`, `File::open`, and similar. For a non-UTF-8 path this is the preserved OS name, not the lossy string.
 - **`as_bytes`** — what identification and `Filter` inspect (file name / extension). On Unix this is the faithful path bytes; on Windows it is the printable string's bytes.
 
-`IntoContentPath` lets an API accept `&str`, `&Path`, or an owned `ContentPath` and route each to the cheapest correct constructor.
+`ContentPath` implements `From` for `&str`, `String`, `&String`, `&Path`, `PathBuf`, and `&PathBuf`. UTF-8 strings go through `from_str` (or `with_string` when already owned); OS paths go through `from_os`. `FileContent` and `FolderContent` take `impl AsRef<Path>`, so `String` and `PathBuf` work at those constructors too.
 
 `FolderExtractor` fills each `Entry` with `set_from_os`, so a directory walk does not drop non-UTF-8 names the way a `to_str().unwrap_or_default()` conversion would.
 
