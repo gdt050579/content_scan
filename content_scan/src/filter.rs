@@ -64,39 +64,11 @@ pub struct Filter {
     temp_filename: Vec<u8>,
 }
 impl Filter {
-    fn contains_uppercase(buf: &[u8]) -> bool {
-        for b in buf {
-            if *b >= b'A' && *b <= b'Z' {
-                return true;
-            }
-        }
-        return false;
-    }
-    fn copy_lowercase<'a>(source: &[u8], output: &'a mut Vec<u8>) -> &'a [u8] {
-        output.clear();
-        output.extend_from_slice(source);
-        output.make_ascii_lowercase();
-        output.as_slice()
-    }
-    /// ASCII-lowercases a `'static` pattern for the matcher.
-    ///
-    /// Already-lowercase strings are returned as-is (no allocation).
-    /// Mixed-case patterns are leaked once at filter build time.
-    fn ascii_lower_static(s: &'static str) -> &'static [u8] {
-        let bytes = s.as_bytes();
-        if !Self::contains_uppercase(bytes) {
-            bytes
-        } else {
-            let mut owned = bytes.to_vec();
-            owned.make_ascii_lowercase();
-            Box::leak(owned.into_boxed_slice())
-        }
-    }
     pub(crate) fn should_process(&mut self, path: &ContentPath, size: u64) -> bool {
         let file_name = if self.check_file_names {
             let res = utils::get_file_name(path.as_bytes());
-            if Self::contains_uppercase(res) {
-                Self::copy_lowercase(res, &mut self.temp_filename)
+            if utils::contains_uppercase(res) {
+                utils::copy_lowercase(res, &mut self.temp_filename)
             } else {
                 res
             }
@@ -105,8 +77,8 @@ impl Filter {
         };
         let ext = if self.check_extensions {
             let res = utils::get_extension(file_name);
-            if Self::contains_uppercase(res) {
-                Self::copy_lowercase(res, &mut self.temp_ext)
+            if utils::contains_uppercase(res) {
+                utils::copy_lowercase(res, &mut self.temp_ext)
             } else {
                 res
             }
@@ -172,7 +144,7 @@ impl FilterBuilder {
     pub fn include_extensions(mut self, prec: Precedence, extensions: &[&'static str]) -> Self {
         let mut matcher_builder = MatcherBuilder::new();
         for extension in extensions {
-            matcher_builder.add(true, Filter::ascii_lower_static(extension));
+            matcher_builder.add(true, utils::ascii_lower_static(extension));
         }
         self.rules.push((prec, FilterRule::IncludeExtensions(matcher_builder.build())));
         self
@@ -183,7 +155,7 @@ impl FilterBuilder {
     pub fn exclude_extensions(mut self, prec: Precedence, extensions: &[&'static str]) -> Self {
         let mut matcher_builder = MatcherBuilder::new();
         for extension in extensions {
-            matcher_builder.add(false, Filter::ascii_lower_static(extension));
+            matcher_builder.add(false, utils::ascii_lower_static(extension));
         }
         self.rules.push((prec, FilterRule::ExcludeExtensions(matcher_builder.build())));
         self
@@ -194,7 +166,7 @@ impl FilterBuilder {
     pub fn include_file_names(mut self, prec: Precedence, file_names: &[&'static str]) -> Self {
         let mut matcher_builder = MatcherBuilder::new();
         for file_name in file_names {
-            matcher_builder.add(true, Filter::ascii_lower_static(file_name));
+            matcher_builder.add(true, utils::ascii_lower_static(file_name));
         }
         self.rules.push((prec, FilterRule::IncludeFileNames(matcher_builder.build())));
         self
@@ -205,7 +177,7 @@ impl FilterBuilder {
     pub fn exclude_file_names(mut self, prec: Precedence, file_names: &[&'static str]) -> Self {
         let mut matcher_builder = MatcherBuilder::new();
         for file_name in file_names {
-            matcher_builder.add(false, Filter::ascii_lower_static(file_name));
+            matcher_builder.add(false, utils::ascii_lower_static(file_name));
         }
         self.rules.push((prec, FilterRule::ExcludeFileNames(matcher_builder.build())));
         self

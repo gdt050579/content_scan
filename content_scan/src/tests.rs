@@ -591,6 +591,8 @@ mod identify {
         Tagged,
         Custom,
         Fallback,
+        ByExt,
+        ByName,
     }
 
     struct TaggedId;
@@ -632,6 +634,56 @@ mod identify {
         }
         fn validate(&self, content: &dyn Content<Ty>) -> bool {
             content.size() > 0
+        }
+    }
+
+    struct ExtId;
+    impl ContentIdentifier<Ty> for ExtId {
+        fn identify_method(&self) -> Option<IdentifyMethod> {
+            Some(IdentifyMethod::Extension("txt"))
+        }
+        fn validate(&self, _: &dyn Content<Ty>) -> bool {
+            true
+        }
+    }
+
+    struct MixedCaseExtId;
+    impl ContentIdentifier<Ty> for MixedCaseExtId {
+        fn identify_method(&self) -> Option<IdentifyMethod> {
+            Some(IdentifyMethod::Extension("TXT"))
+        }
+        fn validate(&self, _: &dyn Content<Ty>) -> bool {
+            true
+        }
+    }
+
+    struct ExtsId;
+    impl ContentIdentifier<Ty> for ExtsId {
+        fn identify_method(&self) -> Option<IdentifyMethod> {
+            Some(IdentifyMethod::Extensions(&["jpg", "Jpeg"]))
+        }
+        fn validate(&self, _: &dyn Content<Ty>) -> bool {
+            true
+        }
+    }
+
+    struct NameId;
+    impl ContentIdentifier<Ty> for NameId {
+        fn identify_method(&self) -> Option<IdentifyMethod> {
+            Some(IdentifyMethod::Name("Makefile"))
+        }
+        fn validate(&self, _: &dyn Content<Ty>) -> bool {
+            true
+        }
+    }
+
+    struct NamesId;
+    impl ContentIdentifier<Ty> for NamesId {
+        fn identify_method(&self) -> Option<IdentifyMethod> {
+            Some(IdentifyMethod::Names(&["Cargo.lock"]))
+        }
+        fn validate(&self, _: &dyn Content<Ty>) -> bool {
+            true
         }
     }
 
@@ -677,6 +729,66 @@ mod identify {
         assert_eq!(identified_type(&mut scanner, b"hello", "blob.custom"), Some(Ty::Custom));
         assert_eq!(identified_type(&mut scanner, b"hello", "blob.bin"), Some(Ty::Fallback));
         assert_eq!(identified_type(&mut scanner, b"", "empty.bin"), None);
+    }
+
+    #[test]
+    fn extension_match_is_ascii_case_insensitive() {
+        let mut scanner = ScannerBuilder::new()
+            .add_identifier(Ty::ByExt, ExtId)
+            .build();
+        assert_eq!(identified_type(&mut scanner, b"hello", "notes.txt"), Some(Ty::ByExt));
+        assert_eq!(identified_type(&mut scanner, b"hello", "Notes.TXT"), Some(Ty::ByExt));
+        assert_eq!(identified_type(&mut scanner, b"hello", "notes.Txt"), Some(Ty::ByExt));
+        assert_eq!(identified_type(&mut scanner, b"hello", r"C:\docs\report.TXT"), Some(Ty::ByExt));
+        assert_eq!(identified_type(&mut scanner, b"hello", "archive.tar.txt"), Some(Ty::ByExt));
+        assert_eq!(identified_type(&mut scanner, b"hello", "notes.rs"), None);
+    }
+
+    #[test]
+    fn mixed_case_registered_extension_still_matches() {
+        let mut scanner = ScannerBuilder::new()
+            .add_identifier(Ty::ByExt, MixedCaseExtId)
+            .build();
+        assert_eq!(identified_type(&mut scanner, b"hello", "notes.txt"), Some(Ty::ByExt));
+        assert_eq!(identified_type(&mut scanner, b"hello", "NOTES.TXT"), Some(Ty::ByExt));
+    }
+
+    #[test]
+    fn extensions_list_is_ascii_case_insensitive() {
+        let mut scanner = ScannerBuilder::new()
+            .add_identifier(Ty::ByExt, ExtsId)
+            .build();
+        assert_eq!(identified_type(&mut scanner, b"hello", "photo.jpg"), Some(Ty::ByExt));
+        assert_eq!(identified_type(&mut scanner, b"hello", "Photo.JPG"), Some(Ty::ByExt));
+        assert_eq!(identified_type(&mut scanner, b"hello", "shot.JPEG"), Some(Ty::ByExt));
+        assert_eq!(identified_type(&mut scanner, b"hello", "shot.jpeg"), Some(Ty::ByExt));
+        assert_eq!(identified_type(&mut scanner, b"hello", "shot.png"), None);
+    }
+
+    #[test]
+    fn name_match_is_ascii_case_insensitive() {
+        let mut scanner = ScannerBuilder::new()
+            .add_identifier(Ty::ByName, NameId)
+            .build();
+        assert_eq!(identified_type(&mut scanner, b"hello", "Makefile"), Some(Ty::ByName));
+        assert_eq!(identified_type(&mut scanner, b"hello", "makefile"), Some(Ty::ByName));
+        assert_eq!(identified_type(&mut scanner, b"hello", "MAKEFILE"), Some(Ty::ByName));
+        assert_eq!(identified_type(&mut scanner, b"hello", "/src/Makefile"), Some(Ty::ByName));
+        assert_eq!(identified_type(&mut scanner, b"hello", r"C:\src\makefile"), Some(Ty::ByName));
+        assert_eq!(identified_type(&mut scanner, b"hello", "makefile.txt"), None);
+        assert_eq!(identified_type(&mut scanner, b"hello", "notes.rs"), None);
+    }
+
+    #[test]
+    fn names_list_is_ascii_case_insensitive() {
+        let mut scanner = ScannerBuilder::new()
+            .add_identifier(Ty::ByName, NamesId)
+            .build();
+        assert_eq!(identified_type(&mut scanner, b"hello", "Cargo.lock"), Some(Ty::ByName));
+        assert_eq!(identified_type(&mut scanner, b"hello", "cargo.lock"), Some(Ty::ByName));
+        assert_eq!(identified_type(&mut scanner, b"hello", "CARGO.LOCK"), Some(Ty::ByName));
+        assert_eq!(identified_type(&mut scanner, b"hello", r"C:\proj\Cargo.lock"), Some(Ty::ByName));
+        assert_eq!(identified_type(&mut scanner, b"hello", "Cargo.toml"), None);
     }
 }
 

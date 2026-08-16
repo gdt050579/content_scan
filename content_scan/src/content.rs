@@ -16,7 +16,7 @@ use crate::ContentPath;
 /// - [`from_u16`](Self::from_u16) must be the inverse of `as_u16` and
 ///   return `None` for values that do not correspond to a variant.
 /// - [`COUNT`](Self::COUNT) is the number of possible variants and is
-///   used to size internal fast-lookup tables.
+///   used to size internal fast-lookup tables. 
 ///
 /// # Example
 ///

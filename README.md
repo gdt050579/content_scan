@@ -384,6 +384,8 @@ pub enum IdentifyMethod {
 
 Fast identification is performed with an internal matcher (single-pattern, packed magic table, or trie depending on the number and shape of patterns). After a fast match, `validate()` is called to confirm the guess. Overlapping magic prefixes resolve to the **longest** match in both the packed table and the trie.
 
+Extension and file-name methods are ASCII case-insensitive: both the registered pattern and the path basename / extension are compared in lowercase. `Notes.TXT` matches `Extension("txt")`; `makefile` matches `Name("Makefile")`. Magic methods remain exact byte matches.
+
 If `identify_method` returns `None`, `validate()` is still called — after magic, file name, and extension have all been considered — so you can classify content with custom logic (heuristics, path shape, size, …). Those identifiers are tried in the order they were registered.
 
 At most **one identifier per `ContentType`** may be registered; the builder will panic otherwise.

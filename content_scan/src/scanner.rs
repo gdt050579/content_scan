@@ -30,7 +30,7 @@ pub struct Scanner<T: ContentType> {
     max_depth: u32,
 }
 impl<T: ContentType> Scanner<T> {
-    const EmptyVarMap: varmap::VarMap = varmap::VarMap::new();
+    const EMPTY_VAR_MAP: varmap::VarMap = varmap::VarMap::new();
     /// Scans a single top-level [`Content`] and returns the results.
     ///
     /// The scanner:
@@ -187,7 +187,7 @@ impl<T: ContentType> Scanner<T> {
                 ExtractionContext {
                     offset: request.start,
                     length: request.len,
-                    params: &Self::EmptyVarMap,
+                    params: &Self::EMPTY_VAR_MAP,
                 },
                 params,
             )
@@ -196,7 +196,7 @@ impl<T: ContentType> Scanner<T> {
                 ExtractionContext {
                     offset: 0,
                     length: Some(content.size()),
-                    params: &Self::EmptyVarMap,
+                    params: &Self::EMPTY_VAR_MAP,
                 },
                 None,
             )
@@ -272,7 +272,7 @@ impl<T: ContentType> Scanner<T> {
         }
         NextAction::Continue
     }
-    fn retrieve_content_type(&self, content: &mut dyn Content<T>) -> Option<T> {
+    fn retrieve_content_type(&mut self, content: &mut dyn Content<T>) -> Option<T> {
         if let Some(ty) = content.content_type() {
             return Some(ty);
         }

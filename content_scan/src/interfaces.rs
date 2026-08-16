@@ -194,14 +194,22 @@ pub enum IdentifyMethod {
     Magic(&'static [u8]),
     /// Content whose first bytes match any of these magic sequences.
     MultipleMagic(&'static [&'static [u8]]),
-    /// Content whose file extension exactly matches this string (case
-    /// sensitive, without the leading dot).
+    /// Content whose file extension matches this string (ASCII
+    /// case-insensitive, without the leading dot).
+    ///
+    /// `Notes.TXT` matches `Extension("txt")`; a registered pattern
+    /// `"JPG"` matches `photo.jpg`.
     Extension(&'static str),
-    /// Content whose file extension matches any of these strings.
+    /// Content whose file extension matches any of these strings (ASCII
+    /// case-insensitive, without the leading dot).
     Extensions(&'static [&'static str]),
-    /// Content whose file name exactly matches this string.
+    /// Content whose file name (basename) matches this string (ASCII
+    /// case-insensitive).
+    ///
+    /// `makefile` and `MAKEFILE` both match `Name("Makefile")`.
     Name(&'static str),
-    /// Content whose file name matches any of these strings.
+    /// Content whose file name (basename) matches any of these strings
+    /// (ASCII case-insensitive).
     Names(&'static [&'static str]),
 }
 
