@@ -81,7 +81,7 @@ impl<T: ContentType> FileContent<T> {
         }
     }
     fn open(&mut self) {
-        let (cache, flags)  = if self.exclusive {
+        let (cache, flags) = if self.exclusive {
             (CacheType::MemoryMap, RandomAccessFlags::Exclusive)
         } else {
             (CacheType::LRU { max_pages: 32 }, RandomAccessFlags::None)

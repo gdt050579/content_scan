@@ -393,33 +393,22 @@ mod packed_linear_list {
 
                 #[test]
                 fn empty_pattern_bytes_returns_none() {
-                    assert!(
-                        PackedLinearList::<TestType, $key>::new(&[(TestType::A, b"")]).is_none()
-                    );
+                    assert!(PackedLinearList::<TestType, $key>::new(&[(TestType::A, b"")]).is_none());
                 }
 
                 #[test]
                 fn pattern_longer_than_key_width_returns_none() {
-                    assert!(PackedLinearList::<TestType, $key>::new(&[(
-                        TestType::A,
-                        $oversize
-                    )])
-                    .is_none());
+                    assert!(PackedLinearList::<TestType, $key>::new(&[(TestType::A, $oversize)]).is_none());
                 }
 
                 #[test]
                 fn mixed_pattern_lengths_returns_none() {
-                    assert!(PackedLinearList::<TestType, $key>::new(&[
-                        (TestType::A, b"ab" as &[u8]),
-                        (TestType::B, b"abc"),
-                    ])
-                    .is_none());
+                    assert!(PackedLinearList::<TestType, $key>::new(&[(TestType::A, b"ab" as &[u8]), (TestType::B, b"abc"),]).is_none());
                 }
 
                 #[test]
                 fn single_pattern_find() {
-                    let list =
-                        PackedLinearList::<TestType, $key>::new(&[(TestType::A, b"PK")]).unwrap();
+                    let list = PackedLinearList::<TestType, $key>::new(&[(TestType::A, b"PK")]).unwrap();
                     assert_eq!(list.find(<$key>::pack(b"PK")), Some(TestType::A));
                     assert_eq!(list.find(<$key>::pack(b"P")), None);
                     assert_eq!(list.find(<$key>::pack(b"XX")), None);
@@ -427,12 +416,9 @@ mod packed_linear_list {
 
                 #[test]
                 fn multiple_patterns_find_each() {
-                    let list = PackedLinearList::<TestType, $key>::new(&[
-                        (TestType::A, b"%PDF"),
-                        (TestType::B, b"PK\x03\x04"),
-                        (TestType::C, b"\x7fELF"),
-                    ])
-                    .unwrap();
+                    let list =
+                        PackedLinearList::<TestType, $key>::new(&[(TestType::A, b"%PDF"), (TestType::B, b"PK\x03\x04"), (TestType::C, b"\x7fELF")])
+                            .unwrap();
 
                     assert_eq!(list.find(<$key>::pack(b"%PDF")), Some(TestType::A));
                     assert_eq!(list.find(<$key>::pack(b"PK\x03\x04")), Some(TestType::B));
@@ -468,21 +454,13 @@ mod packed_linear_list {
 
                 #[test]
                 fn duplicate_keys_returns_first() {
-                    let list = PackedLinearList::<TestType, $key>::new(&[
-                        (TestType::A, b"key"),
-                        (TestType::B, b"key"),
-                    ])
-                    .unwrap();
+                    let list = PackedLinearList::<TestType, $key>::new(&[(TestType::A, b"key"), (TestType::B, b"key")]).unwrap();
                     assert_eq!(list.find(<$key>::pack(b"key")), Some(TestType::A));
                 }
 
                 #[test]
                 fn single_byte_patterns() {
-                    let list = PackedLinearList::<TestType, $key>::new(&[
-                        (TestType::A, b"A"),
-                        (TestType::B, b"B"),
-                    ])
-                    .unwrap();
+                    let list = PackedLinearList::<TestType, $key>::new(&[(TestType::A, b"A"), (TestType::B, b"B")]).unwrap();
                     assert_eq!(list.find(<$key>::pack(b"A")), Some(TestType::A));
                     assert_eq!(list.find(<$key>::pack(b"B")), Some(TestType::B));
                     assert_eq!(list.find(<$key>::pack(b"C")), None);
@@ -490,8 +468,7 @@ mod packed_linear_list {
 
                 #[test]
                 fn pack_zero_pads_shorter_than_width() {
-                    let list =
-                        PackedLinearList::<TestType, $key>::new(&[(TestType::A, b"AB")]).unwrap();
+                    let list = PackedLinearList::<TestType, $key>::new(&[(TestType::A, b"AB")]).unwrap();
                     assert_eq!(list.find(<$key>::pack(b"AB")), Some(TestType::A));
                     if <$key>::WIDTH >= 4 {
                         assert_ne!(<$key>::pack(b"AB"), <$key>::pack(b"ABCD"));
@@ -510,16 +487,13 @@ mod packed_linear_list {
 
         #[test]
         fn accepts_full_width_pattern() {
-            let list =
-                PackedLinearList::<TestType, u32>::new(&[(TestType::A, b"abcd")]).unwrap();
+            let list = PackedLinearList::<TestType, u32>::new(&[(TestType::A, b"abcd")]).unwrap();
             assert_eq!(list.find(u32::pack(b"abcd")), Some(TestType::A));
         }
 
         #[test]
         fn rejects_five_byte_pattern() {
-            assert!(
-                PackedLinearList::<TestType, u32>::new(&[(TestType::A, b"abcde")]).is_none()
-            );
+            assert!(PackedLinearList::<TestType, u32>::new(&[(TestType::A, b"abcde")]).is_none());
         }
     }
 
@@ -528,25 +502,18 @@ mod packed_linear_list {
 
         #[test]
         fn accepts_full_width_pattern() {
-            let list =
-                PackedLinearList::<TestType, u64>::new(&[(TestType::A, b"abcdefgh")]).unwrap();
+            let list = PackedLinearList::<TestType, u64>::new(&[(TestType::A, b"abcdefgh")]).unwrap();
             assert_eq!(list.find(u64::pack(b"abcdefgh")), Some(TestType::A));
         }
 
         #[test]
         fn rejects_nine_byte_pattern() {
-            assert!(
-                PackedLinearList::<TestType, u64>::new(&[(TestType::A, b"abcdefghi")]).is_none()
-            );
+            assert!(PackedLinearList::<TestType, u64>::new(&[(TestType::A, b"abcdefghi")]).is_none());
         }
 
         #[test]
         fn patterns_longer_than_u32_width() {
-            let list = PackedLinearList::<TestType, u64>::new(&[
-                (TestType::A, b"12345"),
-                (TestType::B, b"67890"),
-            ])
-            .unwrap();
+            let list = PackedLinearList::<TestType, u64>::new(&[(TestType::A, b"12345"), (TestType::B, b"67890")]).unwrap();
             assert_eq!(list.find(u64::pack(b"12345")), Some(TestType::A));
             assert_eq!(list.find(u64::pack(b"67890")), Some(TestType::B));
             assert_eq!(list.find(u64::pack(b"123456")), None);
@@ -604,11 +571,7 @@ mod fast_magic {
 
     #[test]
     fn only_two_byte_patterns() {
-        let matcher = FastMagicMatcher::new(&[
-            (TestType::Pk, b"PK"),
-            (TestType::Gif, b"BM"),
-        ])
-        .unwrap();
+        let matcher = FastMagicMatcher::new(&[(TestType::Pk, b"PK"), (TestType::Gif, b"BM")]).unwrap();
 
         assert_eq!(matcher.starts_with(b"PK"), Some(TestType::Pk));
         assert_eq!(matcher.starts_with(b"PKextra"), Some(TestType::Pk));
@@ -638,12 +601,7 @@ mod fast_magic {
 
     #[test]
     fn only_four_byte_patterns() {
-        let matcher = FastMagicMatcher::new(&[
-            (TestType::Elf, b"\x7fELF"),
-            (TestType::Pdf, b"%PDF"),
-            (TestType::Riff, b"RIFF"),
-        ])
-        .unwrap();
+        let matcher = FastMagicMatcher::new(&[(TestType::Elf, b"\x7fELF"), (TestType::Pdf, b"%PDF"), (TestType::Riff, b"RIFF")]).unwrap();
 
         assert_eq!(matcher.starts_with(b"\x7fELF"), Some(TestType::Elf));
         assert_eq!(matcher.starts_with(b"\x7fELF\x01"), Some(TestType::Elf));
@@ -678,11 +636,7 @@ mod fast_magic {
     #[test]
     fn starts_with_prefers_longer_match() {
         // Length-4 is checked before length-2.
-        let matcher = FastMagicMatcher::new(&[
-            (TestType::Pk, b"PK"),
-            (TestType::Riff, b"PK\x03\x04"),
-        ])
-        .unwrap();
+        let matcher = FastMagicMatcher::new(&[(TestType::Pk, b"PK"), (TestType::Riff, b"PK\x03\x04")]).unwrap();
 
         assert_eq!(matcher.starts_with(b"PK\x03\x04"), Some(TestType::Riff));
         assert_eq!(matcher.starts_with(b"PK\x03\x04extra"), Some(TestType::Riff));
@@ -696,11 +650,7 @@ mod fast_magic {
 
     #[test]
     fn starts_with_prefers_three_byte_over_two() {
-        let matcher = FastMagicMatcher::new(&[
-            (TestType::Pk, b"GI"),
-            (TestType::Gif, b"GIF"),
-        ])
-        .unwrap();
+        let matcher = FastMagicMatcher::new(&[(TestType::Pk, b"GI"), (TestType::Gif, b"GIF")]).unwrap();
 
         assert_eq!(matcher.starts_with(b"GIF89a"), Some(TestType::Gif));
         assert_eq!(matcher.starts_with(b"GI"), Some(TestType::Pk));
@@ -709,11 +659,7 @@ mod fast_magic {
 
     #[test]
     fn starts_with_falls_through_to_longer_pattern() {
-        let matcher = FastMagicMatcher::new(&[
-            (TestType::Pk, b"BM"),
-            (TestType::Elf, b"\x7fELF"),
-        ])
-        .unwrap();
+        let matcher = FastMagicMatcher::new(&[(TestType::Pk, b"BM"), (TestType::Elf, b"\x7fELF")]).unwrap();
 
         assert_eq!(matcher.starts_with(b"\x7fELF"), Some(TestType::Elf));
         assert_eq!(matcher.starts_with(b"BM"), Some(TestType::Pk));
@@ -722,11 +668,7 @@ mod fast_magic {
 
     #[test]
     fn skips_missing_middle_length() {
-        let matcher = FastMagicMatcher::new(&[
-            (TestType::Pk, b"PK"),
-            (TestType::Pdf, b"%PDF"),
-        ])
-        .unwrap();
+        let matcher = FastMagicMatcher::new(&[(TestType::Pk, b"PK"), (TestType::Pdf, b"%PDF")]).unwrap();
 
         assert_eq!(matcher.starts_with(b"PK"), Some(TestType::Pk));
         assert_eq!(matcher.starts_with(b"%PDF"), Some(TestType::Pdf));
@@ -748,11 +690,7 @@ mod fast_magic {
 
     #[test]
     fn duplicate_same_length_returns_first() {
-        let matcher = FastMagicMatcher::new(&[
-            (TestType::Pk, b"PK"),
-            (TestType::Gif, b"PK"),
-        ])
-        .unwrap();
+        let matcher = FastMagicMatcher::new(&[(TestType::Pk, b"PK"), (TestType::Gif, b"PK")]).unwrap();
 
         assert_eq!(matcher.starts_with(b"PK"), Some(TestType::Pk));
         assert_eq!(matcher.matches_exactly(b"PK"), Some(TestType::Pk));
@@ -760,11 +698,7 @@ mod fast_magic {
 
     #[test]
     fn range_boundary_two_and_four() {
-        let matcher = FastMagicMatcher::new(&[
-            (TestType::Pk, b"ab"),
-            (TestType::Pdf, b"abcd"),
-        ])
-        .unwrap();
+        let matcher = FastMagicMatcher::new(&[(TestType::Pk, b"ab"), (TestType::Pdf, b"abcd")]).unwrap();
 
         assert_eq!(matcher.matches_exactly(b"ab"), Some(TestType::Pk));
         assert_eq!(matcher.matches_exactly(b"abcd"), Some(TestType::Pdf));
@@ -772,4 +706,3 @@ mod fast_magic {
         assert_eq!(matcher.starts_with(b"abcdef"), Some(TestType::Pdf));
     }
 }
-

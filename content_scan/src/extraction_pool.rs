@@ -111,7 +111,10 @@ impl<T> ExtractionPool<T> {
             self.pool.push(Some((self.last_uid, obj)));
             idx as u32
         };
-        ExtractionHandle { index: idx, uid: self.last_uid }
+        ExtractionHandle {
+            index: idx,
+            uid: self.last_uid,
+        }
     }
     /// Drops the state behind `handle` and returns its slot to the
     /// free list.
@@ -124,11 +127,7 @@ impl<T> ExtractionPool<T> {
         if idx >= self.pool.len() {
             return;
         }
-        let index_checked = if let Some((id, _)) = &self.pool[idx] {
-            *id == handle.uid
-        } else {
-            false
-        };
+        let index_checked = if let Some((id, _)) = &self.pool[idx] { *id == handle.uid } else { false };
         if index_checked {
             self.pool[idx] = None;
             self.free_list.push(handle.index);

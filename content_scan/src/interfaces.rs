@@ -1,7 +1,7 @@
+use super::{Content, ContentType, Context};
+use crate::ContentPath;
 use crate::ExtractionContext;
 use crate::ExtractionHandle;
-use crate::ContentPath;
-use super::{Content, ContentType, Context};
 
 /// Return value used by analyzers to steer the scan.
 ///

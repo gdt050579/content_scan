@@ -15,7 +15,7 @@ pub(crate) struct Object {
     pub(crate) varmap_handle: Option<varmap::PoolHandle>,
     pub(crate) first_child_index: u32,
     pub(crate) last_child_index: u32,
-    pub(crate) type_id: u16,    
+    pub(crate) type_id: u16,
 }
 
 impl Object {

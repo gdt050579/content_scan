@@ -88,46 +88,44 @@
 //! ```
 
 mod analyzer_list;
-mod extractor_list;
-mod interfaces;
-mod matcher;
+mod buffer_arena;
 mod content;
-mod scanner;
+mod content_path;
+mod context;
+mod extraction_context;
+mod extraction_pool;
+mod extractor_list;
 mod filter;
 mod identifier_set;
-mod utils;
-mod context;
-mod object;
-mod buffer_arena;
-mod extraction_pool;
-mod extraction_context;
-mod content_path;
 mod implementations;
+mod interfaces;
+mod matcher;
+mod object;
+mod scanner;
 #[cfg(test)]
 mod tests;
-
+mod utils;
 
 pub use content::*;
-pub use interfaces::*;
 pub use filter::*;
+pub use interfaces::*;
 
+use buffer_arena::BufferArena;
+use extraction_context::ExtractionRequest;
 use identifier_set::*;
 use matcher::*;
 use object::Object;
-use buffer_arena::BufferArena;
-use extraction_context::ExtractionRequest;
 
-pub use scanner::Scanner;
-pub use scanner::ScannerBuilder;
+pub use content_path::*;
 pub use content_scan_proc_macro::ContentType;
 pub use context::Context;
-pub use context::ScanResult;
 pub use context::ScanContentHandle;
-pub use varmap::*;
+pub use context::ScanResult;
+pub use extraction_context::ExtractRequestBuilder;
+pub use extraction_context::ExtractionContext;
 pub use extraction_pool::ExtractionHandle;
 pub use extraction_pool::ExtractionPool;
-pub use extraction_context::ExtractionContext;
-pub use extraction_context::ExtractRequestBuilder;
-pub use content_path::*;
 pub use implementations::*;
-
+pub use scanner::Scanner;
+pub use scanner::ScannerBuilder;
+pub use varmap::*;

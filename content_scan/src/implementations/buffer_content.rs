@@ -1,4 +1,4 @@
-use crate::{Content, ContentType, ContentPath};
+use crate::{Content, ContentPath, ContentType};
 
 /// An in-memory [`Content`] backed by an owned byte buffer.
 ///
@@ -51,7 +51,11 @@ impl<T: ContentType> BufferContent<T> {
     /// `content_type = None` lets the scanner identify the type
     /// automatically.
     pub fn from_parts(buffer: Vec<u8>, path: String, content_type: Option<T>) -> Self {
-        Self { buffer, path: ContentPath::with_string(path), content_type }
+        Self {
+            buffer,
+            path: ContentPath::with_string(path),
+            content_type,
+        }
     }
 }
 impl<T: ContentType> Content<T> for BufferContent<T> {

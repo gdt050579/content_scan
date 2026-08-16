@@ -1,14 +1,14 @@
-mod one;
-mod trie;
-mod packed_linear_list;
 mod fast_magic;
+mod one;
+mod packed_linear_list;
+mod trie;
 
 #[cfg(test)]
 mod tests;
 
+use fast_magic::FastMagicMatcher;
 use one::OneMatcher;
 use trie::{Trie, TrieBuilder};
-use fast_magic::FastMagicMatcher;
 
 use super::ContentType;
 pub enum Matcher<T: ContentType> {

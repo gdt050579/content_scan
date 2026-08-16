@@ -1,4 +1,4 @@
-use crate::{Content, ContentType, ContentPath};
+use crate::{Content, ContentPath, ContentType};
 use std::path::Path;
 
 /// A [`Content`] standing for a directory rather than a byte stream.

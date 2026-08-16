@@ -33,7 +33,7 @@ impl Key for u64 {
 pub(crate) struct PackedLinearList<T: ContentType, K: Key> {
     keys: [K; 16],
     values: [T; 16],
-    len: usize,        
+    len: usize,
 }
 
 impl<T: ContentType, K: Key> PackedLinearList<T, K> {

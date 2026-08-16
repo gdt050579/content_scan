@@ -12,7 +12,7 @@ impl VecRange {
     }
     #[inline(always)]
     fn is_empty(&self) -> bool {
-       self.end == 0
+        self.end == 0
     }
 }
 
@@ -55,7 +55,11 @@ impl<T> AnalyzerList<T> {
         } else {
             None
         };
-        Self { plugins: p, fast_map, generic_range }
+        Self {
+            plugins: p,
+            fast_map,
+            generic_range,
+        }
     }
     #[inline(always)]
     pub(super) fn range<CT: ContentType>(&self, content_type: CT) -> Option<(usize, usize)> {
@@ -76,7 +80,7 @@ impl<T> AnalyzerList<T> {
     }
     #[inline(always)]
     pub(super) unsafe fn get(&mut self, index: usize) -> &mut T {
-        unsafe {&mut self.plugins.get_unchecked_mut(index).1 }
+        unsafe { &mut self.plugins.get_unchecked_mut(index).1 }
     }
     #[inline(always)]
     pub(super) fn len(&self) -> usize {

@@ -1,6 +1,6 @@
-use content_scan::*;
-use crate::Size;
 use crate::ImageType;
+use crate::Size;
+use content_scan::*;
 
 pub struct JpegIdentifier;
 impl ContentIdentifier<ImageType> for JpegIdentifier {
@@ -63,7 +63,13 @@ impl ContentAnalyzer<ImageType> for JpegAnalyzer {
                 }
                 let h = u16::from_be_bytes([dim[0], dim[1]]) as u32;
                 let w = u16::from_be_bytes([dim[2], dim[3]]);
-                context.local().set(var!("size"), Size { width: w as u32, height: h as u32 });
+                context.local().set(
+                    var!("size"),
+                    Size {
+                        width: w as u32,
+                        height: h as u32,
+                    },
+                );
                 return NextAction::Continue;
             }
 

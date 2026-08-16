@@ -1,6 +1,6 @@
-use content_scan::*;
-use crate::Size;
 use crate::ImageType;
+use crate::Size;
+use content_scan::*;
 
 pub struct BmpIdentifier;
 impl ContentIdentifier<ImageType> for BmpIdentifier {

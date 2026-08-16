@@ -19,3 +19,7 @@ path = "sum/main.rs"
 [[example]]
 name = "image_size"
 path = "image_size/main.rs"
+
+[[example]]
+name = "base64_find"
+path = "base64_find/main.rs"

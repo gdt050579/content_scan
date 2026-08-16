@@ -80,20 +80,32 @@ impl<T: ContentType> FastMagicMatcher<T> {
     #[inline(always)]
     pub(crate) fn starts_with(&self, data: &[u8]) -> Option<T> {
         if data.len() >= 4 {
-            let result = self.test_four(data); 
-            if result.is_some() { return result; }
+            let result = self.test_four(data);
+            if result.is_some() {
+                return result;
+            }
             let result = self.test_three(data);
-            if result.is_some() { return result; }
+            if result.is_some() {
+                return result;
+            }
             let result = self.test_two(data);
-            if result.is_some() { return result; }
+            if result.is_some() {
+                return result;
+            }
         } else if data.len() >= 3 {
             let result = self.test_three(data);
-            if result.is_some() { return result; }
+            if result.is_some() {
+                return result;
+            }
             let result = self.test_two(data);
-            if result.is_some() { return result; }
+            if result.is_some() {
+                return result;
+            }
         } else if data.len() >= 2 {
             let result = self.test_two(data);
-            if result.is_some() { return result; }
+            if result.is_some() {
+                return result;
+            }
         }
         None
     }

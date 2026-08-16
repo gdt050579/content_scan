@@ -12,7 +12,7 @@ pub(crate) fn process_content_type(input: TokenStream) -> Result<TokenStream, St
             TokenTree::Punct(p) if p.as_char() == '#' => {
                 if let Some(TokenTree::Group(g)) = tokens.get(i + 1) {
                     if g.delimiter() == Delimiter::Bracket && is_repr_u16(g.stream()) {
-                            has_repr_u16 = true;                        
+                        has_repr_u16 = true;
                     }
                 }
                 i += 2;

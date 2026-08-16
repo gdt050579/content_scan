@@ -38,7 +38,10 @@ impl ContentPath {
     /// Route real paths through [`from_os`](Self::from_os) instead.
     #[inline]
     pub fn from_str(s: &str) -> Self {
-        Self { path: s.to_string(), os: None }
+        Self {
+            path: s.to_string(),
+            os: None,
+        }
     }
 
     #[inline]
@@ -56,7 +59,10 @@ impl ContentPath {
     pub fn from_os(p: &Path) -> Self {
         let os = p.as_os_str();
         match os.to_str() {
-            Some(s) => Self { path: s.to_string(), os: None },
+            Some(s) => Self {
+                path: s.to_string(),
+                os: None,
+            },
             None => Self {
                 path: os.to_string_lossy().into_owned(),
                 os: Some(os.to_owned()),
@@ -70,7 +76,10 @@ impl ContentPath {
     /// [`set_from_os`](Self::set_from_os).
     #[inline]
     pub fn empty() -> Self {
-        Self { path: String::new(), os: None }
+        Self {
+            path: String::new(),
+            os: None,
+        }
     }
 
     /// Resets to an empty, exact path, retaining the string's capacity.

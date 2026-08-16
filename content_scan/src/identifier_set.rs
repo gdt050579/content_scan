@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
-use crate::{ContentIdentifier, ContentType, IdentifyMethod, Matcher, MatcherBuilder};
 use crate::utils;
+use crate::{ContentIdentifier, ContentType, IdentifyMethod, Matcher, MatcherBuilder};
 pub(crate) struct IdentifierSet<T: ContentType> {
     identifiers: HashMap<u16, Box<dyn ContentIdentifier<T>>>,
     magics: Matcher<T>,

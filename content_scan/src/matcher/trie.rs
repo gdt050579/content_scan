@@ -98,7 +98,7 @@ impl Trie {
     }
     #[inline(always)]
     pub(super) fn matches_exactly(&self, data: &[u8]) -> Option<u16> {
-        let (res,match_entire_buff) = self.inner_scan(data);
+        let (res, match_entire_buff) = self.inner_scan(data);
         if match_entire_buff {
             res
         } else {
@@ -155,17 +155,12 @@ impl TrieBuilder {
                     Some(next) => current = next as usize,
                     None => {
                         let new_index = nodes.len();
-                        assert!(
-                            new_index <= TrieIndex::MAX as usize,
-                            "trie exceeds u16 node capacity"
-                        );
+                        assert!(new_index <= TrieIndex::MAX as usize, "trie exceeds u16 node capacity");
                         nodes.push(TrieNode {
                             children: TrieChildren::None,
                             value: None,
                         });
-                        nodes[current]
-                            .children
-                            .insert(symbol, new_index as TrieIndex);
+                        nodes[current].children.insert(symbol, new_index as TrieIndex);
                         current = new_index;
                     }
                 }

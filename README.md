@@ -27,6 +27,7 @@ Typical use cases:
     - [Counting vowels](#counting-vowels)
     - [Summing numbers extracted from text](#summing-numbers-extracted-from-text)
     - [Reading PNG / BMP / JPEG dimensions](#reading-png--bmp--jpeg-dimensions)
+    - [Finding and decoding Base64](#finding-and-decoding-base64)
   - [API overview](#api-overview)
     - [`ContentType`](#contenttype)
     - [`Content`](#content)
@@ -56,7 +57,7 @@ This repository is a Cargo workspace with three members:
 | ------------------------- | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
 | `content_scan`            | [`content_scan/`](content_scan)                       | The main library: scanner, traits, matchers, filters.                                          |
 | `content_scan_proc_macro` | [`content-scan-proc-macro/`](content-scan-proc-macro) | Companion proc-macro crate exposing `#[derive(ContentType)]`. Re-exported from `content_scan`. |
-| `examples`                | [`examples/`](examples)                               | Runnable examples (`sum`, `vowals`, `image_size`).                                              |
+| `examples`                | [`examples/`](examples)                               | Runnable examples (`sum`, `vowals`, `image_size`, `base64_find`).                                |
 
 You normally only depend on `content_scan` — the proc-macro is re-exported for you.
 
@@ -134,6 +135,8 @@ cargo run --example vowals
 cargo run --example sum
 cargo run --example image_size -- path/to/image.png
 cargo run --example image_size -- path/to/folder
+cargo run --example base64_find
+cargo run --example base64_find -- path/to/file_or_folder
 ```
 
 ### Counting vowels
@@ -273,6 +276,50 @@ let res = if Path::new(&path).is_dir() {
 ```
 
 Note the `false` passed to `scan` for the directory case: the filter only allows image extensions, so applying it to the root folder would reject the scan before it starts. The example then prints the resulting tree, indented by depth, with `{width} x {height}` next to every recognized image.
+
+### Finding and decoding Base64
+
+[`base64_find`](examples/base64_find/main.rs) shows an analyzer **requesting** extractors of another type. A `Text` analyzer locates contiguous Base64 runs, emits `request_extract(MyTypes::Base64)` for each hit, a `Base64` extractor decodes the slice into a `Vec<u8>` tagged `Base64Decoded`, and a `Base64Decoded` analyzer prints that buffer. With no arguments it scans a built-in sample; pass a file or folder to scan real content:
+
+```bash
+cargo run --example base64_find
+cargo run --example base64_find -- notes.txt
+cargo run --example base64_find -- ./inbox
+```
+
+```rust
+impl ContentAnalyzer<MyTypes> for Base64Finder {
+    fn analyze(&mut self, content: &mut dyn Content<MyTypes>, context: &mut Context<MyTypes>) -> NextAction {
+        // ...locate a run at `start` of length `len`...
+        context.request_extract(MyTypes::Base64).at(start).len(len).emit();
+        NextAction::Continue
+    }
+}
+
+impl ContentExtractor<MyTypes> for Base64Extractor {
+    fn extract(&mut self, handle: ExtractionHandle, content: &mut dyn Content<MyTypes>) -> Option<Box<dyn Content<MyTypes>>> {
+        let session = self.pool.get(handle)?;
+        let encoded = content.read(session.offset, session.length as u32)?;
+        let decoded = decode_base64(encoded)?;
+        Some(Box::new(BufferContent::<MyTypes>::from_parts(
+            decoded,
+            format!("base64@{}", session.offset),
+            Some(MyTypes::Base64Decoded),
+        )))
+    }
+    // ...
+}
+
+impl ContentAnalyzer<MyTypes> for Base64DecodedAnalyzer {
+    fn analyze(&mut self, content: &mut dyn Content<MyTypes>, _: &mut Context<MyTypes>) -> NextAction {
+        let buf = content.read(0, content.size() as u32).unwrap_or(&[]);
+        println!("{}: {}", content.path().as_printable_string(), String::from_utf8_lossy(buf));
+        NextAction::Continue
+    }
+}
+```
+
+The extractor is registered for `Base64`, not for `Text`. It only runs because the finder queued that type; the parent file itself is never identified as `Base64`.
 
 ---
 

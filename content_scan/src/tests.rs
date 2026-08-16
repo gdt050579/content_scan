@@ -35,9 +35,7 @@ mod plugin_list {
     }
 
     fn values_in_range(list: &mut AnalyzerList<String>, start: usize, end: usize) -> Vec<String> {
-        (start..end)
-            .map(|i| unsafe { list.get(i).clone() })
-            .collect()
+        (start..end).map(|i| unsafe { list.get(i).clone() }).collect()
     }
 
     #[test]
@@ -71,14 +69,7 @@ mod plugin_list {
     #[test]
     fn multiple_plugins_same_type_sorted_by_priority() {
         // Insert out of priority order; lower priority value comes first.
-        let mut list = AnalyzerList::new(
-            vec![
-                typed(0, 30, "p30"),
-                typed(0, 10, "p10"),
-                typed(0, 20, "p20"),
-            ],
-            TestType::COUNT,
-        );
+        let mut list = AnalyzerList::new(vec![typed(0, 30, "p30"), typed(0, 10, "p10"), typed(0, 20, "p20")], TestType::COUNT);
         assert_eq!(list.range(TestType::A), Some((0, 3)));
         assert_eq!(values_in_range(&mut list, 0, 3), ["p10", "p20", "p30"]);
         assert_eq!(list.generic_range(), None);
@@ -108,10 +99,7 @@ mod plugin_list {
 
     #[test]
     fn missing_middle_type_returns_none() {
-        let list = AnalyzerList::new(
-            vec![typed(0, 0, "a"), typed(2, 0, "c")],
-            TestType::COUNT,
-        );
+        let list = AnalyzerList::new(vec![typed(0, 0, "a"), typed(2, 0, "c")], TestType::COUNT);
         assert_eq!(list.range(TestType::A), Some((0, 1)));
         assert_eq!(list.range(TestType::B), None);
         assert_eq!(list.range(TestType::C), Some((1, 2)));
@@ -128,10 +116,7 @@ mod plugin_list {
 
     #[test]
     fn generics_only() {
-        let mut list = AnalyzerList::new(
-            vec![generic(2, "g2"), generic(0, "g0"), generic(1, "g1")],
-            TestType::COUNT,
-        );
+        let mut list = AnalyzerList::new(vec![generic(2, "g2"), generic(0, "g0"), generic(1, "g1")], TestType::COUNT);
         assert_eq!(list.range(TestType::A), None);
         assert_eq!(list.range(TestType::B), None);
         assert_eq!(list.range(TestType::C), None);
@@ -151,13 +136,7 @@ mod plugin_list {
     #[test]
     fn typed_then_generics() {
         let mut list = AnalyzerList::new(
-            vec![
-                generic(1, "g1"),
-                typed(1, 0, "b"),
-                typed(0, 0, "a0"),
-                generic(0, "g0"),
-                typed(0, 1, "a1"),
-            ],
+            vec![generic(1, "g1"), typed(1, 0, "b"), typed(0, 0, "a0"), generic(0, "g0"), typed(0, 1, "a1")],
             TestType::COUNT,
         );
         assert_eq!(list.len(), 5);
@@ -172,10 +151,7 @@ mod plugin_list {
 
     #[test]
     fn single_typed_then_single_generic() {
-        let mut list = AnalyzerList::new(
-            vec![typed(0, 0, "a"), generic(0, "g")],
-            TestType::COUNT,
-        );
+        let mut list = AnalyzerList::new(vec![typed(0, 0, "a"), generic(0, "g")], TestType::COUNT);
         assert_eq!(list.range(TestType::A), Some((0, 1)));
         assert_eq!(list.generic_range(), Some((1, 2)));
         assert_eq!(unsafe { list.get(0) }, "a");
@@ -736,9 +712,7 @@ mod identify {
 
     #[test]
     fn custom_identifier_classifies_when_identify_method_is_none() {
-        let mut scanner = ScannerBuilder::new()
-            .add_identifier(Ty::Custom, CustomPathId)
-            .build();
+        let mut scanner = ScannerBuilder::new().add_identifier(Ty::Custom, CustomPathId).build();
         assert_eq!(identified_type(&mut scanner, b"hello", "blob.custom"), Some(Ty::Custom));
         assert_eq!(identified_type(&mut scanner, b"hello", "blob.bin"), None);
     }
@@ -774,9 +748,7 @@ mod identify {
 
     #[test]
     fn custom_identifier_can_read_payload_bytes() {
-        let mut scanner = ScannerBuilder::new()
-            .add_identifier(Ty::Custom, PastMagicWindowId)
-            .build();
+        let mut scanner = ScannerBuilder::new().add_identifier(Ty::Custom, PastMagicWindowId).build();
         let mut matching = [0u8; 20];
         matching[16..20].copy_from_slice(b"MARK");
         assert_eq!(identified_type(&mut scanner, &matching, "blob.bin"), Some(Ty::Custom));
@@ -786,9 +758,7 @@ mod identify {
 
     #[test]
     fn extension_match_is_ascii_case_insensitive() {
-        let mut scanner = ScannerBuilder::new()
-            .add_identifier(Ty::ByExt, ExtId)
-            .build();
+        let mut scanner = ScannerBuilder::new().add_identifier(Ty::ByExt, ExtId).build();
         assert_eq!(identified_type(&mut scanner, b"hello", "notes.txt"), Some(Ty::ByExt));
         assert_eq!(identified_type(&mut scanner, b"hello", "Notes.TXT"), Some(Ty::ByExt));
         assert_eq!(identified_type(&mut scanner, b"hello", "notes.Txt"), Some(Ty::ByExt));
@@ -799,18 +769,14 @@ mod identify {
 
     #[test]
     fn mixed_case_registered_extension_still_matches() {
-        let mut scanner = ScannerBuilder::new()
-            .add_identifier(Ty::ByExt, MixedCaseExtId)
-            .build();
+        let mut scanner = ScannerBuilder::new().add_identifier(Ty::ByExt, MixedCaseExtId).build();
         assert_eq!(identified_type(&mut scanner, b"hello", "notes.txt"), Some(Ty::ByExt));
         assert_eq!(identified_type(&mut scanner, b"hello", "NOTES.TXT"), Some(Ty::ByExt));
     }
 
     #[test]
     fn extensions_list_is_ascii_case_insensitive() {
-        let mut scanner = ScannerBuilder::new()
-            .add_identifier(Ty::ByExt, ExtsId)
-            .build();
+        let mut scanner = ScannerBuilder::new().add_identifier(Ty::ByExt, ExtsId).build();
         assert_eq!(identified_type(&mut scanner, b"hello", "photo.jpg"), Some(Ty::ByExt));
         assert_eq!(identified_type(&mut scanner, b"hello", "Photo.JPG"), Some(Ty::ByExt));
         assert_eq!(identified_type(&mut scanner, b"hello", "shot.JPEG"), Some(Ty::ByExt));
@@ -820,9 +786,7 @@ mod identify {
 
     #[test]
     fn name_match_is_ascii_case_insensitive() {
-        let mut scanner = ScannerBuilder::new()
-            .add_identifier(Ty::ByName, NameId)
-            .build();
+        let mut scanner = ScannerBuilder::new().add_identifier(Ty::ByName, NameId).build();
         assert_eq!(identified_type(&mut scanner, b"hello", "Makefile"), Some(Ty::ByName));
         assert_eq!(identified_type(&mut scanner, b"hello", "makefile"), Some(Ty::ByName));
         assert_eq!(identified_type(&mut scanner, b"hello", "MAKEFILE"), Some(Ty::ByName));
@@ -834,9 +798,7 @@ mod identify {
 
     #[test]
     fn names_list_is_ascii_case_insensitive() {
-        let mut scanner = ScannerBuilder::new()
-            .add_identifier(Ty::ByName, NamesId)
-            .build();
+        let mut scanner = ScannerBuilder::new().add_identifier(Ty::ByName, NamesId).build();
         assert_eq!(identified_type(&mut scanner, b"hello", "Cargo.lock"), Some(Ty::ByName));
         assert_eq!(identified_type(&mut scanner, b"hello", "cargo.lock"), Some(Ty::ByName));
         assert_eq!(identified_type(&mut scanner, b"hello", "CARGO.LOCK"), Some(Ty::ByName));
@@ -846,30 +808,21 @@ mod identify {
 
     #[test]
     fn magic_of_exactly_16_bytes_still_matches() {
-        let mut scanner = ScannerBuilder::new()
-            .add_identifier(Ty::Tagged, Exact16MagicId)
-            .build();
-        assert_eq!(
-            identified_type(&mut scanner, b"0123456789ABCDEF rest", "blob.bin"),
-            Some(Ty::Tagged)
-        );
+        let mut scanner = ScannerBuilder::new().add_identifier(Ty::Tagged, Exact16MagicId).build();
+        assert_eq!(identified_type(&mut scanner, b"0123456789ABCDEF rest", "blob.bin"), Some(Ty::Tagged));
         assert_eq!(identified_type(&mut scanner, b"0123456789ABCDE?", "blob.bin"), None);
     }
 
     #[test]
     #[should_panic(expected = "at most 16 bytes")]
     fn magic_longer_than_16_bytes_panics_at_build() {
-        ScannerBuilder::new()
-            .add_identifier(Ty::Tagged, TooLongMagicId)
-            .build();
+        ScannerBuilder::new().add_identifier(Ty::Tagged, TooLongMagicId).build();
     }
 
     #[test]
     #[should_panic(expected = "at most 16 bytes")]
     fn multiple_magic_item_longer_than_16_bytes_panics_at_build() {
-        ScannerBuilder::new()
-            .add_identifier(Ty::Tagged, TooLongMultipleMagicId)
-            .build();
+        ScannerBuilder::new().add_identifier(Ty::Tagged, TooLongMultipleMagicId).build();
     }
 }
 
@@ -1014,9 +967,7 @@ mod local_varmap {
 
     #[test]
     fn local_map_is_visible_on_the_result_tree() {
-        let mut scanner = ScannerBuilder::new()
-            .add_analyzer(Ty::Leaf, 0, TagAnalyzer(1))
-            .build();
+        let mut scanner = ScannerBuilder::new().add_analyzer(Ty::Leaf, 0, TagAnalyzer(1)).build();
         let mut content = BufferContent::<Ty>::with_content_type(b"x", "root", Ty::Leaf);
         let res = scanner.scan(&mut content, true);
         let root = res.root().unwrap();
@@ -1050,9 +1001,7 @@ mod local_varmap {
 
     #[test]
     fn skip_after_local_still_keeps_the_map() {
-        let mut scanner = ScannerBuilder::new()
-            .add_analyzer(Ty::Leaf, 0, SkipAfterLocal)
-            .build();
+        let mut scanner = ScannerBuilder::new().add_analyzer(Ty::Leaf, 0, SkipAfterLocal).build();
         let mut content = BufferContent::<Ty>::with_content_type(b"x", "root", Ty::Leaf);
         let res = scanner.scan(&mut content, true);
         let root = res.root().unwrap();
@@ -1102,12 +1051,7 @@ mod request_extract {
     struct RequestSlice;
     impl ContentAnalyzer<Ty> for RequestSlice {
         fn analyze(&mut self, _: &mut dyn Content<Ty>, context: &mut Context<Ty>) -> NextAction {
-            context
-                .request_extract(Ty::Slice)
-                .at(2)
-                .len(3)
-                .param(var!("tag"), 9u32)
-                .emit();
+            context.request_extract(Ty::Slice).at(2).len(3).param(var!("tag"), 9u32).emit();
             NextAction::Continue
         }
     }
@@ -1172,11 +1116,7 @@ mod request_extract {
             Some(&self.entry)
         }
         fn extract(&mut self, _: ExtractionHandle, _: &mut dyn Content<Ty>) -> Option<Box<dyn Content<Ty>>> {
-            Some(Box::new(BufferContent::<Ty>::with_content_type(
-                b"x",
-                self.child_path,
-                self.child_type,
-            )))
+            Some(Box::new(BufferContent::<Ty>::with_content_type(b"x", self.child_path, self.child_type)))
         }
         fn release(&mut self, handle: ExtractionHandle) {
             self.pool.release_slot(handle);
@@ -1346,9 +1286,7 @@ mod request_extract {
 
     #[test]
     fn request_without_a_matching_extractor_is_a_no_op() {
-        let mut scanner = ScannerBuilder::new()
-            .add_analyzer(Ty::Root, 0, RequestMissing)
-            .build();
+        let mut scanner = ScannerBuilder::new().add_analyzer(Ty::Root, 0, RequestMissing).build();
         let mut content = BufferContent::<Ty>::with_content_type(b"root", "root", Ty::Root);
         let res = scanner.scan(&mut content, true);
         let root = res.root().unwrap();
@@ -1488,4 +1426,3 @@ mod folder_symlinks {
         assert!(!names.iter().any(|n| n == "dangling"), "{names:?}");
     }
 }
-

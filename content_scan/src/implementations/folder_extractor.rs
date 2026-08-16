@@ -1,6 +1,6 @@
+use super::{FileContent, FolderContent};
 use crate::{Content, ContentExtractor, ContentType, ExtractionContext, ExtractionPool};
 use std::marker::PhantomData;
-use super::{FolderContent, FileContent};
 
 /// Returns `true` if the directory entry is itself a link (not its target).
 ///
@@ -150,9 +150,16 @@ impl<T: ContentType + 'static> ContentExtractor<T> for FolderExtractor<T> {
 
     fn extract(&mut self, _: crate::ExtractionHandle, content: &mut dyn Content<T>) -> Option<Box<dyn Content<T>>> {
         if self.current_is_folder {
-            Some(Box::new(FolderContent::with_content_type(self.entry.path.as_path(), content.content_type()?)))
+            Some(Box::new(FolderContent::with_content_type(
+                self.entry.path.as_path(),
+                content.content_type()?,
+            )))
         } else {
-            Some(Box::new(FileContent::with_size(self.entry.path.as_path(), self.entry.size, self.open_files_exclusively)))
+            Some(Box::new(FileContent::with_size(
+                self.entry.path.as_path(),
+                self.entry.size,
+                self.open_files_exclusively,
+            )))
         }
     }
 

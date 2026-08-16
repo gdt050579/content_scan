@@ -1,6 +1,6 @@
-use content_scan::*;
-use crate::Size;
 use crate::ImageType;
+use crate::Size;
+use content_scan::*;
 
 pub struct PngIdentifier;
 impl ContentIdentifier<ImageType> for PngIdentifier {
@@ -9,7 +9,7 @@ impl ContentIdentifier<ImageType> for PngIdentifier {
     }
 
     fn validate(&self, content: &mut dyn Content<ImageType>) -> bool {
-        content.size() >= 24    
+        content.size() >= 24
     }
 }
 

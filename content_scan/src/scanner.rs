@@ -137,7 +137,14 @@ impl<T: ContentType> Scanner<T> {
         }
         NextAction::Continue
     }
-    fn run_extractors(&mut self, content: &mut dyn Content<T>, content_type: Option<T>, depth: u32, my_index: u32, start_req_index: usize) -> NextAction {
+    fn run_extractors(
+        &mut self,
+        content: &mut dyn Content<T>,
+        content_type: Option<T>,
+        depth: u32,
+        my_index: u32,
+        start_req_index: usize,
+    ) -> NextAction {
         // type-specific extractors
         if let Some(ty) = content_type {
             if let Some((start, end)) = self.extractors.range(ty) {
@@ -162,7 +169,7 @@ impl<T: ContentType> Scanner<T> {
                     self.context.extraction_requests_stack[i].params_handle = None;
                 }
             }
-        }        
+        }
         NextAction::Continue
     }
     fn restore_extraction_request_stack(&mut self, start_req_index: usize) {

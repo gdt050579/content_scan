@@ -31,7 +31,11 @@ struct NumericExtractor {
 }
 impl ContentExtractor<MyTypes> for NumericExtractor {
     fn acquire(&mut self, _: &mut dyn Content<MyTypes>, _: &ExtractionContext) -> Option<ExtractionHandle> {
-        Some(self.e.acquire_slot(ExtractData { pos: 0, start: u64::MAX, len: 0 }))
+        Some(self.e.acquire_slot(ExtractData {
+            pos: 0,
+            start: u64::MAX,
+            len: 0,
+        }))
     }
     fn advance(&mut self, handle: ExtractionHandle, content: &mut dyn Content<MyTypes>) -> Option<&Entry> {
         let data = self.e.get_mut(handle)?;
@@ -109,9 +113,17 @@ fn main() {
     let root = res.root().unwrap();
     println!("root: {}", res.path(root).unwrap());
     let mut c = res.child(root).unwrap();
-    println!("- child: {} => {}", res.path(c).unwrap(), res.local(c).unwrap().get::<u32>(var!("value")).unwrap_or(0));
+    println!(
+        "- child: {} => {}",
+        res.path(c).unwrap(),
+        res.local(c).unwrap().get::<u32>(var!("value")).unwrap_or(0)
+    );
     while let Some(next) = res.next_sibling(c) {
         c = next;
-        println!("- sibling: {} => {}", res.path(c).unwrap(), res.local(c).unwrap().get::<u32>(var!("value")).unwrap_or(0));
+        println!(
+            "- sibling: {} => {}",
+            res.path(c).unwrap(),
+            res.local(c).unwrap().get::<u32>(var!("value")).unwrap_or(0)
+        );
     }
 }

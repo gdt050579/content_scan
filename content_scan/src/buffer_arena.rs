@@ -13,7 +13,10 @@ impl BufferArena {
     pub(crate) fn alloc(&mut self, data: &[u8]) -> ArenaIndex {
         let index = self.buf.len();
         self.buf.extend_from_slice(data);
-        ArenaIndex { pos: index as u32, size: data.len() as u32 }
+        ArenaIndex {
+            pos: index as u32,
+            size: data.len() as u32,
+        }
     }
     pub(crate) fn get(&self, index: ArenaIndex) -> Option<&[u8]> {
         let end = index.pos.saturating_add(index.size) as usize;
