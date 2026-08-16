@@ -12,7 +12,7 @@ pub(crate) struct Object {
     pub(crate) path: ArenaIndex,
     pub(crate) parent_index: u32,
     pub(crate) next_sibling_index: u32,
-    pub(crate) varmap_index: u32,
+    pub(crate) varmap_handle: Option<varmap::PoolHandle>,
     pub(crate) first_child_index: u32,
     pub(crate) last_child_index: u32,
     pub(crate) type_id: u16,    

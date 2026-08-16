@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use crate::BufferArena;
 use crate::ContentType;
 use crate::Object;
-use varmap::VarMap;
+use varmap::{VarMap, VarMapPool};
 
 /// Mutable state shared with plugins during a scan.
 ///
@@ -29,9 +29,8 @@ pub struct Context<T: ContentType> {
     pub(crate) extract: VarMap,
     pub(crate) objects: Vec<Object>,
     pub(crate) path_arena: BufferArena,
-    pub(crate) varmap_pool: Vec<VarMap>,
-    pub(crate) used_local_varmaps: u32,
-    pub(crate) local_varmaps_index: u32,
+    pub(crate) varmap_pool: VarMapPool,
+    pub(crate) local_varmap_handle: Option<varmap::PoolHandle>,
     _data: PhantomData<T>,
 }
 impl<T: ContentType> Context<T> {
@@ -41,9 +40,8 @@ impl<T: ContentType> Context<T> {
             extract: VarMap::new(),
             objects: Vec::with_capacity(16),
             path_arena: BufferArena::new(),
-            varmap_pool: Vec::with_capacity(16),
-            used_local_varmaps: 0,
-            local_varmaps_index: Object::INVALID_INDEX,
+            varmap_pool: VarMapPool::new(),
+            local_varmap_handle: None,
             _data: PhantomData,
         }
     }
@@ -52,12 +50,7 @@ impl<T: ContentType> Context<T> {
         self.extract.clear();
         self.objects.clear();
         self.path_arena.clear();
-        self.varmap_pool.truncate(128);
-        for varmap in self.varmap_pool.iter_mut() {
-            varmap.clear();
-        }
-        self.used_local_varmaps = 0;
-        self.local_varmaps_index = Object::INVALID_INDEX;
+        self.varmap_pool.clear(varmap::ClearStrategy::KeepSmallestN(128));
     }
     pub(crate) fn clear_extract(&mut self) {
         self.extract.clear();
@@ -88,22 +81,10 @@ impl<T: ContentType> Context<T> {
     /// object; if a plugin never touches the local map, no memory is
     /// spent for that object.
     pub fn local(&mut self) -> &mut VarMap {
-        if self.local_varmaps_index == Object::INVALID_INDEX {
-            if self.used_local_varmaps >= self.varmap_pool.len() as u32 {
-                self.varmap_pool.push(VarMap::new());
-                self.used_local_varmaps = self.varmap_pool.len() as u32;
-                self.local_varmaps_index = self.used_local_varmaps - 1;
-            } else {
-                self.local_varmaps_index = self.used_local_varmaps;
-                self.used_local_varmaps += 1;
-                self.varmap_pool[self.local_varmaps_index as usize].clear();
-            }
-            // link to the object
-            if let Some(object) = self.objects.last_mut() {
-                object.varmap_index = self.local_varmaps_index;
-            }
+        if self.local_varmap_handle.is_none() {
+            self.local_varmap_handle = Some(self.varmap_pool.allocate());
         }
-        &mut self.varmap_pool[self.local_varmaps_index as usize]
+        self.varmap_pool.get_mut(self.local_varmap_handle.unwrap()).unwrap()
     }
 
     /// Returns the number of content objects processed so far in the
@@ -244,10 +225,10 @@ impl<'a, T: ContentType> ScanResult<'a, T> {
     /// handle is invalid.
     pub fn local(&self, handle: ScanContentHandle) -> Option<&VarMap> {
         let object = self.context.objects.get(handle.index as usize)?;
-        if object.varmap_index as usize >= self.context.varmap_pool.len() {
-            None
+        if let Some(varmap_handle) = object.varmap_handle {
+            self.context.varmap_pool.get(varmap_handle)
         } else {
-            self.context.varmap_pool.get(object.varmap_index as usize)
+            None
         }
     }
 

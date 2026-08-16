@@ -69,7 +69,7 @@ impl<T: ContentType> Scanner<T> {
     }
     fn inner_scan(&mut self, content: &mut dyn Content<T>, depth: u32, parent_index: u32) -> NextAction {
         self.context.clear_extract();
-        self.context.local_varmaps_index = Object::INVALID_INDEX; // so that next time someone ask for a local varmap, it will get one from the context varmap_pool
+        self.context.local_varmap_handle = None; // so that next time someone ask for a local varmap, it will get one from the context varmap_pool
         let ty = self.retrieve_content_type(content);
 
         let path_index = self.context.path_arena.alloc(content.path().as_printable_string().as_bytes());
@@ -77,7 +77,7 @@ impl<T: ContentType> Scanner<T> {
             path: path_index,
             parent_index,
             next_sibling_index: Object::INVALID_INDEX,
-            varmap_index: Object::INVALID_INDEX,
+            varmap_handle: None,
             first_child_index: Object::INVALID_INDEX,
             last_child_index: Object::INVALID_INDEX,
             type_id: if let Some(ty) = ty { ty.as_u16() } else { u16::MAX },
