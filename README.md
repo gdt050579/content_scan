@@ -34,6 +34,8 @@ Typical use cases:
     - [`ContentIdentifier`](#contentidentifier)
     - [`ContentAnalyzer`](#contentanalyzer)
     - [`ContentExtractor`](#contentextractor)
+    - [`ExtractionContext`](#extractioncontext)
+    - [Requesting extraction](#requesting-extraction)
     - [`ExtractionPool`](#extractionpool)
     - [Walking the file system](#walking-the-file-system)
     - [`Filter` / `FilterBuilder`](#filter--filterbuilder)
@@ -68,13 +70,13 @@ The framework is built around a few small traits:
 - **`Content<T>`** — an abstract, seekable, read-only byte source with a `ContentPath` and a size. Ready-made `BufferContent<T>` (in-memory), `FileContent<T>` (memory-mapped file) and `FolderContent<T>` (a directory, used as a container) implementations are provided.
 - **`ContentPath`** — the path or synthetic address of a piece of content. Holds a UTF-8 printable view always, and keeps the original OS path when the name is not valid UTF-8 so the file can still be opened.
 - **`ContentIdentifier<T>`** — decides *what* a piece of content is (by magic bytes, extension, or file name) and validates the guess.
-- **`ContentAnalyzer<T>`** — reads content and produces information (stored in a shared `Context`).
-- **`ContentExtractor<T>`** — pulls sub-contents out of a container through an `acquire` / `advance` / `extract` / `release` session keyed by an `ExtractionHandle`, then hands children back to the scanner for recursion. `ExtractionPool<T>` is the helper that mints those handles and stores the per-session state behind them. `FolderExtractor<T>` is a ready-made extractor that enumerates a directory.
+- **`ContentAnalyzer<T>`** — reads content and produces information (stored in a shared `Context`). Analyzers can also queue extra extraction passes with `context.request_extract(ty)`.
+- **`ContentExtractor<T>`** — pulls sub-contents out of a container through an `acquire` / `advance` / `extract` / `release` session keyed by an `ExtractionHandle`. `acquire` receives an `ExtractionContext` describing the region of the parent to look at (`offset`, optional `length`, optional `params`). `ExtractionPool<T>` is the helper that mints those handles and stores the per-session state behind them. `FolderExtractor<T>` is a ready-made extractor that enumerates a directory.
 - **`Filter`** — decides which paths / sizes should be processed at all.
 - **`Scanner<T>`** — the orchestrator; built via `ScannerBuilder<T>`.
 - **`ScanResult<T>` / `ScanContentHandle`** — after a scan, the framework exposes the full **tree** of visited objects (parent / child / sibling links), each with its interned path, resolved content type and its own local `VarMap`.
 
-Analyzers are either **specific** to a `ContentType` or **generic** (run on every scanned object), and each is registered with a `priority` byte to control execution order. Extractors are always type-specific and run in registration order.
+Analyzers are either **specific** to a `ContentType` or **generic** (run on every scanned object), and each is registered with a `priority` byte to control execution order. Extractors are registered per type and run in registration order — both when the current object is that type, and when an analyzer [requests](#requesting-extraction) that type.
 
 ---
 
@@ -394,7 +396,7 @@ pub trait ContentAnalyzer<T: ContentType> {
 }
 ```
 
-Analyzers inspect content and write results into the shared `Context`. Use `context.local()` for per-object findings, `context.global()` for scan-wide aggregates, and `context.extract()` for hints aimed at extractors of **this same object** — for example an analyzer that locates an embedded ZIP and records its start offset so the extractor registered for that type can open it. The returned `NextAction` controls the pipeline:
+Analyzers inspect content and write results into the shared `Context`. Use `context.local()` for per-object findings and `context.global()` for scan-wide aggregates. To pull nested content out of the current object using extractors registered for a **different** type — for example an analyzer that locates an embedded ZIP and wants the Zip extractor to open it — call `context.request_extract(ty)` and [emit an extraction request](#requesting-extraction). The returned `NextAction` controls the pipeline:
 
 - `NextAction::Continue` — run the next analyzer / extractor.
 - `NextAction::Skip` — stop processing the current object (do not run further analyzers/extractors on it), but keep scanning siblings.
@@ -414,7 +416,7 @@ pub trait ContentExtractor<T: ContentType> {
     fn acquire(
         &mut self,
         content: &mut dyn Content<T>,
-        extract_context: &mut VarMap,
+        extract_context: &ExtractionContext,
     ) -> Option<ExtractionHandle>;
     fn advance(
         &mut self,
@@ -440,14 +442,82 @@ pub struct ExtractionHandle { /* opaque */ }
 
 Extractors turn a container into a stream of children, driven as a short session keyed by an opaque `ExtractionHandle`:
 
-1. `acquire` — called once per parent, after that object's analyzers have run. Receives `context.extract()`, the analyzer-to-extractor `VarMap` for this object (for example a ZIP start offset recorded by an analyzer). Copy anything you need into session state; nested child scans clear the map for the child's own handoff. Return `Some(handle)` to start the session, or `None` to skip this extractor. Handles are minted by an [`ExtractionPool`](#extractionpool); `ExtractionHandle` is opaque and cannot be constructed directly.
+1. `acquire` — called once per parent, after that object's analyzers have run. Receives an [`ExtractionContext`](#extractioncontext) describing the region of `content` to look at (`offset`, optional `length`, optional `params`). Copy anything you need into session state. Return `Some(handle)` to start the session, or `None` to skip this extractor. Handles are minted by an [`ExtractionPool`](#extractionpool); `ExtractionHandle` is opaque and cannot be constructed directly.
 2. `advance` — advances the session to the next child and returns a lightweight `Entry` describing its path/size. Returning `None` ends the stream.
 3. `extract` — materializes the current child as a boxed `Content<T>`. The scanner then recursively scans it (subject to `max_depth`). Returning `None` skips just this entry; enumeration continues with the next `advance`.
 4. `release` — called exactly once for every successfully acquired handle (including when the scan stops early via `NextAction::Skip` / `NextAction::Exit`). Use it to free per-session resources.
 
+An extractor registered for type `T` runs in two situations:
+
+- The current object was **identified as `T`**. The context then covers the whole object (`offset = 0`, `length = Some(content.size())`, empty `params`).
+- An analyzer **requested** extraction of `T` from the current object via [`context.request_extract`](#requesting-extraction). The context then carries the requested offset, length, and params. The parent does not need to have been identified as `T`.
+
 Set `Entry::skip_from_filtering` to `true` to exempt an entry from the active `Filter`. This matters for container entries that would never pass the filter themselves: a `FolderExtractor` restricted to `*.png` files, for example, still has to descend into subdirectories, whose names carry no `.png` extension. Keep one `Entry` as a field on the extractor and overwrite `entry.path` in place with `ContentPath::set_from_str` (synthetic names) or `ContentPath::set_from_os` (real OS paths) so `advance` does not allocate a new path for every child.
 
 The handle lets one extractor instance keep per-session state even when extractions nest or interleave. The `Entry` itself is owned by the extractor (not the pool), because `advance` has to return `&Entry` while the pool may be borrowed mutably for session data. Extractors are registered with `add_extractor` for a specific `ContentType`. Multiple extractors for the same type run in registration order.
+
+### `ExtractionContext`
+
+`ExtractionContext` is what `acquire` receives. It names a window inside the parent `Content` plus an optional parameter map:
+
+```rust
+pub struct ExtractionContext<'a> {
+    pub offset: u64,           // start byte within the parent
+    pub length: Option<u64>,   // Some(n) = known size; None = extractor decides
+    pub params: &'a VarMap,    // analyzer-supplied extras, or empty
+}
+```
+
+- **`offset`** — first byte of the region. Type-specific extraction of the parent itself always starts at `0`.
+- **`length`** — `Some(n)` when the caller knows the region is `n` bytes. `None` means the extractor determines the extent itself (parse until the format ends, scan to EOF, …). Type-specific extraction of the parent itself passes `Some(content.size())`.
+- **`params`** — a `VarMap` of extras an analyzer attached with [`.param(...)`](#requesting-extraction) (password, codec, flags, …). When nothing was attached this is an empty map, not `None`.
+
+Copy the fields you need into the session state keyed by the `ExtractionHandle`; the context is only valid for the `acquire` call.
+
+### Requesting extraction
+
+Analyzers that find nested content of another type queue a pass with `context.request_extract(ty)`. The call returns an `ExtractRequestBuilder`; chain setters and commit with `.emit()`. Dropping the builder without `emit` does nothing.
+
+```rust
+impl ContentAnalyzer<MyTypes> for PeAnalyzer {
+    fn analyze(&mut self, _: &mut dyn Content<MyTypes>, context: &mut Context<MyTypes>) -> NextAction {
+        // Found an embedded ZIP inside this PE; run Zip extractors on that slice.
+        context.request_extract(MyTypes::Zip)
+            .at(0x1000)                          // offset within the parent
+            .len(4096)                           // optional; omit if unknown
+            .param(var!("password"), "secret")   // optional; repeatable
+            .emit();
+        NextAction::Continue
+    }
+}
+```
+
+Builder methods:
+
+| Method | Effect |
+| ------ | ------ |
+| `at(offset)` | Byte offset within the parent. Defaults to `0`. |
+| `len(n)` | Asserts the region is `n` bytes. Omit to leave `length = None`. |
+| `param(key, value)` | Adds one extractor-specific parameter. The first call reserves a pooled `VarMap`; later calls write into the same map. A request with no `.param()` carries no map. |
+| `emit()` | Commits the request. Required — the builder is `#[must_use]`. |
+
+After this object's analyzers finish, the scanner:
+
+1. Runs extractors registered for the object's **own** identified type (whole object).
+2. Then, in emission order, runs extractors registered for each **requested** type on the same parent, with that request's `ExtractionContext`.
+
+The current object does not need to have been identified as the requested type. Several requests (of the same or different types) may be emitted from one analyzer; each is independent. Nested child scans start with an empty request queue.
+
+The Zip extractor then reads the region from `acquire`:
+
+```rust
+fn acquire(&mut self, content: &mut dyn Content<MyTypes>, ctx: &ExtractionContext) -> Option<ExtractionHandle> {
+    let start = ctx.offset;
+    let len = ctx.length; // None = parse until the ZIP ends
+    let password = ctx.params.get::<&str>(var!("password"));
+    Some(self.pool.acquire_slot(ZipSession { start, len, password: password.map(str::to_string) }))
+}
+```
 
 ### `ExtractionPool`
 
@@ -477,7 +547,7 @@ struct NumericExtractor {
 }
 
 impl ContentExtractor<MyTypes> for NumericExtractor {
-    fn acquire(&mut self, _: &mut dyn Content<MyTypes>, _: &mut VarMap) -> Option<ExtractionHandle> {
+    fn acquire(&mut self, _: &mut dyn Content<MyTypes>, _: &ExtractionContext) -> Option<ExtractionHandle> {
         Some(self.e.acquire_slot(ExtractData { pos: 0, start: u64::MAX, len: 0 }))
     }
     fn advance(&mut self, handle: ExtractionHandle, content: &mut dyn Content<MyTypes>) -> Option<&Entry> {
@@ -588,11 +658,11 @@ A scanner is reusable: `scan` clears its internal `Context` on entry, so one ins
 
 ### `Context` / `ScanResult`
 
-The `Context` passed to analyzers exposes three `VarMap`s (from the [`varmap`](https://crates.io/crates/varmap) crate, re-exported by `content_scan`):
+The `Context` passed to analyzers (from the [`varmap`](https://crates.io/crates/varmap) crate, re-exported by `content_scan`) exposes two `VarMap`s plus a way to queue extra extraction:
 
 - `context.global()` — persists for the entire `scan()` call. Use it to accumulate results across all analyzed objects.
 - `context.local()` — per-object scratch storage. The first call from an analyzer on a given object lazily grabs a `VarMap` from an internal pool, clears it, and attaches it to that object; subsequent calls (from other analyzers running on the same object) return the same map. It is kept alive after the scan and can be looked up on the corresponding `ScanContentHandle` via `ScanResult::local(handle)`.
-- `context.extract()` — per-object analyzer-to-extractor channel. Analyzers write hints here (for example the offset of an embedded ZIP); extractors read them from the `VarMap` passed to `acquire`. It is cleared at the start of every object's scan, including nested children, so copy values you need into your `ExtractionPool` slot during `acquire`.
+- `context.request_extract(ty)` — queues an extra extraction pass: after this object's own extractors run, the scanner will run extractors registered for `ty` on the current content. See [Requesting extraction](#requesting-extraction). The request queue is cleared at the start of every object's scan, including nested children.
 
 `context.objects_scanned()` returns how many objects have been visited so far.
 
@@ -681,7 +751,8 @@ For every scanned object, the scanner performs the following steps (see [`conten
    Each fast-matcher candidate is confirmed via the corresponding identifier's `validate()` method. Custom identifiers have no pre-filter; `validate()` is the identification.
 3. **Type-specific analyzers** for the resolved type run in priority order.
 4. **Generic analyzers** run for every object in priority order.
-5. **Type-specific extractors** run in registration order (`acquire` → `advance`/`extract` loop → `release`) and, for each entry they emit, the scanner recurses (subject to `max_depth` and `Filter`). Entries marked `skip_from_filtering` bypass the `Filter` check.
+5. **Type-specific extractors** for the resolved type run in registration order (`acquire` → `advance`/`extract` loop → `release`). Each `acquire` receives an `ExtractionContext` covering the whole object (`offset = 0`, `length = Some(size)`, empty `params`). For each entry they emit, the scanner recurses (subject to `max_depth` and `Filter`). Entries marked `skip_from_filtering` bypass the `Filter` check.
+6. **Extraction requests** queued by analyzers via `context.request_extract(ty)` then run, in emission order. For each request the extractors registered for `ty` run on the **same** parent, with that request's offset, length, and params. The parent does not need to have been identified as `ty`.
 
 While this is happening, the scanner also **records the object** into `Context::objects` — interned from `ContentPath::as_printable_string()` into an internal arena, tagged with the resolved content type, and linked into its parent's child list. After `scan()` returns, that tree is exposed to the caller through [`ScanResult`](#navigating-the-scan-result-tree).
 

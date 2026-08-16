@@ -2,7 +2,6 @@ use crate::ExtractionContext;
 use crate::ExtractionHandle;
 use crate::ContentPath;
 use super::{Content, ContentType, Context};
-use varmap::VarMap;
 
 /// Return value used by analyzers and extractors to steer the scan.
 ///
@@ -61,12 +60,12 @@ pub struct Entry {
 ///
 /// Analyzers are the "read-only" half of the framework: they observe
 /// content and write findings into the [`Context`]. Use
-/// [`Context::local`] for per-object results,
-/// [`Context::global`] for scan-wide aggregates, and
-/// [`Context::extract`] for hints meant for extractors of this same
-/// object (for example the byte offset of an embedded ZIP that the
-/// extractor registered for this type should open). They do not
-/// produce new content —
+/// [`Context::local`] for per-object results and
+/// [`Context::global`] for scan-wide aggregates. To run extractors
+/// registered for a *different* type on a region of this object
+/// (for example the byte offset of an embedded ZIP), call
+/// [`Context::request_extract`]. Analyzers do not
+/// produce child content themselves —
 /// for that, use a [`ContentExtractor`].
 ///
 /// Analyzers can be registered per [`ContentType`] via
@@ -76,8 +75,11 @@ pub struct Entry {
 pub trait ContentAnalyzer<T: ContentType> {
     /// Analyzes `content` and reports findings through `context`.
     ///
-    /// The returned [`NextAction`] controls whether further analyzers
-    /// (and extractors) run for this object.
+    /// Use [`Context::local`] / [`Context::global`] to record results,
+    /// and [`Context::request_extract`] to queue extractors of another
+    /// type on a region of `content`. The returned [`NextAction`]
+    /// controls whether further analyzers (and extractors) run for
+    /// this object.
     fn analyze(&mut self, content: &mut dyn Content<T>, context: &mut Context<T>) -> NextAction;
 }
 
@@ -118,18 +120,27 @@ pub trait ContentAnalyzer<T: ContentType> {
 /// `extract`, and
 /// [`release_slot`](crate::ExtractionPool::release_slot) in `release`.
 ///
-/// Extractors are registered per [`ContentType`] via
+/// An extractor registered for type `T` runs when the current object
+/// was identified as `T`, and also when an analyzer requested `T`
+/// via [`Context::request_extract`]. Register extractors with
 /// [`ScannerBuilder::add_extractor`](crate::ScannerBuilder::add_extractor).
 pub trait ContentExtractor<T: ContentType> {
     /// Begins an extraction session over `content`.
     ///
-    /// `extract_context` is the analyzer-to-extractor [`VarMap`] for
-    /// this object: analyzers have already run and may have recorded
-    /// hints here (for example where an embedded ZIP starts). The
-    /// extractor can read those hints and decide whether — and from
-    /// which offset — to extract. Copy anything you need
-    /// into the session state keyed by the returned handle; nested
-    /// child scans clear this map for the child's own handoff.
+    /// `extract_context` describes the region of `content` this session
+    /// should look at: [`ExtractionContext::offset`], an optional
+    /// [`ExtractionContext::length`], and
+    /// [`ExtractionContext::params`] (analyzer-supplied extras, or an
+    /// empty map). Copy anything you need into the session state keyed
+    /// by the returned handle; the context is only valid for this
+    /// call.
+    ///
+    /// When the scanner invokes this extractor because the parent was
+    /// identified as this type, the context covers the whole object
+    /// (`offset = 0`, `length = Some(content.size())`, empty params).
+    /// When an analyzer queued the pass with
+    /// [`Context::request_extract`](crate::Context::request_extract),
+    /// the context carries that request's offset, length, and params.
     ///
     /// The handle itself should come from an
     /// [`ExtractionPool`](crate::ExtractionPool).

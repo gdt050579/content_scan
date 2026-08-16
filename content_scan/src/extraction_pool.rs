@@ -61,7 +61,7 @@ impl ExtractionHandle {
 /// }
 ///
 /// impl ContentExtractor<MyTypes> for MyExtractor {
-///     fn acquire(&mut self, _: &mut dyn Content<MyTypes>, _: &mut VarMap) -> Option<ExtractionHandle> {
+///     fn acquire(&mut self, _: &mut dyn Content<MyTypes>, _: &ExtractionContext) -> Option<ExtractionHandle> {
 ///         Some(self.pool.acquire_slot(Cursor::default()))
 ///     }
 ///     fn advance(&mut self, handle: ExtractionHandle, _: &mut dyn Content<MyTypes>) -> Option<&Entry> {

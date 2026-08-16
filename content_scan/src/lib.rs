@@ -28,14 +28,16 @@
 //!   `ContentType` (via magic bytes, file name, or extension) and
 //!   validates the guess.
 //! - **[`ContentAnalyzer`]** – inspects content and records information
-//!   into the [`Context`] (global, analyzer-to-extractor, or per-object
-//!   variable maps).
+//!   into the [`Context`] (global or per-object variable maps). An
+//!   analyzer can also queue extra extraction with
+//!   [`Context::request_extract`].
 //! - **[`ContentExtractor`]** – produces child [`Content`] items from a
-//!   parent (e.g. entries of an archive). Extracted children are scanned
-//!   recursively up to a configurable depth. Per-session state lives in
-//!   an [`ExtractionPool`], keyed by an [`ExtractionHandle`].
-//!   [`FolderExtractor`] is a ready-made implementation that walks a
-//!   directory.
+//!   parent (e.g. entries of an archive). `acquire` receives an
+//!   [`ExtractionContext`] naming the region of the parent to look at.
+//!   Extracted children are scanned recursively up to a configurable
+//!   depth. Per-session state lives in an [`ExtractionPool`], keyed by
+//!   an [`ExtractionHandle`]. [`FolderExtractor`] is a ready-made
+//!   implementation that walks a directory.
 //! - **[`Filter`]** – optional inclusion/exclusion rules applied before
 //!   any plugin runs on a piece of content.
 //! - **[`Scanner`] / [`ScannerBuilder`]** – wires all plugins together

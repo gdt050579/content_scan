@@ -336,9 +336,13 @@ impl<T: ContentType> Scanner<T> {
 ///
 /// # Generic vs. typed plugins
 ///
-/// - `add_analyzer` / `add_extractor` register a plugin against a
-///   specific [`ContentType`]. It only runs when the scanner has
-///   positively identified content of that type.
+/// - `add_analyzer` registers a plugin against a specific
+///   [`ContentType`]. It only runs when the scanner has positively
+///   identified content of that type.
+/// - `add_extractor` registers a plugin against a specific
+///   [`ContentType`]. It runs when the current object is that type,
+///   and also when an analyzer requested that type via
+///   [`Context::request_extract`](crate::Context::request_extract).
 /// - `add_generic_analyzer` registers an analyzer that runs for every
 ///   content object, regardless of type (including unidentified
 ///   content). Generic analyzers run after the type-specific ones.
@@ -405,10 +409,12 @@ impl<T: ContentType> ScannerBuilder<T> {
 
     /// Registers an extractor for a specific `content_type`.
     ///
-    /// The extractor runs only when the scanner has identified content
-    /// of that type. Multiple extractors for the same type run in
-    /// registration order. Extracted children are scanned recursively
-    /// as long as [`max_depth`](Self::max_depth) allows.
+    /// The extractor runs when the scanner has identified content of
+    /// that type, and also when an analyzer requested that type via
+    /// [`Context::request_extract`](crate::Context::request_extract).
+    /// Multiple extractors for the same type run in registration
+    /// order. Extracted children are scanned recursively as long as
+    /// [`max_depth`](Self::max_depth) allows.
     pub fn add_extractor<E>(mut self, content_type: T, extractor: E) -> Self
     where
         E: ContentExtractor<T> + 'static,

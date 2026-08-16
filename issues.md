@@ -23,7 +23,7 @@ Check an item when it is fixed.
 - [x] 10. Directory-symlink skip is ineffective on Unix
 - [x] 11. Extension and file-name rules are case-sensitive
 - [ ] 12. Magic identification is single-candidate
-- [x] 13. `extract()` VarMap is not scoped to the parent session (FAD)
+- [x] 13. `extract()` VarMap is not scoped to the parent session (superseded)
 - [x] 14. `COUNT: u16` cannot represent 65536 variants (FAD)
 - [x] 15. Proc-macro taken from crates.io, not the workspace path (FAD)
 - [ ] 16. No integration tests for the scan pipeline
@@ -132,11 +132,11 @@ If the chosen magic fails `validate()`, overlapping magics are never tried. The 
 
 **Fix:** Return all magic hits (or iterate remaining matchers) and validate each until one accepts.
 
-### 13. `extract()` VarMap is not scoped to the parent session — FAD
+### 13. `extract()` VarMap is not scoped to the parent session — superseded
 
-**Where:** `content_scan/src/context.rs`, `content_scan/src/scanner.rs`
+**Where:** `content_scan/src/context.rs`, `content_scan/src/scanner.rs`, `content_scan/src/extraction_context.rs`
 
-`clear_extract()` runs at the start of every `inner_scan`, including children. Accepted as designed: `extract()` is an analyzer-to-extractor channel for the *current* object (an analyzer records e.g. an embedded ZIP offset; a generic extractor reads it in `acquire`), not parent-session scratch. Nested scans get a fresh map. Copy hints into the extraction session during `acquire`.
+The per-object `extract()` `VarMap` is gone. Analyzers that find nested content of another type now call `Context::request_extract(ty)` and emit an `ExtractRequestBuilder` (`at` / `len` / `param`). After the object's own type-specific extractors run, the scanner runs extractors registered for each requested type on the same parent, passing an `ExtractionContext` (`offset`, `length`, `params`) into `acquire`. The request queue is cleared at the start of every `inner_scan`, including children.
 
 ### 14. `COUNT: u16` cannot represent 65536 variants — FAD
 

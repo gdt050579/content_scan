@@ -11,17 +11,18 @@ use varmap::{VarMap, VarMapPool};
 ///
 /// A single `Context` is threaded through every
 /// [`ContentAnalyzer::analyze`](crate::ContentAnalyzer::analyze) call
-/// so plugins can record findings in three different scopes:
+/// so plugins can record findings and queue extra extraction:
 ///
 /// - **[`global`](Self::global)** – lives for the entire scan and can
 ///   be inspected via [`ScanResult::global`] after the scan finishes.
-/// - **[`extract`](Self::extract)** – per-object analyzer-to-extractor
-///   channel. Analyzers write hints here (for example the offset of
-///   an embedded ZIP); extractors read them in
-///   [`ContentExtractor::acquire`](crate::ContentExtractor::acquire).
 /// - **[`local`](Self::local)** – attached to the currently scanned
 ///   content object. Retrievable per object from the result tree via
 ///   [`ScanResult::local`].
+/// - **[`request_extract`](Self::request_extract)** – queues a pass
+///   that runs extractors registered for another [`ContentType`] on a
+///   region of the current object. Each `acquire` then receives an
+///   [`ExtractionContext`](crate::ExtractionContext) with that
+///   request's offset, length, and params.
 ///
 /// `Context` is owned by the [`Scanner`](crate::Scanner) and cleared
 /// automatically at the start of every scan; plugins never construct
@@ -67,6 +68,26 @@ impl<T: ContentType> Context<T> {
         &mut self.global
     }
 
+    /// Queues an extraction of `content_type` from the current object.
+    ///
+    /// Returns a builder. Chain [`ExtractRequestBuilder::at`],
+    /// [`ExtractRequestBuilder::len`], and
+    /// [`ExtractRequestBuilder::param`] as needed, then call
+    /// [`ExtractRequestBuilder::emit`] to commit. Dropping the builder
+    /// without `emit` is a no-op (any reserved param map is returned
+    /// to the pool).
+    ///
+    /// After this object's analyzers finish, the scanner first runs
+    /// extractors registered for the object's own identified type,
+    /// then runs extractors registered for `content_type` on the
+    /// **same** parent, using the requested region and params. The
+    /// current object does not need to have been identified as
+    /// `content_type`.
+    ///
+    /// Several requests (of the same or different types) may be
+    /// emitted from one analyzer; they run in emission order. The
+    /// queue is cleared at the start of every object's scan, including
+    /// nested children.
     pub fn request_extract(&mut self, content_type: T) -> ExtractRequestBuilder<'_, T> {
         ExtractRequestBuilder::new(self, content_type)
     }
