@@ -10,7 +10,7 @@ checksum = "f67a0e1a9a71b306e6e9daf2c7cac122707adb92c89af0e20e8db37d5954bb0d"
 
 [[package]]
 name = "content_scan"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "content_scan_proc_macro 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "filecache",
