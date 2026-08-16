@@ -2,6 +2,28 @@ use crate::{Content, ContentExtractor, ContentType, ExtractionPool};
 use std::marker::PhantomData;
 use super::{FolderContent, FileContent};
 
+/// Returns `true` if the directory entry is itself a link (not its target).
+///
+/// On Unix this is a plain symlink. On Windows it also covers junctions
+/// and other reparse points, which [`std::fs::FileType::is_symlink`] does
+/// **not** report (it only matches `IO_REPARSE_TAG_SYMLINK`). Neither
+/// [`FileType::is_symlink`] nor [`DirEntry::metadata`] follows the link,
+/// so this inspects the link entry, not what it points to.
+#[cfg(windows)]
+fn is_link(ft: &std::fs::FileType, ent: &std::fs::DirEntry) -> bool {
+    use std::os::windows::fs::MetadataExt;
+    const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
+    match ent.metadata() {
+        Ok(md) => md.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0,
+        Err(_) => ft.is_symlink(), // fallback
+    }
+}
+
+#[cfg(not(windows))]
+fn is_link(ft: &std::fs::FileType, _ent: &std::fs::DirEntry) -> bool {
+    ft.is_symlink()
+}
+
 /// A [`ContentExtractor`] that enumerates the entries of a directory.
 ///
 /// Register it for the same content type the parent
@@ -26,8 +48,11 @@ use super::{FolderContent, FileContent};
 /// - Entries that cannot be read (permission errors, broken
 ///   `file_type()`) are skipped; the rest of the directory is still
 ///   enumerated.
-/// - Symbolic links to directories are skipped, so link cycles cannot
-///   make the walk loop forever.
+/// - Symbolic links whose target is a directory are skipped, so link
+///   cycles cannot make the walk loop forever. On Windows this also
+///   covers directory junctions and other reparse points. Symbolic
+///   links to regular files are followed and emitted like any other
+///   file; broken (dangling) links are skipped.
 /// - Subdirectory entries set
 ///   [`Entry::skip_from_filtering`](crate::Entry::skip_from_filtering),
 ///   so a [`Filter`](crate::Filter) restricted to certain file
@@ -80,17 +105,44 @@ impl<T: ContentType + 'static> ContentExtractor<T> for FolderExtractor<T> {
                 Ok(ft) => ft,
                 Err(_) => continue, // skip entries whose type cannot be determined
             };
-            self.current_is_folder = ft.is_dir();
-            let symlink = ft.is_symlink();
-            if self.current_is_folder && symlink {
-                continue;
-            } // skip directory symlinks
+
+            // Whether this entry is a link (symlink / reparse point / junction),
+            // and — for links — what the *target* is. We must follow the link with
+            // `std::fs::metadata` to learn the target type, since `file_type()` and
+            // `DirEntry::metadata()` describe the link itself, not its target.
+            let is_link = is_link(&ft, &folder_ent);
+            let mut link_target_len: Option<u64> = None;
+
+            if is_link {
+                match std::fs::metadata(&folder_ent.path()) {
+                    // Symlink -> folder: skip, to avoid circular references.
+                    Ok(target) if target.is_dir() => continue,
+                    // Symlink -> file: keep, and remember the target size.
+                    Ok(target) => link_target_len = Some(target.len()),
+                    // Broken / dangling link: skip.
+                    Err(_) => continue,
+                }
+                // A kept link always refers to a regular file here.
+                self.current_is_folder = false;
+            } else {
+                self.current_is_folder = ft.is_dir();
+            }
+
             if !self.recursive && self.current_is_folder {
                 continue;
             } // skip folders if not recursive
+
             self.entry.path.clear();
             self.entry.path.set_from_os(&folder_ent.path());
-            self.entry.size = if self.current_is_folder { 0 } else { folder_ent.metadata().map(|m| m.len()).unwrap_or(0) }; // folder
+            self.entry.size = if self.current_is_folder {
+                0
+            } else if let Some(len) = link_target_len {
+                // File symlink: size comes from the followed target, since
+                // `DirEntry::metadata()` would report the link's own size.
+                len
+            } else {
+                folder_ent.metadata().map(|m| m.len()).unwrap_or(0)
+            };
             self.entry.skip_from_filtering = self.current_is_folder;
             return Some(&self.entry);
         }

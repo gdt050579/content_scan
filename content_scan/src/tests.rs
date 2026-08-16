@@ -818,3 +818,135 @@ mod extract_varmap {
     }
 }
 
+mod folder_symlinks {
+    use crate::*;
+    use std::fs;
+    use std::path::{Path, PathBuf};
+
+    #[derive(Debug, Copy, Clone, Eq, PartialEq, ContentType)]
+    #[repr(u16)]
+    enum Ty {
+        Folder,
+    }
+
+    struct TempDir(PathBuf);
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn symlink_file(original: &Path, link: &Path) -> std::io::Result<()> {
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(original, link)
+        }
+        #[cfg(windows)]
+        {
+            std::os::windows::fs::symlink_file(original, link)
+        }
+        #[cfg(not(any(unix, windows)))]
+        {
+            let _ = (original, link);
+            Err(std::io::Error::new(std::io::ErrorKind::Unsupported, "symlinks"))
+        }
+    }
+
+    fn symlink_dir(original: &Path, link: &Path) -> std::io::Result<()> {
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(original, link)
+        }
+        #[cfg(windows)]
+        {
+            std::os::windows::fs::symlink_dir(original, link)
+        }
+        #[cfg(not(any(unix, windows)))]
+        {
+            let _ = (original, link);
+            Err(std::io::Error::new(std::io::ErrorKind::Unsupported, "symlinks"))
+        }
+    }
+
+    fn setup() -> Option<TempDir> {
+        let dir = TempDir(std::env::temp_dir().join(format!(
+            "content_scan_symlink_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        )));
+        fs::create_dir_all(dir.0.join("sub")).ok()?;
+        fs::write(dir.0.join("real.txt"), b"hello").ok()?;
+        fs::write(dir.0.join("sub").join("nested.txt"), b"in").ok()?;
+        symlink_file(&dir.0.join("real.txt"), &dir.0.join("link_to_file")).ok()?;
+        symlink_dir(&dir.0.join("sub"), &dir.0.join("link_to_dir")).ok()?;
+        symlink_file(&dir.0.join("missing.txt"), &dir.0.join("dangling")).ok()?;
+        Some(dir)
+    }
+
+    fn child_names(res: &ScanResult<Ty>) -> Vec<String> {
+        let mut names = Vec::new();
+        let Some(root) = res.root() else {
+            return names;
+        };
+        let Some(first) = res.child(root) else {
+            return names;
+        };
+        fn walk(res: &ScanResult<Ty>, handle: ScanContentHandle, names: &mut Vec<String>) {
+            if let Some(p) = res.path(handle) {
+                let name = p.rsplit(['\\', '/']).next().unwrap_or(p);
+                names.push(name.to_string());
+            }
+            if let Some(child) = res.child(handle) {
+                walk(res, child, names);
+            }
+            if let Some(sib) = res.next_sibling(handle) {
+                walk(res, sib, names);
+            }
+        }
+        walk(res, first, &mut names);
+        names
+    }
+
+    fn scanned_names(root: &Path, recursive: bool) -> Vec<String> {
+        let mut scanner = ScannerBuilder::new()
+            .add_extractor(Ty::Folder, 0, FolderExtractor::<Ty>::new(recursive, false))
+            .build();
+        let mut content = FolderContent::<Ty>::with_content_type(root, Ty::Folder);
+        let res = scanner.scan(&mut content, false);
+        child_names(&res)
+    }
+
+    #[test]
+    fn directory_symlink_and_dangling_link_are_skipped() {
+        let Some(dir) = setup() else {
+            eprintln!("skipping folder_symlinks: cannot create symlinks on this host");
+            return;
+        };
+        let names = scanned_names(&dir.0, true);
+        assert!(names.contains(&"real.txt".into()), "{names:?}");
+        assert!(names.contains(&"sub".into()), "{names:?}");
+        assert!(names.contains(&"nested.txt".into()), "{names:?}");
+        assert!(names.contains(&"link_to_file".into()), "{names:?}");
+        assert!(!names.iter().any(|n| n == "link_to_dir"), "{names:?}");
+        assert!(!names.iter().any(|n| n == "dangling"), "{names:?}");
+    }
+
+    #[test]
+    fn non_recursive_walk_still_skips_directory_symlinks() {
+        let Some(dir) = setup() else {
+            eprintln!("skipping folder_symlinks: cannot create symlinks on this host");
+            return;
+        };
+        let names = scanned_names(&dir.0, false);
+        assert!(names.contains(&"real.txt".into()), "{names:?}");
+        assert!(names.contains(&"link_to_file".into()), "{names:?}");
+        assert!(!names.iter().any(|n| n == "sub"), "{names:?}");
+        assert!(!names.iter().any(|n| n == "nested.txt"), "{names:?}");
+        assert!(!names.iter().any(|n| n == "link_to_dir"), "{names:?}");
+        assert!(!names.iter().any(|n| n == "dangling"), "{names:?}");
+    }
+}
+

@@ -20,7 +20,7 @@ Check an item when it is fixed.
 - [x] 9. `FileContent` opens Exclusive
 
 **Medium**
-- [ ] 10. Directory-symlink skip is ineffective on Unix
+- [x] 10. Directory-symlink skip is ineffective on Unix
 - [x] 11. Extension and file-name rules are case-sensitive
 - [ ] 12. Magic identification is single-candidate
 - [x] 13. `extract()` VarMap is not scoped to the parent session (FAD)
@@ -112,13 +112,11 @@ Exclusive mmap is now opt-in via an `exclusive` flag on `FileContent` constructo
 
 ## Medium
 
-### 10. Directory-symlink skip is ineffective on Unix
+### 10. Directory-symlink skip is ineffective on Unix — fixed
 
 **Where:** `content_scan/src/implementations/folder_extractor.rs`
 
-Unix `DirEntry::file_type()` does not follow symlinks, so `is_dir() && is_symlink()` almost never fires. A symlink to a directory is emitted as `FileContent`, not skipped and not walked. Docs claim directory symlinks are skipped to prevent cycles.
-
-**Fix:** Treat `is_symlink()` as a skip for directories after a follow-or-not policy, or use `symlink_metadata` / `path.is_dir()` consistently and document whether links are followed.
+`advance` detects a link with `is_symlink()` (and, on Windows, the reparse-point attribute so junctions count too), then follows it with `std::fs::metadata`. A directory target is skipped; a file target is emitted as `FileContent` with the target's size; a dangling link is skipped. Rustdoc and README describe that policy.
 
 ### 11. Extension and file-name rules are case-sensitive — fixed
 
