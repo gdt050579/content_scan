@@ -754,6 +754,119 @@ mod max_depth {
     }
 }
 
+mod local_varmap {
+    use crate::*;
+
+    #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, ContentType)]
+    #[repr(u16)]
+    enum Ty {
+        Leaf,
+        Nest,
+    }
+
+    struct TagAnalyzer(u32);
+    impl ContentAnalyzer<Ty> for TagAnalyzer {
+        fn analyze(&mut self, _: &mut dyn Content<Ty>, context: &mut Context<Ty>) -> NextAction {
+            context.local().set(var!("tag"), self.0);
+            NextAction::Continue
+        }
+    }
+
+    struct SkipAfterLocal;
+    impl ContentAnalyzer<Ty> for SkipAfterLocal {
+        fn analyze(&mut self, _: &mut dyn Content<Ty>, context: &mut Context<Ty>) -> NextAction {
+            context.local().set(var!("tag"), 99u32);
+            NextAction::Skip
+        }
+    }
+
+    struct OneChildExtractor {
+        pool: ExtractionPool<bool>,
+        entry: Entry,
+    }
+    impl Default for OneChildExtractor {
+        fn default() -> Self {
+            Self {
+                pool: ExtractionPool::new(2),
+                entry: Entry::default(),
+            }
+        }
+    }
+    impl ContentExtractor<Ty> for OneChildExtractor {
+        fn acquire(&mut self, _: &mut dyn Content<Ty>, _: &ExtractionContext) -> Option<ExtractionHandle> {
+            Some(self.pool.acquire_slot(false))
+        }
+        fn advance(&mut self, handle: ExtractionHandle, _: &mut dyn Content<Ty>) -> Option<&Entry> {
+            let done = self.pool.get_mut(handle)?;
+            if *done {
+                return None;
+            }
+            *done = true;
+            self.entry.path.set_from_str("child");
+            self.entry.size = 1;
+            self.entry.skip_from_filtering = false;
+            Some(&self.entry)
+        }
+        fn extract(&mut self, _: ExtractionHandle, _: &mut dyn Content<Ty>) -> Option<Box<dyn Content<Ty>>> {
+            Some(Box::new(BufferContent::<Ty>::with_content_type(b"x", "child", Ty::Leaf)))
+        }
+        fn release(&mut self, handle: ExtractionHandle) {
+            self.pool.release_slot(handle);
+        }
+    }
+
+    fn tag(res: &ScanResult<Ty>, handle: ScanContentHandle) -> Option<u32> {
+        res.local(handle).and_then(|vm| vm.get::<u32>(var!("tag")))
+    }
+
+    #[test]
+    fn local_map_is_visible_on_the_result_tree() {
+        let mut scanner = ScannerBuilder::new()
+            .add_analyzer(Ty::Leaf, 0, TagAnalyzer(1))
+            .build();
+        let mut content = BufferContent::<Ty>::with_content_type(b"x", "root", Ty::Leaf);
+        let res = scanner.scan(&mut content, true);
+        let root = res.root().unwrap();
+        assert_eq!(tag(&res, root), Some(1));
+    }
+
+    #[test]
+    fn object_that_never_calls_local_has_no_map() {
+        let mut scanner = ScannerBuilder::<Ty>::new().build();
+        let mut content = BufferContent::<Ty>::with_content_type(b"x", "root", Ty::Leaf);
+        let res = scanner.scan(&mut content, true);
+        let root = res.root().unwrap();
+        assert!(res.local(root).is_none());
+    }
+
+    #[test]
+    fn parent_and_child_keep_distinct_maps() {
+        let mut scanner = ScannerBuilder::new()
+            .add_analyzer(Ty::Nest, 0, TagAnalyzer(1))
+            .add_analyzer(Ty::Leaf, 0, TagAnalyzer(2))
+            .add_extractor(Ty::Nest, OneChildExtractor::default())
+            .build();
+        let mut content = BufferContent::<Ty>::with_content_type(b"x", "root", Ty::Nest);
+        let res = scanner.scan(&mut content, true);
+        let root = res.root().unwrap();
+        let child = res.child(root).unwrap();
+        assert_eq!(tag(&res, root), Some(1));
+        assert_eq!(tag(&res, child), Some(2));
+        assert!(res.local(root).unwrap() as *const _ != res.local(child).unwrap() as *const _);
+    }
+
+    #[test]
+    fn skip_after_local_still_keeps_the_map() {
+        let mut scanner = ScannerBuilder::new()
+            .add_analyzer(Ty::Leaf, 0, SkipAfterLocal)
+            .build();
+        let mut content = BufferContent::<Ty>::with_content_type(b"x", "root", Ty::Leaf);
+        let res = scanner.scan(&mut content, true);
+        let root = res.root().unwrap();
+        assert_eq!(tag(&res, root), Some(99));
+    }
+}
+
 mod folder_symlinks {
     use crate::*;
     use std::fs;

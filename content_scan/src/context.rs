@@ -33,6 +33,7 @@ pub struct Context<T: ContentType> {
     pub(crate) path_arena: BufferArena,
     pub(crate) varmap_pool: VarMapPool,
     pub(crate) local_varmap_handle: Option<varmap::PoolHandle>,
+    pub(crate) current_object_index: Option<u32>,
     pub(crate) extraction_requests: Vec<ExtractionRequest<T>>,
 }
 impl<T: ContentType> Context<T> {
@@ -43,6 +44,7 @@ impl<T: ContentType> Context<T> {
             path_arena: BufferArena::new(),
             varmap_pool: VarMapPool::new(),
             local_varmap_handle: None,
+            current_object_index: None,
             extraction_requests: Vec::with_capacity(16),
         }
     }
@@ -51,6 +53,8 @@ impl<T: ContentType> Context<T> {
         self.objects.clear();
         self.path_arena.clear();
         self.varmap_pool.clear(varmap::ClearStrategy::KeepSmallestN(128));
+        self.local_varmap_handle = None;
+        self.current_object_index = None;
         self.extraction_requests.clear();
     }
     pub(crate) fn clear_extraction_request_list(&mut self) {
@@ -104,7 +108,11 @@ impl<T: ContentType> Context<T> {
     /// spent for that object.
     pub fn local(&mut self) -> &mut VarMap {
         if self.local_varmap_handle.is_none() {
-            self.local_varmap_handle = Some(self.varmap_pool.allocate());
+            let handle = self.varmap_pool.allocate();
+            self.local_varmap_handle = Some(handle);
+            if let Some(idx) = self.current_object_index {
+                self.objects[idx as usize].varmap_handle = Some(handle);
+            }
         }
         self.varmap_pool.get_mut(self.local_varmap_handle.unwrap()).unwrap()
     }
