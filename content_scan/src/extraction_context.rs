@@ -125,7 +125,7 @@ impl<'c, T: ContentType> ExtractRequestBuilder<'c, T> {
     /// further.
     #[inline]
     pub fn emit(mut self) {
-        self.ctx.extraction_requests.push(self.request);
+        self.ctx.extraction_requests_stack.push(self.request);
         self.request.params_handle = None;
     }
 }

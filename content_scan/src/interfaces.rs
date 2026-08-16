@@ -8,6 +8,7 @@ use super::{Content, ContentType, Context};
 /// Every analyzer and extractor invocation returns a `NextAction` that
 /// tells the scanner what to do next. This lets a single plugin either
 /// short-circuit the current object or abort the entire scan.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NextAction {
     /// Continue with the next plugin (or the next extracted entry).
     ///

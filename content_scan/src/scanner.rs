@@ -68,9 +68,22 @@ impl<T: ContentType> Scanner<T> {
         ScanResult::new(&self.context)
     }
     fn inner_scan(&mut self, content: &mut dyn Content<T>, depth: u32, parent_index: u32) -> NextAction {
-        self.context.clear_extraction_request_list();
         self.context.local_varmap_handle = None; // so that next time someone ask for a local varmap, it will get one from the context varmap_pool
         self.context.current_object_index = None;
+        let start_req_count = self.context.extraction_requests_stack.len();
+        let (ty, my_index) = self.create_object(content, parent_index);
+
+        let mut response = self.run_analyzers(content, ty);
+        if response == NextAction::Continue {
+            response = self.run_extractors(content, ty, depth, my_index, start_req_count);
+        }
+        self.restore_extraction_request_stack(start_req_count);
+        match response {
+            NextAction::Continue | NextAction::Skip => NextAction::Continue,
+            NextAction::Exit => NextAction::Exit,
+        }
+    }
+    fn create_object(&mut self, content: &mut dyn Content<T>, parent_index: u32) -> (Option<T>, u32) {
         let ty = self.retrieve_content_type(content);
 
         let path_index = self.context.path_arena.alloc(content.path().as_printable_string().as_bytes());
@@ -104,47 +117,63 @@ impl<T: ContentType> Scanner<T> {
                 last_sibling.next_sibling_index = my_index;
             }
         }
-
-        let range = if let Some(ty) = ty { self.analyzers.range(ty) } else { None };
-        if let Some((start, end)) = range {
-            match self.scan_range(content, start, end) {
-                NextAction::Continue => {}
-                NextAction::Skip => return NextAction::Continue, // skip current content
-                NextAction::Exit => return NextAction::Exit,
+        (ty, my_index)
+    }
+    fn run_analyzers(&mut self, content: &mut dyn Content<T>, content_type: Option<T>) -> NextAction {
+        if let Some(ty) = content_type {
+            if let Some((start, end)) = self.analyzers.range(ty) {
+                let res = self.scan_range(content, start, end);
+                if matches!(res, NextAction::Skip | NextAction::Exit) {
+                    return res;
+                }
             }
         }
         // generic analyzers
-        let range = self.analyzers.generic_range();
-        if let Some((start, end)) = range {
-            match self.scan_range(content, start, end) {
-                NextAction::Continue => {}
-                NextAction::Skip => return NextAction::Continue, // skip current content
-                NextAction::Exit => return NextAction::Exit,
+        if let Some((start, end)) = self.analyzers.generic_range() {
+            let res = self.scan_range(content, start, end);
+            if matches!(res, NextAction::Skip | NextAction::Exit) {
+                return res;
             }
         }
+        NextAction::Continue
+    }
+    fn run_extractors(&mut self, content: &mut dyn Content<T>, content_type: Option<T>, depth: u32, my_index: u32, start_req_index: usize) -> NextAction {
         // type-specific extractors
-        if let Some(ty) = ty {
+        if let Some(ty) = content_type {
             if let Some((start, end)) = self.extractors.range(ty) {
-                match self.extract_range(content, start, end, depth, my_index, None) {
-                    NextAction::Continue => {}
-                    NextAction::Skip => return NextAction::Continue, // skip current content
-                    NextAction::Exit => return NextAction::Exit,
+                let res = self.extract_range(content, start, end, depth, my_index, None);
+                if matches!(res, NextAction::Skip | NextAction::Exit) {
+                    return res;
                 }
             }
         }
         // run extraction requests
-        let req_count = self.context.extraction_requests.len();
-        for i in 0..req_count {
-            let ty = self.context.extraction_requests[i].content_type;
+        let req_count = self.context.extraction_requests_stack.len();
+        for i in start_req_index..req_count {
+            let ty = self.context.extraction_requests_stack[i].content_type;
             if let Some((start, end)) = self.extractors.range(ty) {
-                match self.extract_range(content, start, end, depth, my_index, Some(i as u32)) {
-                    NextAction::Continue => {}
-                    NextAction::Skip => return NextAction::Continue, // skip current content
-                    NextAction::Exit => return NextAction::Exit,
+                let res = self.extract_range(content, start, end, depth, my_index, Some(i as u32));
+                if matches!(res, NextAction::Skip | NextAction::Exit) {
+                    return res;
+                }
+            } else {
+                if let Some(handle) = self.context.extraction_requests_stack[i].params_handle {
+                    self.context.varmap_pool.release(handle);
+                    self.context.extraction_requests_stack[i].params_handle = None;
                 }
             }
-        }
+        }        
         NextAction::Continue
+    }
+    fn restore_extraction_request_stack(&mut self, start_req_index: usize) {
+        // first release the params
+        for req in self.context.extraction_requests_stack.iter_mut().skip(start_req_index) {
+            if let Some(handle) = req.params_handle {
+                self.context.varmap_pool.release(handle);
+            }
+        }
+        // restore the stack
+        self.context.extraction_requests_stack.truncate(start_req_index);
     }
     fn scan_range(&mut self, content: &mut dyn Content<T>, start: usize, end: usize) -> NextAction {
         if (end <= start) || (end > self.analyzers.len()) {
@@ -173,7 +202,7 @@ impl<T: ContentType> Scanner<T> {
             return NextAction::Continue;
         }
         let (ec, param_handle) = if let Some(req_index) = req_index {
-            let request = &self.context.extraction_requests[req_index as usize];
+            let request = &self.context.extraction_requests_stack[req_index as usize];
             let params = if let Some(handle) = request.params_handle {
                 if self.context.varmap_pool.get(handle).is_some() {
                     Some(handle)
@@ -201,15 +230,27 @@ impl<T: ContentType> Scanner<T> {
                 None,
             )
         };
-        for i in start..end {
-            let result = self.extract_content(content, i, depth, parent_index, &ec, param_handle);
-            match result {
-                NextAction::Continue => continue,
-                NextAction::Exit => return NextAction::Exit,
-                NextAction::Skip => return NextAction::Skip,
+        let next_action = {
+            let mut next_action = NextAction::Continue;
+            for i in start..end {
+                let result = self.extract_content(content, i, depth, parent_index, &ec, param_handle);
+                match result {
+                    NextAction::Continue => continue,
+                    NextAction::Exit | NextAction::Skip => {
+                        next_action = result;
+                        break;
+                    }
+                }
+            }
+            next_action
+        };
+        if let Some(handle) = param_handle {
+            self.context.varmap_pool.release(handle);
+            if let Some(req_index) = req_index {
+                self.context.extraction_requests_stack[req_index as usize].params_handle = None;
             }
         }
-        NextAction::Continue
+        next_action
     }
     fn extract_content(
         &mut self,
@@ -229,9 +270,7 @@ impl<T: ContentType> Scanner<T> {
         }
         let mut extractor = unsafe { self.extractors.get(index) };
         let acquired = {
-            let params = ph
-                .and_then(|h| self.context.varmap_pool.get(h))
-                .unwrap_or(ec.params);
+            let params = ph.and_then(|h| self.context.varmap_pool.get(h)).unwrap_or(ec.params);
             let acquire_ec = ExtractionContext {
                 offset: ec.offset,
                 length: ec.length,

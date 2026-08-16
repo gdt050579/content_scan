@@ -34,7 +34,7 @@ pub struct Context<T: ContentType> {
     pub(crate) varmap_pool: VarMapPool,
     pub(crate) local_varmap_handle: Option<varmap::PoolHandle>,
     pub(crate) current_object_index: Option<u32>,
-    pub(crate) extraction_requests: Vec<ExtractionRequest<T>>,
+    pub(crate) extraction_requests_stack: Vec<ExtractionRequest<T>>,
 }
 impl<T: ContentType> Context<T> {
     pub(crate) fn new() -> Self {
@@ -45,7 +45,7 @@ impl<T: ContentType> Context<T> {
             varmap_pool: VarMapPool::new(),
             local_varmap_handle: None,
             current_object_index: None,
-            extraction_requests: Vec::with_capacity(16),
+            extraction_requests_stack: Vec::with_capacity(16),
         }
     }
     pub(crate) fn clear(&mut self) {
@@ -55,10 +55,7 @@ impl<T: ContentType> Context<T> {
         self.varmap_pool.clear(varmap::ClearStrategy::KeepSmallestN(128));
         self.local_varmap_handle = None;
         self.current_object_index = None;
-        self.extraction_requests.clear();
-    }
-    pub(crate) fn clear_extraction_request_list(&mut self) {
-        self.extraction_requests.clear();
+        self.extraction_requests_stack.clear();
     }
 
     /// Returns the [`VarMap`] shared across the entire scan.
