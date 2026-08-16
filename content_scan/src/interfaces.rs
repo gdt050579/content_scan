@@ -3,14 +3,15 @@ use crate::ExtractionHandle;
 use crate::ContentPath;
 use super::{Content, ContentType, Context};
 
-/// Return value used by analyzers and extractors to steer the scan.
+/// Return value used by analyzers to steer the scan.
 ///
-/// Every analyzer and extractor invocation returns a `NextAction` that
-/// tells the scanner what to do next. This lets a single plugin either
-/// short-circuit the current object or abort the entire scan.
+/// [`ContentAnalyzer::analyze`] returns a `NextAction` that tells the
+/// scanner whether to continue this object, skip the rest of it, or
+/// abort the entire scan. [`ContentExtractor`] methods do not return
+/// this type: they yield [`Option`] at each session step.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NextAction {
-    /// Continue with the next plugin (or the next extracted entry).
+    /// Continue with the next analyzer for this object, then extractors.
     ///
     /// This is the normal / neutral outcome.
     Continue,
@@ -240,5 +241,10 @@ pub trait ContentIdentifier<T: ContentType> {
     /// Called after the pre-filter matched (or unconditionally when no
     /// pre-filter is provided). Returning `false` rejects the
     /// candidate and lets the scanner try the next possible type.
-    fn validate(&self, content: &dyn Content<T>) -> bool;
+    ///
+    /// `content` is `&mut` so this method can call
+    /// [`Content::read`](crate::Content::read) — for example to inspect
+    /// bytes beyond the scanner's 16-byte magic window, or to implement
+    /// a fully custom identifier (`identify_method` returning `None`).
+    fn validate(&self, content: &mut dyn Content<T>) -> bool;
 }

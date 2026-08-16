@@ -172,7 +172,7 @@ impl ContentIdentifier<MyType> for TextBufferIdentifier {
     fn identify_method(&self) -> Option<IdentifyMethod> {
         Some(IdentifyMethod::Magic(b"TXBF"))
     }
-    fn validate(&self, _: &dyn Content<MyType>) -> bool { true }
+    fn validate(&self, _: &mut dyn Content<MyType>) -> bool { true }
 }
 
 fn main() {
@@ -369,7 +369,7 @@ Identifiers tell the scanner *what type* a piece of content is when the content 
 ```rust
 pub trait ContentIdentifier<T: ContentType> {
     fn identify_method(&self) -> Option<IdentifyMethod>;
-    fn validate(&self, content: &dyn Content<T>) -> bool;
+    fn validate(&self, content: &mut dyn Content<T>) -> bool;
 }
 
 pub enum IdentifyMethod {
@@ -386,7 +386,7 @@ Fast identification is performed with an internal matcher (single-pattern, packe
 
 Extension and file-name methods are ASCII case-insensitive: both the registered pattern and the path basename / extension are compared in lowercase. `Notes.TXT` matches `Extension("txt")`; `makefile` matches `Name("Makefile")`. Magic methods remain exact byte matches.
 
-If `identify_method` returns `None`, `validate()` is still called — after magic, file name, and extension have all been considered — so you can classify content with custom logic (heuristics, path shape, size, …). Those identifiers are tried in the order they were registered.
+If `identify_method` returns `None`, `validate()` is still called — after magic, file name, and extension have all been considered — so you can classify content with custom logic (payload bytes via `content.read`, path shape, size, …). Those identifiers are tried in the order they were registered. `validate` takes `&mut dyn Content`, so it can call `read`; the scanner's own magic matcher still only looks at the first 16 bytes.
 
 At most **one identifier per `ContentType`** may be registered; the builder will panic otherwise.
 
@@ -398,11 +398,11 @@ pub trait ContentAnalyzer<T: ContentType> {
 }
 ```
 
-Analyzers inspect content and write results into the shared `Context`. Use `context.local()` for per-object findings and `context.global()` for scan-wide aggregates. To pull nested content out of the current object using extractors registered for a **different** type — for example an analyzer that locates an embedded ZIP and wants the Zip extractor to open it — call `context.request_extract(ty)` and [emit an extraction request](#requesting-extraction). The returned `NextAction` controls the pipeline:
+Analyzers inspect content and write results into the shared `Context`. Use `context.local()` for per-object findings and `context.global()` for scan-wide aggregates. To pull nested content out of the current object using extractors registered for a **different** type — for example an analyzer that locates an embedded ZIP and wants the Zip extractor to open it — call `context.request_extract(ty)` and [emit an extraction request](#requesting-extraction). Only analyzers return `NextAction`; that value controls the rest of **this** object:
 
-- `NextAction::Continue` — run the next analyzer / extractor.
-- `NextAction::Skip` — stop processing the current object (do not run further analyzers/extractors on it), but keep scanning siblings.
-- `NextAction::Exit` — stop the whole scan.
+- `NextAction::Continue` — run the next analyzer for this object; after the last analyzer, run extractors.
+- `NextAction::Skip` — stop this object: do not run remaining analyzers or any extractors on it. Siblings and later objects still scan.
+- `NextAction::Exit` — abort the entire scan.
 
 Register analyzers with:
 
@@ -442,12 +442,12 @@ pub struct Entry {
 pub struct ExtractionHandle { /* opaque */ }
 ```
 
-Extractors turn a container into a stream of children, driven as a short session keyed by an opaque `ExtractionHandle`:
+Extractors turn a container into a stream of children, driven as a short session keyed by an opaque `ExtractionHandle`. Their methods return `Option` (or nothing, for `release`) — they do **not** return `NextAction` and cannot Skip or Exit on their own:
 
-1. `acquire` — called once per parent, after that object's analyzers have run. Receives an [`ExtractionContext`](#extractioncontext) describing the region of `content` to look at (`offset`, optional `length`, optional `params`). Copy anything you need into session state. Return `Some(handle)` to start the session, or `None` to skip this extractor. Handles are minted by an [`ExtractionPool`](#extractionpool); `ExtractionHandle` is opaque and cannot be constructed directly.
+1. `acquire` — called once per parent, after that object's analyzers have run. Receives an [`ExtractionContext`](#extractioncontext) describing the region of `content` to look at (`offset`, optional `length`, optional `params`). Copy anything you need into session state. Return `Some(handle)` to start the session, or `None` to skip this extractor (the scanner moves on to the next registered extractor). Handles are minted by an [`ExtractionPool`](#extractionpool); `ExtractionHandle` is opaque and cannot be constructed directly.
 2. `advance` — advances the session to the next child and returns a lightweight `Entry` describing its path/size. Returning `None` ends the stream.
 3. `extract` — materializes the current child as a boxed `Content<T>`. The scanner then recursively scans it (subject to `max_depth`). Returning `None` skips just this entry; enumeration continues with the next `advance`.
-4. `release` — called exactly once for every successfully acquired handle (including when the scan stops early via `NextAction::Skip` / `NextAction::Exit`). Use it to free per-session resources.
+4. `release` — called exactly once for every successfully acquired handle. That includes a nested child's analyzer returning `NextAction::Exit`: the current session is released before the scan unwinds. A child's `Skip` does not end this session — the scanner continues with the next `advance`. Use `release` to free per-session resources.
 
 An extractor registered for type `T` runs in two situations:
 
@@ -758,7 +758,10 @@ For every scanned object, the scanner performs the following steps (see [`conten
 
 While this is happening, the scanner also **records the object** into `Context::objects` — interned from `ContentPath::as_printable_string()` into an internal arena, tagged with the resolved content type, and linked into its parent's child list. After `scan()` returns, that tree is exposed to the caller through [`ScanResult`](#navigating-the-scan-result-tree).
 
-Any analyzer or extractor may short-circuit the current object with `NextAction::Skip` or abort the entire scan with `NextAction::Exit`.
+Only **analyzers** return `NextAction`. Extractor methods return `Option` (`acquire` / `advance` / `extract`) or nothing (`release`); they cannot short-circuit the scan themselves.
+
+- Analyzer `Skip` on an object stops remaining analyzers and extractors **on that object**. The scanner maps that Skip to `Continue` for the parent, so the extractor that produced the object keeps enumerating siblings.
+- Analyzer `Exit` aborts the whole scan. The extractor session that produced the current object is `release`d as the call stack unwinds; remaining extractors on ancestors do not run.
 
 ---
 

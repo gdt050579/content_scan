@@ -8,7 +8,7 @@ impl ContentIdentifier<ImageType> for BmpIdentifier {
         Some(IdentifyMethod::Magic(b"BM"))
     }
 
-    fn validate(&self, content: &dyn Content<ImageType>) -> bool {
+    fn validate(&self, content: &mut dyn Content<ImageType>) -> bool {
         content.size() >= 26
     }
 }

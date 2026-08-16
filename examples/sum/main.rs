@@ -13,7 +13,7 @@ impl ContentIdentifier<MyTypes> for TextIdentifier {
         Some(IdentifyMethod::Magic(b"TXT"))
     }
 
-    fn validate(&self, _: &dyn Content<MyTypes>) -> bool {
+    fn validate(&self, _: &mut dyn Content<MyTypes>) -> bool {
         true
     }
 }

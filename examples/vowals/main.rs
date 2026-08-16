@@ -29,7 +29,7 @@ impl ContentIdentifier<MyType> for TextBufferItdentifier {
         Some(IdentifyMethod::Magic(b"TXBF"))
     }
 
-    fn validate(&self, _: &dyn Content<MyType>) -> bool {
+    fn validate(&self, _: &mut dyn Content<MyType>) -> bool {
         true
     }
 }

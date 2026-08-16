@@ -8,7 +8,7 @@ impl ContentIdentifier<ImageType> for JpegIdentifier {
         Some(IdentifyMethod::Magic(b"\xFF\xD8"))
     }
 
-    fn validate(&self, content: &dyn Content<ImageType>) -> bool {
+    fn validate(&self, content: &mut dyn Content<ImageType>) -> bool {
         content.size() >= 2
     }
 }

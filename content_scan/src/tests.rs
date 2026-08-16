@@ -600,7 +600,7 @@ mod identify {
         fn identify_method(&self) -> Option<IdentifyMethod> {
             Some(IdentifyMethod::Magic(b"TAG"))
         }
-        fn validate(&self, _: &dyn Content<Ty>) -> bool {
+        fn validate(&self, _: &mut dyn Content<Ty>) -> bool {
             true
         }
     }
@@ -610,7 +610,7 @@ mod identify {
         fn identify_method(&self) -> Option<IdentifyMethod> {
             Some(IdentifyMethod::Magic(b"TAG"))
         }
-        fn validate(&self, _: &dyn Content<Ty>) -> bool {
+        fn validate(&self, _: &mut dyn Content<Ty>) -> bool {
             false
         }
     }
@@ -621,7 +621,7 @@ mod identify {
         fn identify_method(&self) -> Option<IdentifyMethod> {
             None
         }
-        fn validate(&self, content: &dyn Content<Ty>) -> bool {
+        fn validate(&self, content: &mut dyn Content<Ty>) -> bool {
             content.path().as_printable_string().ends_with(".custom")
         }
     }
@@ -632,8 +632,19 @@ mod identify {
         fn identify_method(&self) -> Option<IdentifyMethod> {
             None
         }
-        fn validate(&self, content: &dyn Content<Ty>) -> bool {
+        fn validate(&self, content: &mut dyn Content<Ty>) -> bool {
             content.size() > 0
+        }
+    }
+
+    /// Custom identifier that inspects payload bytes past the 16-byte magic window.
+    struct PastMagicWindowId;
+    impl ContentIdentifier<Ty> for PastMagicWindowId {
+        fn identify_method(&self) -> Option<IdentifyMethod> {
+            None
+        }
+        fn validate(&self, content: &mut dyn Content<Ty>) -> bool {
+            matches!(content.read(16, 4), Some(b) if b == b"MARK")
         }
     }
 
@@ -642,7 +653,7 @@ mod identify {
         fn identify_method(&self) -> Option<IdentifyMethod> {
             Some(IdentifyMethod::Extension("txt"))
         }
-        fn validate(&self, _: &dyn Content<Ty>) -> bool {
+        fn validate(&self, _: &mut dyn Content<Ty>) -> bool {
             true
         }
     }
@@ -652,7 +663,7 @@ mod identify {
         fn identify_method(&self) -> Option<IdentifyMethod> {
             Some(IdentifyMethod::Extension("TXT"))
         }
-        fn validate(&self, _: &dyn Content<Ty>) -> bool {
+        fn validate(&self, _: &mut dyn Content<Ty>) -> bool {
             true
         }
     }
@@ -662,7 +673,7 @@ mod identify {
         fn identify_method(&self) -> Option<IdentifyMethod> {
             Some(IdentifyMethod::Extensions(&["jpg", "Jpeg"]))
         }
-        fn validate(&self, _: &dyn Content<Ty>) -> bool {
+        fn validate(&self, _: &mut dyn Content<Ty>) -> bool {
             true
         }
     }
@@ -672,7 +683,7 @@ mod identify {
         fn identify_method(&self) -> Option<IdentifyMethod> {
             Some(IdentifyMethod::Name("Makefile"))
         }
-        fn validate(&self, _: &dyn Content<Ty>) -> bool {
+        fn validate(&self, _: &mut dyn Content<Ty>) -> bool {
             true
         }
     }
@@ -682,7 +693,7 @@ mod identify {
         fn identify_method(&self) -> Option<IdentifyMethod> {
             Some(IdentifyMethod::Names(&["Cargo.lock"]))
         }
-        fn validate(&self, _: &dyn Content<Ty>) -> bool {
+        fn validate(&self, _: &mut dyn Content<Ty>) -> bool {
             true
         }
     }
@@ -729,6 +740,18 @@ mod identify {
         assert_eq!(identified_type(&mut scanner, b"hello", "blob.custom"), Some(Ty::Custom));
         assert_eq!(identified_type(&mut scanner, b"hello", "blob.bin"), Some(Ty::Fallback));
         assert_eq!(identified_type(&mut scanner, b"", "empty.bin"), None);
+    }
+
+    #[test]
+    fn custom_identifier_can_read_payload_bytes() {
+        let mut scanner = ScannerBuilder::new()
+            .add_identifier(Ty::Custom, PastMagicWindowId)
+            .build();
+        let mut matching = [0u8; 20];
+        matching[16..20].copy_from_slice(b"MARK");
+        assert_eq!(identified_type(&mut scanner, &matching, "blob.bin"), Some(Ty::Custom));
+        assert_eq!(identified_type(&mut scanner, &[0u8; 20], "blob.bin"), None);
+        assert_eq!(identified_type(&mut scanner, b"short", "blob.bin"), None);
     }
 
     #[test]

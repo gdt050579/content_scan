@@ -58,7 +58,7 @@
 //!     fn identify_method(&self) -> Option<IdentifyMethod> {
 //!         Some(IdentifyMethod::Extension("txt"))
 //!     }
-//!     fn validate(&self, _: &dyn Content<MyTypes>) -> bool { true }
+//!     fn validate(&self, _: &mut dyn Content<MyTypes>) -> bool { true }
 //! }
 //!
 //! let mut scanner = ScannerBuilder::<MyTypes>::new()
