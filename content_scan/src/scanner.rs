@@ -2,6 +2,7 @@ use super::{
     analyzer_list::AnalyzerList, extractor_list::ExtractorList, Content, ContentAnalyzer, ContentExtractor, ContentIdentifier, ContentType, Filter,
     NextAction,
 };
+use crate::ExtractionContext;
 use crate::utils;
 use crate::IdentifierSet;
 use crate::Object;
@@ -29,6 +30,7 @@ pub struct Scanner<T: ContentType> {
     max_depth: u32,
 }
 impl<T: ContentType> Scanner<T> {
+    const EmptyVarMap: varmap::VarMap = varmap::VarMap::new();
     /// Scans a single top-level [`Content`] and returns the results.
     ///
     /// The scanner:
@@ -128,6 +130,7 @@ impl<T: ContentType> Scanner<T> {
                 }
             }
         }
+        // run extraction requests
         NextAction::Continue
     }
     fn scan_range(&mut self, content: &mut dyn Content<T>, start: usize, end: usize) -> NextAction {
@@ -148,8 +151,14 @@ impl<T: ContentType> Scanner<T> {
         if (end <= start) || (end > self.extractors.len()) {
             return NextAction::Continue;
         }
+        // if its a range - then its normal extraction
+        let ec = ExtractionContext {
+            offset: 0,
+            length: Some(content.size()),
+            params: &Self::EmptyVarMap,
+        };
         for i in start..end {
-            let result = self.extract_content(content, i, depth, parent_index);
+            let result = self.extract_content(content, i, depth, parent_index, &ec);
             match result {
                 NextAction::Continue => continue,
                 NextAction::Exit => return NextAction::Exit,
@@ -158,7 +167,7 @@ impl<T: ContentType> Scanner<T> {
         }
         NextAction::Continue
     }
-    fn extract_content(&mut self, content: &mut dyn Content<T>, index: usize, depth: u32, parent_index: u32) -> NextAction {
+    fn extract_content(&mut self, content: &mut dyn Content<T>, index: usize, depth: u32, parent_index: u32, ec: &ExtractionContext) -> NextAction {
         if depth >= self.max_depth {
             return NextAction::Continue;
         }
@@ -167,7 +176,7 @@ impl<T: ContentType> Scanner<T> {
             return NextAction::Continue;
         }
         let mut extractor = unsafe { self.extractors.get(index) };
-        if let Some(handle) = extractor.acquire(content, self.context.extract()) {
+        if let Some(handle) = extractor.acquire(content, ec) {
             while let Some(entry) = unsafe { self.extractors.get(index).advance(handle, content) } {
                 if !entry.skip_from_filtering {
                     if let Some(filter) = self.filter.as_mut() {

@@ -703,7 +703,7 @@ mod max_depth {
         }
     }
     impl ContentExtractor<Ty> for NestExtractor {
-        fn acquire(&mut self, content: &mut dyn Content<Ty>, _: &mut VarMap) -> Option<ExtractionHandle> {
+        fn acquire(&mut self, content: &mut dyn Content<Ty>, _: &ExtractionContext) -> Option<ExtractionHandle> {
             if content.size() == 0 {
                 return None;
             }

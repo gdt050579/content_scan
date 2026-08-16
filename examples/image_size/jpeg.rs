@@ -15,7 +15,7 @@ impl ContentIdentifier<ImageType> for JpegIdentifier {
 
 pub struct JpegAnalyzer;
 impl ContentAnalyzer<ImageType> for JpegAnalyzer {
-    fn analyze(&mut self, content: &mut dyn Content<ImageType>, context: &mut Context) -> NextAction {
+    fn analyze(&mut self, content: &mut dyn Content<ImageType>, context: &mut Context<ImageType>) -> NextAction {
         let size = content.size();
         if size < 2 {
             return NextAction::Continue;

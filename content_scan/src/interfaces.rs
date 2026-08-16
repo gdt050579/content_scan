@@ -1,3 +1,4 @@
+use crate::ExtractionContext;
 use crate::ExtractionHandle;
 use crate::ContentPath;
 use super::{Content, ContentType, Context};
@@ -138,7 +139,7 @@ pub trait ContentExtractor<T: ContentType> {
     /// `None` to skip this extractor entirely for the current parent.
     /// Every successful acquire is paired with a later
     /// [`release`](Self::release) on the same handle.
-    fn acquire(&mut self, content: &mut dyn Content<T>, extract_context: &mut VarMap) -> Option<ExtractionHandle>;
+    fn acquire(&mut self, content: &mut dyn Content<T>, extract_context: &ExtractionContext) -> Option<ExtractionHandle>;
 
     /// Advances the session identified by `handle` to the next entry.
     ///

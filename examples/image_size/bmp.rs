@@ -15,7 +15,7 @@ impl ContentIdentifier<ImageType> for BmpIdentifier {
 
 pub struct BmpAnalyzer;
 impl ContentAnalyzer<ImageType> for BmpAnalyzer {
-    fn analyze(&mut self, content: &mut dyn Content<ImageType>, context: &mut Context) -> NextAction {
+    fn analyze(&mut self, content: &mut dyn Content<ImageType>, context: &mut Context<ImageType>) -> NextAction {
         let Some(d) = content.read(0, 26) else {
             return NextAction::Continue;
         };

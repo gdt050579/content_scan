@@ -8,7 +8,7 @@ enum MyType {
 
 struct VowelAnalyzer;
 impl ContentAnalyzer<MyType> for VowelAnalyzer {
-    fn analyze(&mut self, content: &mut dyn Content<MyType>, context: &mut Context) -> NextAction {
+    fn analyze(&mut self, content: &mut dyn Content<MyType>, context: &mut Context<MyType>) -> NextAction {
         let sz = content.size();
         let mut count = 0u32;
         for i in 4..sz as u64 {

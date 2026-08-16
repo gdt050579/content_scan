@@ -1,4 +1,4 @@
-use crate::{Content, ContentExtractor, ContentType, ExtractionPool};
+use crate::{Content, ContentExtractor, ContentType, ExtractionContext, ExtractionPool};
 use std::marker::PhantomData;
 use super::{FolderContent, FileContent};
 
@@ -88,7 +88,7 @@ impl<T: ContentType> FolderExtractor<T> {
     }
 }
 impl<T: ContentType + 'static> ContentExtractor<T> for FolderExtractor<T> {
-    fn acquire(&mut self, content: &mut dyn Content<T>, _: &mut varmap::VarMap) -> Option<crate::ExtractionHandle> {
+    fn acquire(&mut self, content: &mut dyn Content<T>, _: &ExtractionContext) -> Option<crate::ExtractionHandle> {
         let obj = std::fs::read_dir(content.path().as_path()).ok()?;
         Some(self.pool.acquire_slot(obj))
     }

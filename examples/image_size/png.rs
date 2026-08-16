@@ -15,7 +15,7 @@ impl ContentIdentifier<ImageType> for PngIdentifier {
 
 pub struct PngAnalyzer;
 impl ContentAnalyzer<ImageType> for PngAnalyzer {
-    fn analyze(&mut self, content: &mut dyn Content<ImageType>, context: &mut Context) -> NextAction {
+    fn analyze(&mut self, content: &mut dyn Content<ImageType>, context: &mut Context<ImageType>) -> NextAction {
         let Some(d) = content.read(0, 24) else {
             return NextAction::Continue;
         };
