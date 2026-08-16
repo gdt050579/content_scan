@@ -25,7 +25,7 @@ pub struct Scanner<T: ContentType> {
     identifiers: IdentifierSet<T>,
     analyzers: AnalyzerList<Box<dyn ContentAnalyzer<T>>>,
     extractors: ExtractorList<Box<dyn ContentExtractor<T>>, T>,
-    context: Context,
+    context: Context<T>,
     max_depth: u32,
 }
 impl<T: ContentType> Scanner<T> {

@@ -24,7 +24,7 @@ use varmap::VarMap;
 /// `Context` is owned by the [`Scanner`](crate::Scanner) and cleared
 /// automatically at the start of every scan; plugins never construct
 /// one themselves.
-pub struct Context {
+pub struct Context<T: ContentType> {
     pub(crate) global: VarMap,
     pub(crate) extract: VarMap,
     pub(crate) objects: Vec<Object>,
@@ -32,8 +32,9 @@ pub struct Context {
     pub(crate) varmap_pool: Vec<VarMap>,
     pub(crate) used_local_varmaps: u32,
     pub(crate) local_varmaps_index: u32,
+    _data: PhantomData<T>,
 }
-impl Context {
+impl<T: ContentType> Context<T> {
     pub(crate) fn new() -> Self {
         Self {
             global: VarMap::new(),
@@ -43,6 +44,7 @@ impl Context {
             varmap_pool: Vec::with_capacity(16),
             used_local_varmaps: 0,
             local_varmaps_index: Object::INVALID_INDEX,
+            _data: PhantomData,
         }
     }
     pub(crate) fn clear(&mut self) {
@@ -72,25 +74,7 @@ impl Context {
         &mut self.global
     }
 
-    /// Returns the [`VarMap`] that carries analyzer hints to extractors
-    /// of the current object.
-    ///
-    /// This is the analyzer-to-extractor channel for one content
-    /// object, not a parent-session store. Typical use: an analyzer
-    /// locates an embedded blob (a ZIP starting at some offset) and
-    /// records that offset here so an extractor registered for this
-    /// object's [`ContentType`] can open it from the right place.
-    ///
-    /// The map is cleared at the start of every object's scan,
-    /// including nested children. Analyzers on this object run first
-    /// and write hints; extractors then receive the same map in
-    /// [`ContentExtractor::acquire`](crate::ContentExtractor::acquire).
-    /// Copy anything you need into your [`ExtractionPool`](crate::ExtractionPool)
-    /// slot during `acquire` — nested child scans reuse this map for
-    /// their own handoff.
-    #[inline(always)]
-    pub fn extract(&mut self) -> &mut VarMap {
-        &mut self.extract
+    pub fn request_extract(&mut self, content_type: T, start: u64, len: Option<u64>, params: Option<impl FnOnce(&mut VarMap)>){
     }
 
     /// Returns the [`VarMap`] attached to the currently scanned
@@ -169,11 +153,11 @@ pub struct ScanContentHandle {
 /// The result borrows immutably from the scanner. Copy anything you
 /// need to keep out of the result before starting another scan.
 pub struct ScanResult<'a, T: ContentType> {
-    pub(crate) context: &'a Context,
+    pub(crate) context: &'a Context<T>,
     _extra: PhantomData<T>,
 }
 impl<'a, T: ContentType> ScanResult<'a, T> {
-    pub(crate) fn new(context: &'a Context) -> Self {
+    pub(crate) fn new(context: &'a Context<T>) -> Self {
         Self {
             context,
             _extra: PhantomData,

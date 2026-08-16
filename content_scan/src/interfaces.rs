@@ -77,7 +77,7 @@ pub trait ContentAnalyzer<T: ContentType> {
     ///
     /// The returned [`NextAction`] controls whether further analyzers
     /// (and extractors) run for this object.
-    fn analyze(&mut self, content: &mut dyn Content<T>, context: &mut Context) -> NextAction;
+    fn analyze(&mut self, content: &mut dyn Content<T>, context: &mut Context<T>) -> NextAction;
 }
 
 /// A plugin that produces child content items from a parent.
