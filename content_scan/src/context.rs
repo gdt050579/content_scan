@@ -2,6 +2,8 @@ use std::marker::PhantomData;
 
 use crate::BufferArena;
 use crate::ContentType;
+use crate::ExtractRequestBuilder;
+use crate::ExtractionRequest;
 use crate::Object;
 use varmap::{VarMap, VarMapPool};
 
@@ -26,34 +28,32 @@ use varmap::{VarMap, VarMapPool};
 /// one themselves.
 pub struct Context<T: ContentType> {
     pub(crate) global: VarMap,
-    pub(crate) extract: VarMap,
     pub(crate) objects: Vec<Object>,
     pub(crate) path_arena: BufferArena,
     pub(crate) varmap_pool: VarMapPool,
     pub(crate) local_varmap_handle: Option<varmap::PoolHandle>,
-    _data: PhantomData<T>,
+    pub(crate) extraction_requests: Vec<ExtractionRequest<T>>,
 }
 impl<T: ContentType> Context<T> {
     pub(crate) fn new() -> Self {
         Self {
             global: VarMap::new(),
-            extract: VarMap::new(),
             objects: Vec::with_capacity(16),
             path_arena: BufferArena::new(),
             varmap_pool: VarMapPool::new(),
             local_varmap_handle: None,
-            _data: PhantomData,
+            extraction_requests: Vec::with_capacity(16),
         }
     }
     pub(crate) fn clear(&mut self) {
         self.global.clear();
-        self.extract.clear();
         self.objects.clear();
         self.path_arena.clear();
         self.varmap_pool.clear(varmap::ClearStrategy::KeepSmallestN(128));
+        self.extraction_requests.clear();
     }
-    pub(crate) fn clear_extract(&mut self) {
-        self.extract.clear();
+    pub(crate) fn clear_extraction_request_list(&mut self) {
+        self.extraction_requests.clear();
     }
 
     /// Returns the [`VarMap`] shared across the entire scan.
@@ -67,7 +67,8 @@ impl<T: ContentType> Context<T> {
         &mut self.global
     }
 
-    pub fn request_extract(&mut self, content_type: T, start: u64, len: Option<u64>, params: Option<impl FnOnce(&mut VarMap)>){
+    pub fn request_extract(&mut self, content_type: T) -> ExtractRequestBuilder<'_, T> {
+        ExtractRequestBuilder::new(self, content_type)
     }
 
     /// Returns the [`VarMap`] attached to the currently scanned
@@ -201,7 +202,9 @@ impl<'a, T: ContentType> ScanResult<'a, T> {
         if object.next_sibling_index as usize >= self.context.objects.len() {
             None
         } else {
-            Some(ScanContentHandle { index: object.next_sibling_index })
+            Some(ScanContentHandle {
+                index: object.next_sibling_index,
+            })
         }
     }
 
@@ -214,7 +217,9 @@ impl<'a, T: ContentType> ScanResult<'a, T> {
         if object.first_child_index as usize >= self.context.objects.len() {
             None
         } else {
-            Some(ScanContentHandle { index: object.first_child_index })
+            Some(ScanContentHandle {
+                index: object.first_child_index,
+            })
         }
     }
 

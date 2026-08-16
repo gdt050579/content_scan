@@ -113,6 +113,7 @@ use identifier_set::*;
 use matcher::*;
 use object::Object;
 use buffer_arena::BufferArena;
+use extraction_context::ExtractionRequest;
 
 pub use scanner::Scanner;
 pub use scanner::ScannerBuilder;
@@ -124,6 +125,7 @@ pub use varmap::*;
 pub use extraction_pool::ExtractionHandle;
 pub use extraction_pool::ExtractionPool;
 pub use extraction_context::ExtractionContext;
+pub use extraction_context::ExtractRequestBuilder;
 pub use content_path::*;
 pub use implementations::*;
 

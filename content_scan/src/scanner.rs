@@ -2,8 +2,8 @@ use super::{
     analyzer_list::AnalyzerList, extractor_list::ExtractorList, Content, ContentAnalyzer, ContentExtractor, ContentIdentifier, ContentType, Filter,
     NextAction,
 };
-use crate::ExtractionContext;
 use crate::utils;
+use crate::ExtractionContext;
 use crate::IdentifierSet;
 use crate::Object;
 use crate::{Context, ScanResult};
@@ -68,7 +68,7 @@ impl<T: ContentType> Scanner<T> {
         ScanResult::new(&self.context)
     }
     fn inner_scan(&mut self, content: &mut dyn Content<T>, depth: u32, parent_index: u32) -> NextAction {
-        self.context.clear_extract();
+        self.context.clear_extraction_request_list();
         self.context.local_varmap_handle = None; // so that next time someone ask for a local varmap, it will get one from the context varmap_pool
         let ty = self.retrieve_content_type(content);
 
@@ -123,7 +123,7 @@ impl<T: ContentType> Scanner<T> {
         // type-specific extractors
         if let Some(ty) = ty {
             if let Some((start, end)) = self.extractors.range(ty) {
-                match self.extract_range(content, start, end, depth, my_index) {
+                match self.extract_range(content, start, end, depth, my_index, None) {
                     NextAction::Continue => {}
                     NextAction::Skip => return NextAction::Continue, // skip current content
                     NextAction::Exit => return NextAction::Exit,
@@ -131,6 +131,17 @@ impl<T: ContentType> Scanner<T> {
             }
         }
         // run extraction requests
+        let req_count = self.context.extraction_requests.len();
+        for i in 0..req_count {
+            let ty = self.context.extraction_requests[i].content_type;
+            if let Some((start, end)) = self.extractors.range(ty) {
+                match self.extract_range(content, start, end, depth, my_index, Some(i as u32)) {
+                    NextAction::Continue => {}
+                    NextAction::Skip => return NextAction::Continue, // skip current content
+                    NextAction::Exit => return NextAction::Exit,
+                }
+            }
+        }
         NextAction::Continue
     }
     fn scan_range(&mut self, content: &mut dyn Content<T>, start: usize, end: usize) -> NextAction {
@@ -147,18 +158,49 @@ impl<T: ContentType> Scanner<T> {
         }
         NextAction::Continue
     }
-    fn extract_range(&mut self, content: &mut dyn Content<T>, start: usize, end: usize, depth: u32, parent_index: u32) -> NextAction {
+    fn extract_range(
+        &mut self,
+        content: &mut dyn Content<T>,
+        start: usize,
+        end: usize,
+        depth: u32,
+        parent_index: u32,
+        req_index: Option<u32>,
+    ) -> NextAction {
         if (end <= start) || (end > self.extractors.len()) {
             return NextAction::Continue;
         }
-        // if its a range - then its normal extraction
-        let ec = ExtractionContext {
-            offset: 0,
-            length: Some(content.size()),
-            params: &Self::EmptyVarMap,
+        let (mut ec, param_handle) = if let Some(req_index) = req_index {
+            let request = &self.context.extraction_requests[req_index as usize];
+            let params = if let Some(handle) = request.params_handle {
+                if self.context.varmap_pool.get(handle).is_some() {
+                    Some(handle)
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+            (
+                ExtractionContext {
+                    offset: request.start,
+                    length: request.len,
+                    params: &Self::EmptyVarMap,
+                },
+                params,
+            )
+        } else {
+            (
+                ExtractionContext {
+                    offset: 0,
+                    length: Some(content.size()),
+                    params: &Self::EmptyVarMap,
+                },
+                None,
+            )
         };
         for i in start..end {
-            let result = self.extract_content(content, i, depth, parent_index, &ec);
+            let result = self.extract_content(content, i, depth, parent_index, &mut ec, param_handle);
             match result {
                 NextAction::Continue => continue,
                 NextAction::Exit => return NextAction::Exit,
@@ -167,7 +209,15 @@ impl<T: ContentType> Scanner<T> {
         }
         NextAction::Continue
     }
-    fn extract_content(&mut self, content: &mut dyn Content<T>, index: usize, depth: u32, parent_index: u32, ec: &ExtractionContext) -> NextAction {
+    fn extract_content<'a>(
+        &'a mut self,
+        content: &mut dyn Content<T>,
+        index: usize,
+        depth: u32,
+        parent_index: u32,
+        ec: &mut ExtractionContext<'a>,
+        ph: Option<varmap::PoolHandle>,
+    ) -> NextAction {
         if depth >= self.max_depth {
             return NextAction::Continue;
         }
@@ -176,7 +226,12 @@ impl<T: ContentType> Scanner<T> {
             return NextAction::Continue;
         }
         let mut extractor = unsafe { self.extractors.get(index) };
+        let original_params = ec.params;
+        if let Some(handle) = ph {
+            ec.params = self.context.varmap_pool.get(handle).unwrap();
+        }
         if let Some(handle) = extractor.acquire(content, ec) {
+            ec.params = original_params;
             while let Some(entry) = unsafe { self.extractors.get(index).advance(handle, content) } {
                 if !entry.skip_from_filtering {
                     if let Some(filter) = self.filter.as_mut() {
