@@ -63,8 +63,9 @@ pub struct Entry {
 /// [`Context::local`] for per-object results,
 /// [`Context::global`] for scan-wide aggregates, and
 /// [`Context::extract`] for hints meant for extractors of this same
-/// object (for example the byte offset of an embedded ZIP that a
-/// generic extractor should open). They do not produce new content —
+/// object (for example the byte offset of an embedded ZIP that the
+/// extractor registered for this type should open). They do not
+/// produce new content —
 /// for that, use a [`ContentExtractor`].
 ///
 /// Analyzers can be registered per [`ContentType`] via
@@ -116,18 +117,16 @@ pub trait ContentAnalyzer<T: ContentType> {
 /// `extract`, and
 /// [`release_slot`](crate::ExtractionPool::release_slot) in `release`.
 ///
-/// Extractors can be registered per [`ContentType`] via
-/// [`ScannerBuilder::add_extractor`](crate::ScannerBuilder::add_extractor)
-/// or as generic (all types) plugins via
-/// [`ScannerBuilder::add_generic_extractor`](crate::ScannerBuilder::add_generic_extractor).
+/// Extractors are registered per [`ContentType`] via
+/// [`ScannerBuilder::add_extractor`](crate::ScannerBuilder::add_extractor).
 pub trait ContentExtractor<T: ContentType> {
     /// Begins an extraction session over `content`.
     ///
     /// `extract_context` is the analyzer-to-extractor [`VarMap`] for
     /// this object: analyzers have already run and may have recorded
-    /// hints here (for example where an embedded ZIP starts). A
-    /// generic extractor can read those hints and decide whether —
-    /// and from which offset — to extract. Copy anything you need
+    /// hints here (for example where an embedded ZIP starts). The
+    /// extractor can read those hints and decide whether — and from
+    /// which offset — to extract. Copy anything you need
     /// into the session state keyed by the returned handle; nested
     /// child scans clear this map for the child's own handoff.
     ///

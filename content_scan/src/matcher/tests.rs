@@ -207,7 +207,7 @@ mod one {
     use super::super::one::OneMatcher;
     use crate::ContentType;
 
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Ord, PartialOrd)]
     enum TestType {
         Pdf = 1,
         Zip = 2,
@@ -326,7 +326,7 @@ mod packed_linear_list {
     use super::super::packed_linear_list::{Key, PackedLinearList};
     use crate::ContentType;
 
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Ord, PartialOrd)]
     enum TestType {
         A = 1,
         B = 2,
@@ -558,7 +558,7 @@ mod fast_magic {
     use super::super::fast_magic::FastMagicMatcher;
     use crate::ContentType;
 
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Ord, PartialOrd)]
     enum TestType {
         Pk = 1,
         Gif = 2,

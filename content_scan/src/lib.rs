@@ -47,7 +47,7 @@
 //! ```ignore
 //! use content_scan::*;
 //!
-//! #[derive(Debug, Copy, Clone, Eq, PartialEq, ContentType)]
+//! #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, ContentType)]
 //! #[repr(u16)]
 //! enum MyTypes { Text }
 //!
@@ -73,11 +73,11 @@
 //! ```ignore
 //! use content_scan::*;
 //!
-//! # #[derive(Debug, Copy, Clone, Eq, PartialEq, ContentType)]
+//! # #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, ContentType)]
 //! # #[repr(u16)]
 //! # enum MyTypes { Text, Folder }
 //! let mut scanner = ScannerBuilder::<MyTypes>::new()
-//!     .add_extractor(MyTypes::Folder, 0, FolderExtractor::<MyTypes>::new(true, false))
+//!     .add_extractor(MyTypes::Folder, FolderExtractor::<MyTypes>::new(true, false))
 //!     .build();
 //!
 //! let mut root = FolderContent::<MyTypes>::with_content_type("./src", MyTypes::Folder);
@@ -85,7 +85,8 @@
 //! let result = scanner.scan(&mut root, false);
 //! ```
 
-mod plugin_list;
+mod analyzer_list;
+mod extractor_list;
 mod interfaces;
 mod matcher;
 mod content;

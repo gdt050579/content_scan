@@ -1,4 +1,7 @@
-use super::{plugin_list::PluginsList, Content, ContentAnalyzer, ContentExtractor, ContentIdentifier, ContentType, Filter, NextAction};
+use super::{
+    analyzer_list::AnalyzerList, extractor_list::ExtractorList, Content, ContentAnalyzer, ContentExtractor, ContentIdentifier, ContentType, Filter,
+    NextAction,
+};
 use crate::utils;
 use crate::IdentifierSet;
 use crate::Object;
@@ -20,8 +23,8 @@ use std::collections::HashSet;
 pub struct Scanner<T: ContentType> {
     filter: Option<Filter>,
     identifiers: IdentifierSet<T>,
-    analyzers: PluginsList<Box<dyn ContentAnalyzer<T>>>,
-    extractors: PluginsList<Box<dyn ContentExtractor<T>>>,
+    analyzers: AnalyzerList<Box<dyn ContentAnalyzer<T>>>,
+    extractors: ExtractorList<Box<dyn ContentExtractor<T>>, T>,
     context: Context,
     max_depth: u32,
 }
@@ -123,15 +126,6 @@ impl<T: ContentType> Scanner<T> {
                     NextAction::Skip => return NextAction::Continue, // skip current content
                     NextAction::Exit => return NextAction::Exit,
                 }
-            }
-        }
-        // generic extractors
-        let range = self.extractors.generic_range();
-        if let Some((start, end)) = range {
-            match self.extract_range(content, start, end, depth, my_index) {
-                NextAction::Continue => {}
-                NextAction::Skip => return NextAction::Continue, // skip current content
-                NextAction::Exit => return NextAction::Exit,
             }
         }
         NextAction::Continue
@@ -263,24 +257,25 @@ impl<T: ContentType> Scanner<T> {
 ///
 /// # Priorities
 ///
-/// Analyzers and extractors are registered with a `priority` byte.
-/// Within the same [`ContentType`] bucket (or within the generic
-/// bucket), plugins are executed in **ascending** priority order —
-/// lower numbers run first.
+/// Analyzers are registered with a `priority` byte. Within the same
+/// [`ContentType`] bucket (or within the generic bucket), they run in
+/// **ascending** priority order — lower numbers first.
+///
+/// Extractors have no priority: multiple extractors for the same type
+/// run in registration order.
 ///
 /// # Generic vs. typed plugins
 ///
 /// - `add_analyzer` / `add_extractor` register a plugin against a
 ///   specific [`ContentType`]. It only runs when the scanner has
 ///   positively identified content of that type.
-/// - `add_generic_analyzer` / `add_generic_extractor` register a
-///   plugin that runs for every content object, regardless of type
-///   (including unidentified content). Generic plugins run after the
-///   type-specific ones.
+/// - `add_generic_analyzer` registers an analyzer that runs for every
+///   content object, regardless of type (including unidentified
+///   content). Generic analyzers run after the type-specific ones.
 pub struct ScannerBuilder<T: ContentType> {
     filter: Option<Filter>,
     analyzers: Vec<(u32, Box<dyn ContentAnalyzer<T>>)>,
-    extractors: Vec<(u32, Box<dyn ContentExtractor<T>>)>,
+    extractors: Vec<(T, Box<dyn ContentExtractor<T>>)>,
     identifiers: Vec<(T, Box<dyn ContentIdentifier<T>>)>,
     max_depth: u32,
 }
@@ -340,30 +335,15 @@ impl<T: ContentType> ScannerBuilder<T> {
 
     /// Registers an extractor for a specific `content_type`.
     ///
-    /// `priority` (`0..=255`) orders extractors registered for the
-    /// same type; lower values run first. Extracted children are
-    /// scanned recursively as long as
-    /// [`max_depth`](Self::max_depth) allows.
-    pub fn add_extractor<E>(mut self, content_type: T, priority: u8, extractor: E) -> Self
+    /// The extractor runs only when the scanner has identified content
+    /// of that type. Multiple extractors for the same type run in
+    /// registration order. Extracted children are scanned recursively
+    /// as long as [`max_depth`](Self::max_depth) allows.
+    pub fn add_extractor<E>(mut self, content_type: T, extractor: E) -> Self
     where
         E: ContentExtractor<T> + 'static,
     {
-        let hash = (content_type.as_u16() as u32) << 16 | priority as u32;
-        self.extractors.push((hash, Box::new(extractor)));
-        self
-    }
-
-    /// Registers a generic extractor that runs on every content object.
-    ///
-    /// Generic extractors run after all type-specific extractors for
-    /// a given object. `priority` (`0..=255`) orders generic
-    /// extractors among themselves; lower values run first.
-    pub fn add_generic_extractor<E>(mut self, priority: u8, extractor: E) -> Self
-    where
-        E: ContentExtractor<T> + 'static,
-    {
-        let hash = 0xFFFF0000 | priority as u32;
-        self.extractors.push((hash, Box::new(extractor)));
+        self.extractors.push((content_type, Box::new(extractor)));
         self
     }
 
@@ -411,8 +391,8 @@ impl<T: ContentType> ScannerBuilder<T> {
     /// [`ContentType`].
     pub fn build(self) -> Scanner<T> {
         self.check_unique_identifiers();
-        let analyzers = PluginsList::new(self.analyzers, T::COUNT);
-        let extractors = PluginsList::new(self.extractors, T::COUNT);
+        let analyzers = AnalyzerList::new(self.analyzers, T::COUNT);
+        let extractors = ExtractorList::new(self.extractors);
         let identifiers = IdentifierSet::new(self.identifiers);
         Scanner {
             filter: self.filter,

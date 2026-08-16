@@ -21,11 +21,11 @@ use crate::ContentPath;
 /// # Example
 ///
 /// ```ignore
-/// #[derive(Debug, Copy, Clone, Eq, PartialEq, ContentType)]
+/// #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, ContentType)]
 /// #[repr(u16)]
 /// enum MyTypes { Text, Binary }
 /// ```
-pub trait ContentType: Copy + Eq + PartialEq + Debug {
+pub trait ContentType: Copy + Eq + PartialEq + Debug + Ord + PartialOrd {
     /// Total number of variants of this type.
     ///
     /// This must be strictly greater than the largest value ever

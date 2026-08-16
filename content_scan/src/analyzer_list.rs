@@ -16,12 +16,12 @@ impl VecRange {
     }
 }
 
-pub(super) struct PluginsList<T> {
+pub(super) struct AnalyzerList<T> {
     plugins: Vec<(u32, T)>,
     fast_map: Vec<VecRange>,
     generic_range: Option<(usize, usize)>,
 }
-impl<T> PluginsList<T> {
+impl<T> AnalyzerList<T> {
     pub(super) fn new(plugins: Vec<(u32, T)>, max_count: u16) -> Self {
         let mut p = plugins;
         p.sort_by_key(|(hash, _)| *hash);

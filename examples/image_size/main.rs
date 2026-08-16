@@ -11,7 +11,7 @@ pub struct Size {
     pub height: u32,
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, ContentType)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, ContentType)]
 #[repr(u16)]
 pub enum ImageType {
     Png,
@@ -61,7 +61,7 @@ fn main() {
         .add_analyzer(ImageType::Bmp, 0, bmp::BmpAnalyzer {})
         .add_identifier(ImageType::Jpeg, jpeg::JpegIdentifier {})
         .add_analyzer(ImageType::Jpeg, 0, jpeg::JpegAnalyzer {})
-        .add_extractor(ImageType::Folder, 0, FolderExtractor::<ImageType>::new(true, false))
+        .add_extractor(ImageType::Folder, FolderExtractor::<ImageType>::new(true, false))
         .build();
 
     let res = if Path::new(&path).is_dir() {

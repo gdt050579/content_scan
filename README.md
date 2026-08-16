@@ -74,7 +74,7 @@ The framework is built around a few small traits:
 - **`Scanner<T>`** — the orchestrator; built via `ScannerBuilder<T>`.
 - **`ScanResult<T>` / `ScanContentHandle`** — after a scan, the framework exposes the full **tree** of visited objects (parent / child / sibling links), each with its interned path, resolved content type and its own local `VarMap`.
 
-Analyzers and extractors are either **specific** to a `ContentType` or **generic** (run on every scanned object). Each is registered with a `priority` byte to control execution order.
+Analyzers are either **specific** to a `ContentType` or **generic** (run on every scanned object), and each is registered with a `priority` byte to control execution order. Extractors are always type-specific and run in registration order.
 
 ---
 
@@ -98,7 +98,7 @@ Define your content types, plug in identifiers / analyzers / extractors, build a
 ```rust
 use content_scan::*;
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, ContentType)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, ContentType)]
 #[repr(u16)]
 enum MyType {
     TextBuffer,
@@ -110,7 +110,7 @@ fn main() {
     let mut scanner = ScannerBuilder::<MyType>::new()
         // .add_identifier(MyType::TextBuffer, MyIdentifier {})
         // .add_analyzer(MyType::TextBuffer, 0, MyAnalyzer {})
-        // .add_extractor(MyType::TextBuffer, 0, MyExtractor::default())
+        // .add_extractor(MyType::TextBuffer, MyExtractor::default())
         .build();
 
     let mut content = BufferContent::<MyType>::new(b"...", "input.bin");
@@ -141,7 +141,7 @@ A single analyzer that counts vowels in a magic-tagged buffer. See [`examples/vo
 ```rust
 use content_scan::*;
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, ContentType)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, ContentType)]
 #[repr(u16)]
 enum MyType {
     TextBuffer,
@@ -213,7 +213,7 @@ impl ContentAnalyzer<MyTypes> for NumericAnalyzer {
 fn main() {
     let mut scanner = ScannerBuilder::new()
         .add_analyzer(MyTypes::Number, 0, NumericAnalyzer {})
-        .add_extractor(MyTypes::Text, 0, NumericExtractor::default())
+        .add_extractor(MyTypes::Text, NumericExtractor::default())
         .add_identifier(MyTypes::Text, TextIdentifier {})
         .build();
 
@@ -258,7 +258,7 @@ let mut scanner = ScannerBuilder::new()
     .add_identifier(ImageType::Png, png::PngIdentifier {})
     .add_analyzer(ImageType::Png, 0, png::PngAnalyzer {})
     // ...bmp / jpeg...
-    .add_extractor(ImageType::Folder, 0, FolderExtractor::<ImageType>::new(true, false))
+    .add_extractor(ImageType::Folder, FolderExtractor::<ImageType>::new(true, false))
     .build();
 
 let res = if Path::new(&path).is_dir() {
@@ -282,10 +282,11 @@ Every scanner is parameterized by a user-defined enum implementing `ContentType`
 
 - The enum must be annotated with `#[repr(u16)]`.
 - Variants must be **unit variants** with **no explicit discriminants**.
+- Derive `Ord` and `PartialOrd` as well — the trait requires them.
 - Up to `65536` variants are supported.
 
 ```rust
-#[derive(Debug, Copy, Clone, Eq, PartialEq, ContentType)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, ContentType)]
 #[repr(u16)]
 enum MyTypes {
     Number,
@@ -393,7 +394,7 @@ pub trait ContentAnalyzer<T: ContentType> {
 }
 ```
 
-Analyzers inspect content and write results into the shared `Context`. Use `context.local()` for per-object findings, `context.global()` for scan-wide aggregates, and `context.extract()` for hints aimed at extractors of **this same object** — for example an analyzer that locates an embedded ZIP and records its start offset so a generic ZIP extractor can open it. The returned `NextAction` controls the pipeline:
+Analyzers inspect content and write results into the shared `Context`. Use `context.local()` for per-object findings, `context.global()` for scan-wide aggregates, and `context.extract()` for hints aimed at extractors of **this same object** — for example an analyzer that locates an embedded ZIP and records its start offset so the extractor registered for that type can open it. The returned `NextAction` controls the pipeline:
 
 - `NextAction::Continue` — run the next analyzer / extractor.
 - `NextAction::Skip` — stop processing the current object (do not run further analyzers/extractors on it), but keep scanning siblings.
@@ -446,7 +447,7 @@ Extractors turn a container into a stream of children, driven as a short session
 
 Set `Entry::skip_from_filtering` to `true` to exempt an entry from the active `Filter`. This matters for container entries that would never pass the filter themselves: a `FolderExtractor` restricted to `*.png` files, for example, still has to descend into subdirectories, whose names carry no `.png` extension. Keep one `Entry` as a field on the extractor and overwrite `entry.path` in place with `ContentPath::set_from_str` (synthetic names) or `ContentPath::set_from_os` (real OS paths) so `advance` does not allocate a new path for every child.
 
-The handle lets one extractor instance keep per-session state even when extractions nest or interleave. The `Entry` itself is owned by the extractor (not the pool), because `advance` has to return `&Entry` while the pool may be borrowed mutably for session data. Extractors are registered with `add_extractor` / `add_generic_extractor`, mirroring analyzers.
+The handle lets one extractor instance keep per-session state even when extractions nest or interleave. The `Entry` itself is owned by the extractor (not the pool), because `advance` has to return `&Entry` while the pool may be borrowed mutably for session data. Extractors are registered with `add_extractor` for a specific `ContentType`. Multiple extractors for the same type run in registration order.
 
 ### `ExtractionPool`
 
@@ -504,7 +505,7 @@ impl ContentExtractor<MyTypes> for NumericExtractor {
 
 ```rust
 let mut scanner = ScannerBuilder::<MyType>::new()
-    .add_extractor(MyType::Folder, 0, FolderExtractor::<MyType>::new(true, false)) // recursive, shared file opens
+    .add_extractor(MyType::Folder, FolderExtractor::<MyType>::new(true, false)) // recursive, shared file opens
     .add_identifier(MyType::Png, PngIdentifier {})
     .add_analyzer(MyType::Png, 0, PngAnalyzer {})
     .build();
@@ -569,8 +570,7 @@ let scanner = ScannerBuilder::<MyType>::new()
     .add_identifier(MyType::Text, TextIdentifier {})
     .add_analyzer(MyType::Text, 0, MyAnalyzer {})
     .add_generic_analyzer(10, LoggingAnalyzer {})
-    .add_extractor(MyType::Zip, 0, ZipExtractor::default())
-    .add_generic_extractor(100, FallbackExtractor::default())
+    .add_extractor(MyType::Zip, ZipExtractor::default())
     .build();
 ```
 
@@ -681,8 +681,7 @@ For every scanned object, the scanner performs the following steps (see [`conten
    Each fast-matcher candidate is confirmed via the corresponding identifier's `validate()` method. Custom identifiers have no pre-filter; `validate()` is the identification.
 3. **Type-specific analyzers** for the resolved type run in priority order.
 4. **Generic analyzers** run for every object in priority order.
-5. **Type-specific extractors** run (`acquire` → `advance`/`extract` loop → `release`) and, for each entry they emit, the scanner recurses (subject to `max_depth` and `Filter`). Entries marked `skip_from_filtering` bypass the `Filter` check.
-6. **Generic extractors** run the same session lifecycle and recurse in the same way.
+5. **Type-specific extractors** run in registration order (`acquire` → `advance`/`extract` loop → `release`) and, for each entry they emit, the scanner recurses (subject to `max_depth` and `Filter`). Entries marked `skip_from_filtering` bypass the `Filter` check.
 
 While this is happening, the scanner also **records the object** into `Context::objects` — interned from `ContentPath::as_printable_string()` into an internal arena, tagged with the resolved content type, and linked into its parent's child list. After `scan()` returns, that tree is exposed to the caller through [`ScanResult`](#navigating-the-scan-result-tree).
 

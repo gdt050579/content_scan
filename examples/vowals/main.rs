@@ -1,6 +1,6 @@
 use content_scan::*;
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, ContentType)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, ContentType)]
 #[repr(u16)]
 enum MyType {
     TextBuffer,

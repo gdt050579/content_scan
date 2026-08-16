@@ -78,9 +78,8 @@ impl Context {
     /// This is the analyzer-to-extractor channel for one content
     /// object, not a parent-session store. Typical use: an analyzer
     /// locates an embedded blob (a ZIP starting at some offset) and
-    /// records that offset here so a *generic* extractor — one that
-    /// is not tied to the parent's [`ContentType`] — can open it from
-    /// the right place.
+    /// records that offset here so an extractor registered for this
+    /// object's [`ContentType`] can open it from the right place.
     ///
     /// The map is cleared at the start of every object's scan,
     /// including nested children. Analyzers on this object run first

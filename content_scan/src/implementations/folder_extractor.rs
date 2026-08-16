@@ -32,7 +32,7 @@ fn is_link(ft: &std::fs::FileType, _ent: &std::fs::DirEntry) -> bool {
 ///
 /// ```ignore
 /// let mut scanner = ScannerBuilder::<MyTypes>::new()
-///     .add_extractor(MyTypes::Folder, 0, FolderExtractor::<MyTypes>::new(true, false))
+///     .add_extractor(MyTypes::Folder, FolderExtractor::<MyTypes>::new(true, false))
 ///     .build();
 /// ```
 ///

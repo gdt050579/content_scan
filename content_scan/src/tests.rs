@@ -1,8 +1,8 @@
 mod plugin_list {
-    use crate::plugin_list::PluginsList;
+    use crate::analyzer_list::AnalyzerList;
     use crate::ContentType;
 
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Ord, PartialOrd)]
     enum TestType {
         A = 0,
         B = 1,
@@ -34,7 +34,7 @@ mod plugin_list {
         (0xFFFF_0000 | priority as u32, value.to_string())
     }
 
-    fn values_in_range(list: &mut PluginsList<String>, start: usize, end: usize) -> Vec<String> {
+    fn values_in_range(list: &mut AnalyzerList<String>, start: usize, end: usize) -> Vec<String> {
         (start..end)
             .map(|i| unsafe { list.get(i).clone() })
             .collect()
@@ -42,7 +42,7 @@ mod plugin_list {
 
     #[test]
     fn empty_with_types_has_no_ranges() {
-        let list = PluginsList::<String>::new(vec![], TestType::COUNT);
+        let list = AnalyzerList::<String>::new(vec![], TestType::COUNT);
         assert_eq!(list.len(), 0);
         assert_eq!(list.range(TestType::A), None);
         assert_eq!(list.range(TestType::B), None);
@@ -52,7 +52,7 @@ mod plugin_list {
 
     #[test]
     fn empty_with_zero_max_count() {
-        let list = PluginsList::<String>::new(vec![], 0);
+        let list = AnalyzerList::<String>::new(vec![], 0);
         assert_eq!(list.len(), 0);
         assert_eq!(list.range(TestType::A), None);
         assert_eq!(list.generic_range(), None);
@@ -60,7 +60,7 @@ mod plugin_list {
 
     #[test]
     fn single_typed_plugin() {
-        let mut list = PluginsList::new(vec![typed(0, 1, "a")], TestType::COUNT);
+        let mut list = AnalyzerList::new(vec![typed(0, 1, "a")], TestType::COUNT);
         assert_eq!(list.len(), 1);
         assert_eq!(list.range(TestType::A), Some((0, 1)));
         assert_eq!(list.range(TestType::B), None);
@@ -71,7 +71,7 @@ mod plugin_list {
     #[test]
     fn multiple_plugins_same_type_sorted_by_priority() {
         // Insert out of priority order; lower priority value comes first.
-        let mut list = PluginsList::new(
+        let mut list = AnalyzerList::new(
             vec![
                 typed(0, 30, "p30"),
                 typed(0, 10, "p10"),
@@ -86,7 +86,7 @@ mod plugin_list {
 
     #[test]
     fn multiple_types_get_disjoint_ranges() {
-        let mut list = PluginsList::new(
+        let mut list = AnalyzerList::new(
             vec![
                 typed(2, 1, "c1"),
                 typed(0, 1, "a1"),
@@ -108,7 +108,7 @@ mod plugin_list {
 
     #[test]
     fn missing_middle_type_returns_none() {
-        let list = PluginsList::new(
+        let list = AnalyzerList::new(
             vec![typed(0, 0, "a"), typed(2, 0, "c")],
             TestType::COUNT,
         );
@@ -119,7 +119,7 @@ mod plugin_list {
 
     #[test]
     fn only_last_type_populated() {
-        let list = PluginsList::new(vec![typed(2, 5, "c")], TestType::COUNT);
+        let list = AnalyzerList::new(vec![typed(2, 5, "c")], TestType::COUNT);
         assert_eq!(list.range(TestType::A), None);
         assert_eq!(list.range(TestType::B), None);
         assert_eq!(list.range(TestType::C), Some((0, 1)));
@@ -128,7 +128,7 @@ mod plugin_list {
 
     #[test]
     fn generics_only() {
-        let mut list = PluginsList::new(
+        let mut list = AnalyzerList::new(
             vec![generic(2, "g2"), generic(0, "g0"), generic(1, "g1")],
             TestType::COUNT,
         );
@@ -141,7 +141,7 @@ mod plugin_list {
 
     #[test]
     fn generics_only_with_zero_max_count() {
-        let mut list = PluginsList::new(vec![generic(1, "g")], 0);
+        let mut list = AnalyzerList::new(vec![generic(1, "g")], 0);
         assert_eq!(list.len(), 1);
         assert_eq!(list.range(TestType::A), None);
         assert_eq!(list.generic_range(), Some((0, 1)));
@@ -150,7 +150,7 @@ mod plugin_list {
 
     #[test]
     fn typed_then_generics() {
-        let mut list = PluginsList::new(
+        let mut list = AnalyzerList::new(
             vec![
                 generic(1, "g1"),
                 typed(1, 0, "b"),
@@ -172,7 +172,7 @@ mod plugin_list {
 
     #[test]
     fn single_typed_then_single_generic() {
-        let mut list = PluginsList::new(
+        let mut list = AnalyzerList::new(
             vec![typed(0, 0, "a"), generic(0, "g")],
             TestType::COUNT,
         );
@@ -184,7 +184,7 @@ mod plugin_list {
 
     #[test]
     fn range_for_type_beyond_max_count_returns_none() {
-        #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+        #[derive(Clone, Copy, PartialEq, Eq, Debug, Ord, PartialOrd)]
         struct OutOfRange;
         impl ContentType for OutOfRange {
             const COUNT: u16 = 1;
@@ -196,13 +196,13 @@ mod plugin_list {
             }
         }
 
-        let list = PluginsList::new(vec![typed(0, 0, "a")], 1);
+        let list = AnalyzerList::new(vec![typed(0, 0, "a")], 1);
         assert_eq!(list.range(OutOfRange), None);
     }
 
     #[test]
     fn get_allows_mutation() {
-        let mut list = PluginsList::new(vec![typed(0, 0, "old")], TestType::COUNT);
+        let mut list = AnalyzerList::new(vec![typed(0, 0, "old")], TestType::COUNT);
         unsafe {
             *list.get(0) = "new".to_string();
         }
@@ -212,14 +212,14 @@ mod plugin_list {
     #[test]
     #[should_panic(expected = "Invalid type_id")]
     fn invalid_type_id_panics() {
-        let _list = PluginsList::new(vec![typed(3, 0, "bad")], TestType::COUNT);
+        let _list = AnalyzerList::new(vec![typed(3, 0, "bad")], TestType::COUNT);
     }
 
     #[test]
     #[should_panic(expected = "Invalid type_id")]
     fn type_id_equal_to_max_count_panics() {
         // Valid typed ids are 0..max_count; max_count itself is invalid.
-        let _list = PluginsList::new(vec![typed(TestType::COUNT, 0, "bad")], TestType::COUNT);
+        let _list = AnalyzerList::new(vec![typed(TestType::COUNT, 0, "bad")], TestType::COUNT);
     }
 }
 
@@ -585,7 +585,7 @@ mod filter {
 mod identify {
     use crate::*;
 
-    #[derive(Debug, Copy, Clone, Eq, PartialEq, ContentType)]
+    #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, ContentType)]
     #[repr(u16)]
     enum Ty {
         Tagged,
@@ -683,7 +683,7 @@ mod identify {
 mod max_depth {
     use crate::*;
 
-    #[derive(Debug, Copy, Clone, Eq, PartialEq, ContentType)]
+    #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, ContentType)]
     #[repr(u16)]
     enum Ty {
         Nest,
@@ -732,7 +732,7 @@ mod max_depth {
     fn scanned(max_depth: u32) -> u32 {
         let mut scanner = ScannerBuilder::new()
             .max_depth(max_depth)
-            .add_extractor(Ty::Nest, 0, NestExtractor::default())
+            .add_extractor(Ty::Nest, NestExtractor::default())
             .build();
         let mut content = BufferContent::<Ty>::with_content_type(&[0u8; 16], "root", Ty::Nest);
         scanner.scan(&mut content, true).objects_scanned()
@@ -754,107 +754,12 @@ mod max_depth {
     }
 }
 
-mod extract_varmap {
-    use crate::*;
-
-    #[derive(Debug, Copy, Clone, Eq, PartialEq, ContentType)]
-    #[repr(u16)]
-    enum Ty {
-        Blob,
-        Nested,
-    }
-
-    /// Records an embedded-blob offset for a generic extractor.
-    struct ZipHint;
-    impl ContentAnalyzer<Ty> for ZipHint {
-        fn analyze(&mut self, _: &mut dyn Content<Ty>, context: &mut Context) -> NextAction {
-            context.extract().set(var!("zip_start"), 42u64);
-            NextAction::Continue
-        }
-    }
-
-    /// Notes whether the child's extract map still carries the parent's hint.
-    struct ChildSawHint;
-    impl ContentAnalyzer<Ty> for ChildSawHint {
-        fn analyze(&mut self, _: &mut dyn Content<Ty>, context: &mut Context) -> NextAction {
-            let leftover = context.extract().get::<u64>(var!("zip_start"));
-            context.local().set(var!("child_saw_parent_hint"), leftover.is_some());
-            NextAction::Continue
-        }
-    }
-
-    /// Generic extractor that only runs when an analyzer supplied `zip_start`.
-    struct HintedExtractor {
-        pool: ExtractionPool<bool>,
-        entry: Entry,
-    }
-    impl Default for HintedExtractor {
-        fn default() -> Self {
-            Self {
-                pool: ExtractionPool::new(4),
-                entry: Entry::default(),
-            }
-        }
-    }
-    impl ContentExtractor<Ty> for HintedExtractor {
-        fn acquire(&mut self, _: &mut dyn Content<Ty>, extract_context: &mut VarMap) -> Option<ExtractionHandle> {
-            extract_context.get::<u64>(var!("zip_start"))?;
-            Some(self.pool.acquire_slot(false))
-        }
-        fn advance(&mut self, handle: ExtractionHandle, _: &mut dyn Content<Ty>) -> Option<&Entry> {
-            let done = self.pool.get_mut(handle)?;
-            if *done {
-                return None;
-            }
-            *done = true;
-            self.entry.path.set_from_str("embedded.zip");
-            self.entry.size = 1;
-            Some(&self.entry)
-        }
-        fn extract(&mut self, _: ExtractionHandle, _: &mut dyn Content<Ty>) -> Option<Box<dyn Content<Ty>>> {
-            Some(Box::new(BufferContent::<Ty>::with_content_type(b"x", "embedded.zip", Ty::Nested)))
-        }
-        fn release(&mut self, handle: ExtractionHandle) {
-            self.pool.release_slot(handle);
-        }
-    }
-
-    #[test]
-    fn analyzer_hint_enables_generic_extractor() {
-        let mut scanner = ScannerBuilder::new()
-            .add_analyzer(Ty::Blob, 0, ZipHint)
-            .add_analyzer(Ty::Nested, 0, ChildSawHint)
-            .add_generic_extractor(0, HintedExtractor::default())
-            .build();
-        let mut content = BufferContent::<Ty>::with_content_type(b"payload", "blob.bin", Ty::Blob);
-        let res = scanner.scan(&mut content, true);
-        assert_eq!(res.objects_scanned(), 2);
-        let child = res.child(res.root().unwrap()).unwrap();
-        assert_eq!(res.path(child).unwrap(), "embedded.zip");
-        assert_eq!(
-            res.local(child).and_then(|v| v.get::<bool>(var!("child_saw_parent_hint"))),
-            Some(false)
-        );
-    }
-
-    #[test]
-    fn generic_extractor_skips_without_analyzer_hint() {
-        let mut scanner = ScannerBuilder::new()
-            .add_generic_extractor(0, HintedExtractor::default())
-            .build();
-        let mut content = BufferContent::<Ty>::with_content_type(b"payload", "blob.bin", Ty::Blob);
-        let res = scanner.scan(&mut content, true);
-        assert_eq!(res.objects_scanned(), 1);
-        assert!(res.child(res.root().unwrap()).is_none());
-    }
-}
-
 mod folder_symlinks {
     use crate::*;
     use std::fs;
     use std::path::{Path, PathBuf};
 
-    #[derive(Debug, Copy, Clone, Eq, PartialEq, ContentType)]
+    #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, ContentType)]
     #[repr(u16)]
     enum Ty {
         Folder,
@@ -943,7 +848,7 @@ mod folder_symlinks {
 
     fn scanned_names(root: &Path, recursive: bool) -> Vec<String> {
         let mut scanner = ScannerBuilder::new()
-            .add_extractor(Ty::Folder, 0, FolderExtractor::<Ty>::new(recursive, false))
+            .add_extractor(Ty::Folder, FolderExtractor::<Ty>::new(recursive, false))
             .build();
         let mut content = FolderContent::<Ty>::with_content_type(root, Ty::Folder);
         let res = scanner.scan(&mut content, false);

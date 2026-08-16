@@ -27,15 +27,15 @@ extern crate proc_macro;
 ///
 /// The target must be an enum whose variants carry no data and that
 /// is annotated with `#[repr(u16)]`. All the usual derives expected
-/// by the framework (`Debug`, `Copy`, `Clone`, `Eq`, `PartialEq`)
-/// should also be present.
+/// by the framework (`Debug`, `Copy`, `Clone`, `Eq`, `PartialEq`,
+/// `Ord`, `PartialOrd`) should also be present.
 ///
 /// # Example
 ///
 /// ```ignore
 /// use content_scan::ContentType;
 ///
-/// #[derive(Debug, Copy, Clone, Eq, PartialEq, ContentType)]
+/// #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, ContentType)]
 /// #[repr(u16)]
 /// enum MyTypes {
 ///     Text,

@@ -1,6 +1,6 @@
 use content_scan::*;
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, ContentType)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, ContentType)]
 #[repr(u16)]
 enum MyTypes {
     Number,
@@ -99,7 +99,7 @@ impl ContentAnalyzer<MyTypes> for NumericAnalyzer {
 fn main() {
     let mut scanner = ScannerBuilder::new()
         .add_analyzer(MyTypes::Number, 0, NumericAnalyzer {})
-        .add_extractor(MyTypes::Text, 0, NumericExtractor::default())
+        .add_extractor(MyTypes::Text, NumericExtractor::default())
         .add_identifier(MyTypes::Text, TextIdentifier {})
         .build();
     let mut b = BufferContent::<MyTypes>::new(b"TXT   10+20+30=", "test.txt");
