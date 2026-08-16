@@ -1060,6 +1060,303 @@ mod local_varmap {
     }
 }
 
+mod request_extract {
+    use crate::*;
+
+    #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, ContentType)]
+    #[repr(u16)]
+    enum Ty {
+        Root,
+        Slice,
+        SliceKid,
+        Mid,
+        MidKid,
+        Inner,
+        InnerKid,
+        Left,
+        LeftKid,
+        Right,
+        RightKid,
+        Deep,
+        DeepKid,
+        Missing,
+    }
+
+    struct Request(Ty);
+    impl ContentAnalyzer<Ty> for Request {
+        fn analyze(&mut self, _: &mut dyn Content<Ty>, context: &mut Context<Ty>) -> NextAction {
+            context.request_extract(self.0).emit();
+            NextAction::Continue
+        }
+    }
+
+    struct RequestTwo(Ty, Ty);
+    impl ContentAnalyzer<Ty> for RequestTwo {
+        fn analyze(&mut self, _: &mut dyn Content<Ty>, context: &mut Context<Ty>) -> NextAction {
+            context.request_extract(self.0).emit();
+            context.request_extract(self.1).emit();
+            NextAction::Continue
+        }
+    }
+
+    struct RequestSlice;
+    impl ContentAnalyzer<Ty> for RequestSlice {
+        fn analyze(&mut self, _: &mut dyn Content<Ty>, context: &mut Context<Ty>) -> NextAction {
+            context
+                .request_extract(Ty::Slice)
+                .at(2)
+                .len(3)
+                .param(var!("tag"), 9u32)
+                .emit();
+            NextAction::Continue
+        }
+    }
+
+    struct DropWithoutEmit;
+    impl ContentAnalyzer<Ty> for DropWithoutEmit {
+        fn analyze(&mut self, _: &mut dyn Content<Ty>, context: &mut Context<Ty>) -> NextAction {
+            let _ = context.request_extract(Ty::Slice).at(0).param(var!("tag"), 1u32);
+            NextAction::Continue
+        }
+    }
+
+    struct RequestMissing;
+    impl ContentAnalyzer<Ty> for RequestMissing {
+        fn analyze(&mut self, _: &mut dyn Content<Ty>, context: &mut Context<Ty>) -> NextAction {
+            context.request_extract(Ty::Missing).param(var!("tag"), 1u32).emit();
+            NextAction::Continue
+        }
+    }
+
+    struct Tag(u32);
+    impl ContentAnalyzer<Ty> for Tag {
+        fn analyze(&mut self, content: &mut dyn Content<Ty>, context: &mut Context<Ty>) -> NextAction {
+            context.local().set(var!("tag"), self.0);
+            if let Some(b) = content.read(0, 1).and_then(|s| s.first().copied()) {
+                context.local().set(var!("first"), b as u32);
+            }
+            context.local().set(var!("size"), content.size() as u32);
+            NextAction::Continue
+        }
+    }
+
+    struct EmitOnce {
+        pool: ExtractionPool<bool>,
+        entry: Entry,
+        child_type: Ty,
+        child_path: &'static str,
+    }
+    impl EmitOnce {
+        fn new(child_type: Ty, child_path: &'static str) -> Self {
+            Self {
+                pool: ExtractionPool::new(4),
+                entry: Entry::default(),
+                child_type,
+                child_path,
+            }
+        }
+    }
+    impl ContentExtractor<Ty> for EmitOnce {
+        fn acquire(&mut self, _: &mut dyn Content<Ty>, _: &ExtractionContext) -> Option<ExtractionHandle> {
+            Some(self.pool.acquire_slot(false))
+        }
+        fn advance(&mut self, handle: ExtractionHandle, _: &mut dyn Content<Ty>) -> Option<&Entry> {
+            let done = self.pool.get_mut(handle)?;
+            if *done {
+                return None;
+            }
+            *done = true;
+            self.entry.path.set_from_str(self.child_path);
+            self.entry.size = 1;
+            self.entry.skip_from_filtering = false;
+            Some(&self.entry)
+        }
+        fn extract(&mut self, _: ExtractionHandle, _: &mut dyn Content<Ty>) -> Option<Box<dyn Content<Ty>>> {
+            Some(Box::new(BufferContent::<Ty>::with_content_type(
+                b"x",
+                self.child_path,
+                self.child_type,
+            )))
+        }
+        fn release(&mut self, handle: ExtractionHandle) {
+            self.pool.release_slot(handle);
+        }
+    }
+
+    struct SliceSession {
+        offset: u64,
+        length: u64,
+        tag: u32,
+        done: bool,
+    }
+    struct SliceExtractor {
+        pool: ExtractionPool<SliceSession>,
+        entry: Entry,
+    }
+    impl Default for SliceExtractor {
+        fn default() -> Self {
+            Self {
+                pool: ExtractionPool::new(4),
+                entry: Entry::default(),
+            }
+        }
+    }
+    impl ContentExtractor<Ty> for SliceExtractor {
+        fn acquire(&mut self, content: &mut dyn Content<Ty>, ec: &ExtractionContext) -> Option<ExtractionHandle> {
+            let tag = ec.params.get::<u32>(var!("tag")).unwrap_or(0);
+            let length = ec.length.unwrap_or(content.size().saturating_sub(ec.offset));
+            Some(self.pool.acquire_slot(SliceSession {
+                offset: ec.offset,
+                length,
+                tag,
+                done: false,
+            }))
+        }
+        fn advance(&mut self, handle: ExtractionHandle, _: &mut dyn Content<Ty>) -> Option<&Entry> {
+            let session = self.pool.get_mut(handle)?;
+            if session.done {
+                return None;
+            }
+            session.done = true;
+            let path = format!("t{}", session.tag);
+            self.entry.path.set_from_str(&path);
+            self.entry.size = session.length;
+            self.entry.skip_from_filtering = false;
+            Some(&self.entry)
+        }
+        fn extract(&mut self, handle: ExtractionHandle, content: &mut dyn Content<Ty>) -> Option<Box<dyn Content<Ty>>> {
+            let session = self.pool.get(handle)?;
+            let n = session.length.min(u32::MAX as u64) as u32;
+            let buf = content.read(session.offset, n)?.to_vec();
+            let path = format!("t{}", session.tag);
+            Some(Box::new(BufferContent::<Ty>::from_parts(buf, path, Some(Ty::SliceKid))))
+        }
+        fn release(&mut self, handle: ExtractionHandle) {
+            self.pool.release_slot(handle);
+        }
+    }
+
+    fn child_types(res: &ScanResult<Ty>, parent: ScanContentHandle) -> Vec<(String, Option<Ty>)> {
+        let mut out = Vec::new();
+        let mut c = res.child(parent);
+        while let Some(h) = c {
+            out.push((res.path(h).unwrap_or("?").to_string(), res.content_type(h)));
+            c = res.next_sibling(h);
+        }
+        out
+    }
+
+    #[test]
+    fn request_extract_runs_extractors_of_the_requested_type() {
+        let mut scanner = ScannerBuilder::new()
+            .add_analyzer(Ty::Root, 0, Request(Ty::Mid))
+            .add_extractor(Ty::Mid, EmitOnce::new(Ty::MidKid, "mid"))
+            .build();
+        let mut content = BufferContent::<Ty>::with_content_type(b"root", "root", Ty::Root);
+        let res = scanner.scan(&mut content, true);
+        let root = res.root().unwrap();
+        assert_eq!(child_types(&res, root), vec![("mid".into(), Some(Ty::MidKid))]);
+        assert_eq!(res.objects_scanned(), 2);
+    }
+
+    #[test]
+    fn request_extract_passes_offset_length_and_params() {
+        let mut scanner = ScannerBuilder::new()
+            .add_analyzer(Ty::Root, 0, RequestSlice)
+            .add_analyzer(Ty::SliceKid, 0, Tag(1))
+            .add_extractor(Ty::Slice, SliceExtractor::default())
+            .build();
+        let mut content = BufferContent::<Ty>::with_content_type(b"XXABCYY", "root", Ty::Root);
+        let res = scanner.scan(&mut content, true);
+        let root = res.root().unwrap();
+        let kid = res.child(root).unwrap();
+        assert_eq!(res.path(kid), Some("t9"));
+        assert_eq!(res.content_type(kid), Some(Ty::SliceKid));
+        let local = res.local(kid).unwrap();
+        assert_eq!(local.get::<u32>(var!("tag")), Some(1));
+        assert_eq!(local.get::<u32>(var!("size")), Some(3));
+        assert_eq!(local.get::<u32>(var!("first")), Some(b'A' as u32));
+    }
+
+    #[test]
+    fn sibling_requests_survive_a_nested_child_scan() {
+        // Root queues Left then Right. Scanning Left's child (which itself
+        // requests Deep) must not drop the still-pending Right request.
+        let mut scanner = ScannerBuilder::new()
+            .add_analyzer(Ty::Root, 0, RequestTwo(Ty::Left, Ty::Right))
+            .add_analyzer(Ty::LeftKid, 0, Request(Ty::Deep))
+            .add_extractor(Ty::Left, EmitOnce::new(Ty::LeftKid, "left"))
+            .add_extractor(Ty::Right, EmitOnce::new(Ty::RightKid, "right"))
+            .add_extractor(Ty::Deep, EmitOnce::new(Ty::DeepKid, "deep"))
+            .build();
+        let mut content = BufferContent::<Ty>::with_content_type(b"root", "root", Ty::Root);
+        let res = scanner.scan(&mut content, true);
+        let root = res.root().unwrap();
+        assert_eq!(
+            child_types(&res, root),
+            vec![("left".into(), Some(Ty::LeftKid)), ("right".into(), Some(Ty::RightKid))]
+        );
+        let left = res.child(root).unwrap();
+        assert_eq!(child_types(&res, left), vec![("deep".into(), Some(Ty::DeepKid))]);
+        assert_eq!(res.objects_scanned(), 4);
+    }
+
+    #[test]
+    fn three_level_request_extract_tree() {
+        // Root --request Mid--> MidKid --request Inner--> InnerKid
+        let mut scanner = ScannerBuilder::new()
+            .add_analyzer(Ty::Root, 0, Request(Ty::Mid))
+            .add_analyzer(Ty::MidKid, 0, Request(Ty::Inner))
+            .add_analyzer(Ty::InnerKid, 0, Tag(3))
+            .add_extractor(Ty::Mid, EmitOnce::new(Ty::MidKid, "mid"))
+            .add_extractor(Ty::Inner, EmitOnce::new(Ty::InnerKid, "inner"))
+            .build();
+        let mut content = BufferContent::<Ty>::with_content_type(b"root", "root", Ty::Root);
+        let res = scanner.scan(&mut content, true);
+
+        let root = res.root().unwrap();
+        assert_eq!(res.content_type(root), Some(Ty::Root));
+        assert_eq!(res.path(root), Some("root"));
+        assert_eq!(child_types(&res, root), vec![("mid".into(), Some(Ty::MidKid))]);
+
+        let mid = res.child(root).unwrap();
+        assert_eq!(res.parent(mid).map(|h| h.index), Some(root.index));
+        assert_eq!(child_types(&res, mid), vec![("inner".into(), Some(Ty::InnerKid))]);
+
+        let inner = res.child(mid).unwrap();
+        assert_eq!(res.parent(inner).map(|h| h.index), Some(mid.index));
+        assert!(res.child(inner).is_none());
+        assert!(res.next_sibling(inner).is_none());
+        assert_eq!(res.local(inner).and_then(|vm| vm.get::<u32>(var!("tag"))), Some(3));
+        assert_eq!(res.objects_scanned(), 3);
+    }
+
+    #[test]
+    fn drop_without_emit_does_not_queue_extraction() {
+        let mut scanner = ScannerBuilder::new()
+            .add_analyzer(Ty::Root, 0, DropWithoutEmit)
+            .add_extractor(Ty::Slice, SliceExtractor::default())
+            .build();
+        let mut content = BufferContent::<Ty>::with_content_type(b"root", "root", Ty::Root);
+        let res = scanner.scan(&mut content, true);
+        let root = res.root().unwrap();
+        assert!(res.child(root).is_none());
+        assert_eq!(res.objects_scanned(), 1);
+    }
+
+    #[test]
+    fn request_without_a_matching_extractor_is_a_no_op() {
+        let mut scanner = ScannerBuilder::new()
+            .add_analyzer(Ty::Root, 0, RequestMissing)
+            .build();
+        let mut content = BufferContent::<Ty>::with_content_type(b"root", "root", Ty::Root);
+        let res = scanner.scan(&mut content, true);
+        let root = res.root().unwrap();
+        assert!(res.child(root).is_none());
+        assert_eq!(res.objects_scanned(), 1);
+    }
+}
+
 mod folder_symlinks {
     use crate::*;
     use std::fs;
