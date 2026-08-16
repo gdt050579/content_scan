@@ -170,7 +170,7 @@ impl<T: ContentType> Scanner<T> {
         if (end <= start) || (end > self.extractors.len()) {
             return NextAction::Continue;
         }
-        let (mut ec, param_handle) = if let Some(req_index) = req_index {
+        let (ec, param_handle) = if let Some(req_index) = req_index {
             let request = &self.context.extraction_requests[req_index as usize];
             let params = if let Some(handle) = request.params_handle {
                 if self.context.varmap_pool.get(handle).is_some() {
@@ -200,7 +200,7 @@ impl<T: ContentType> Scanner<T> {
             )
         };
         for i in start..end {
-            let result = self.extract_content(content, i, depth, parent_index, &mut ec, param_handle);
+            let result = self.extract_content(content, i, depth, parent_index, &ec, param_handle);
             match result {
                 NextAction::Continue => continue,
                 NextAction::Exit => return NextAction::Exit,
@@ -209,13 +209,13 @@ impl<T: ContentType> Scanner<T> {
         }
         NextAction::Continue
     }
-    fn extract_content<'a>(
-        &'a mut self,
+    fn extract_content(
+        &mut self,
         content: &mut dyn Content<T>,
         index: usize,
         depth: u32,
         parent_index: u32,
-        ec: &mut ExtractionContext<'a>,
+        ec: &ExtractionContext,
         ph: Option<varmap::PoolHandle>,
     ) -> NextAction {
         if depth >= self.max_depth {
@@ -226,12 +226,18 @@ impl<T: ContentType> Scanner<T> {
             return NextAction::Continue;
         }
         let mut extractor = unsafe { self.extractors.get(index) };
-        let original_params = ec.params;
-        if let Some(handle) = ph {
-            ec.params = self.context.varmap_pool.get(handle).unwrap();
-        }
-        if let Some(handle) = extractor.acquire(content, ec) {
-            ec.params = original_params;
+        let acquired = {
+            let params = ph
+                .and_then(|h| self.context.varmap_pool.get(h))
+                .unwrap_or(ec.params);
+            let acquire_ec = ExtractionContext {
+                offset: ec.offset,
+                length: ec.length,
+                params,
+            };
+            extractor.acquire(content, &acquire_ec)
+        };
+        if let Some(handle) = acquired {
             while let Some(entry) = unsafe { self.extractors.get(index).advance(handle, content) } {
                 if !entry.skip_from_filtering {
                     if let Some(filter) = self.filter.as_mut() {
