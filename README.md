@@ -28,6 +28,7 @@ Typical use cases:
     - [Summing numbers extracted from text](#summing-numbers-extracted-from-text)
     - [Reading PNG / BMP / JPEG dimensions](#reading-png--bmp--jpeg-dimensions)
     - [Finding and decoding Base64](#finding-and-decoding-base64)
+    - [Computing MD5 hashes](#computing-md5-hashes)
   - [API overview](#api-overview)
     - [`ContentType`](#contenttype)
     - [`Content`](#content)
@@ -57,7 +58,7 @@ This repository is a Cargo workspace with three members:
 | ------------------------- | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
 | `content_scan`            | [`content_scan/`](content_scan)                       | The main library: scanner, traits, matchers, filters.                                          |
 | `content_scan_proc_macro` | [`content-scan-proc-macro/`](content-scan-proc-macro) | Companion proc-macro crate exposing `#[derive(ContentType)]`. Re-exported from `content_scan`. |
-| `examples`                | [`examples/`](examples)                               | Runnable examples (`sum`, `vowals`, `image_size`, `base64_find`).                                |
+| `examples`                | [`examples/`](examples)                               | Runnable examples (`sum`, `vowals`, `image_size`, `base64_find`, `md5`).                          |
 
 You normally only depend on `content_scan` — the proc-macro is re-exported for you.
 
@@ -137,6 +138,7 @@ cargo run --example image_size -- path/to/image.png
 cargo run --example image_size -- path/to/folder
 cargo run --example base64_find
 cargo run --example base64_find -- path/to/file_or_folder
+cargo run --example md5 -- path/to/file_or_folder
 ```
 
 ### Counting vowels
@@ -320,6 +322,36 @@ impl ContentAnalyzer<MyTypes> for Base64DecodedAnalyzer {
 ```
 
 The extractor is registered for `Base64`, not for `Text`. It only runs because the finder queued that type; the parent file itself is never identified as `Base64`.
+
+### Computing MD5 hashes
+
+[`md5`](examples/md5/main.rs) hashes every file with a **generic** analyzer. `ComputeHashAnalyzer` is registered with `add_generic_analyzer`, so it runs on every scanned object regardless of type. A recursive `FolderExtractor` walks the tree when the argument is a directory; folders themselves are skipped (they have no bytes to hash).
+
+```bash
+cargo run --example md5 -- README.md
+cargo run --example md5 -- ./content_scan/src
+```
+
+```rust
+struct ComputeHashAnalyzer;
+impl ContentAnalyzer<MyTypes> for ComputeHashAnalyzer {
+    fn analyze(&mut self, content: &mut dyn Content<MyTypes>, _: &mut Context<MyTypes>) -> NextAction {
+        if content.content_type() == Some(MyTypes::Folder) {
+            return NextAction::Continue;
+        }
+        // read the file in chunks, feed Md5, print "{hex}  {path}"
+        NextAction::Continue
+    }
+}
+
+fn main() {
+    let mut scanner = ScannerBuilder::new()
+        .add_generic_analyzer(0, ComputeHashAnalyzer {})
+        .add_extractor(MyTypes::Folder, FolderExtractor::<MyTypes>::new(true, false))
+        .build();
+    // FileContent for a file, FolderContent + Folder extractor for a directory
+}
+```
 
 ---
 

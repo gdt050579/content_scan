@@ -91,8 +91,9 @@ pub trait Content<T: ContentType> {
     ///   content.
     /// - Returns `None` if `offset` is past the end or the underlying
     ///   source cannot fulfill the request.
-    /// - May return fewer bytes than requested when the request runs
-    ///   past the end of the content.
+    /// - May return fewer bytes than requested at EOF **or** at an
+    ///   implementation boundary (for example one cache page). A short
+    ///   slice is not end of file; advance by its length and read again.
     ///
     /// The returned slice borrows from `self`, so the read cursor is
     /// implicit: successive calls with different `offset` values do not

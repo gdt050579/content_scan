@@ -6,6 +6,7 @@ edition = "2021"
 
 [dev-dependencies]
 content_scan = { path = "../content_scan" }
+md-5 = "0.10"
 
 
 [[example]]
@@ -23,3 +24,7 @@ path = "image_size/main.rs"
 [[example]]
 name = "base64_find"
 path = "base64_find/main.rs"
+
+[[example]]
+name = "md5"
+path = "md5/main.rs"

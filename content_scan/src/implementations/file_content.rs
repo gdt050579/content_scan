@@ -127,7 +127,10 @@ impl<T: ContentType> Content<T> for FileContent<T> {
             self.open();
         }
         match &mut self.status {
-            FileContentStatus::Opened(file) => file.read(offset, count as usize).ok(),
+            FileContentStatus::Opened(file) => {
+                let n = (count as usize).min(file.max_count());
+                file.read(offset, n).ok()
+            }
             FileContentStatus::NotOpened | FileContentStatus::Error => None,
         }
     }
