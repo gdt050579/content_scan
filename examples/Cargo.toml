@@ -28,3 +28,7 @@ path = "base64_find/main.rs"
 [[example]]
 name = "md5"
 path = "md5/main.rs"
+
+[[example]]
+name = "find_zip"
+path = "find_zip/main.rs"

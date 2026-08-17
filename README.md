@@ -29,6 +29,7 @@ Typical use cases:
     - [Reading PNG / BMP / JPEG dimensions](#reading-png--bmp--jpeg-dimensions)
     - [Finding and decoding Base64](#finding-and-decoding-base64)
     - [Computing MD5 hashes](#computing-md5-hashes)
+    - [Listing ZIP files](#listing-zip-files)
   - [API overview](#api-overview)
     - [`ContentType`](#contenttype)
     - [`Content`](#content)
@@ -58,7 +59,7 @@ This repository is a Cargo workspace with three members:
 | ------------------------- | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
 | `content_scan`            | [`content_scan/`](content_scan)                       | The main library: scanner, traits, matchers, filters.                                          |
 | `content_scan_proc_macro` | [`content-scan-proc-macro/`](content-scan-proc-macro) | Companion proc-macro crate exposing `#[derive(ContentType)]`. Re-exported from `content_scan`. |
-| `examples`                | [`examples/`](examples)                               | Runnable examples (`sum`, `vowals`, `image_size`, `base64_find`, `md5`).                          |
+| `examples`                | [`examples/`](examples)                               | Runnable examples (`sum`, `vowals`, `image_size`, `base64_find`, `md5`, `find_zip`).              |
 
 You normally only depend on `content_scan` — the proc-macro is re-exported for you.
 
@@ -139,6 +140,7 @@ cargo run --example image_size -- path/to/folder
 cargo run --example base64_find
 cargo run --example base64_find -- path/to/file_or_folder
 cargo run --example md5 -- path/to/file_or_folder
+cargo run --example find_zip -- path/to/folder
 ```
 
 ### Counting vowels
@@ -351,6 +353,22 @@ fn main() {
         .build();
     // FileContent for a file, FolderContent + Folder extractor for a directory
 }
+```
+
+### Listing ZIP files
+
+[`find_zip`](examples/find_zip/main.rs) walks a directory with `FolderExtractor` and uses the built-in [`ZipIdentifier`](content_scan/src/implementations/zip.rs) (local-file magic `PK\x03\x04`, then an EOCD check in `validate`) to decide which files are ZIPs. A type-specific analyzer prints each match. Identification is by content, not by `.zip` extension.
+
+```bash
+cargo run --example find_zip -- ./archives
+```
+
+```rust
+let mut scanner = ScannerBuilder::new()
+    .add_identifier(MyTypes::Zip, ZipIdentifier::new())
+    .add_analyzer(MyTypes::Zip, 0, ZipPrinter {})
+    .add_extractor(MyTypes::Folder, FolderExtractor::<MyTypes>::new(true, false))
+    .build();
 ```
 
 ---
