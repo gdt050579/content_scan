@@ -121,3 +121,24 @@ impl ContentType for bool {
         }
     }
 }
+
+#[derive(Debug, Copy, Clone)]
+pub(crate) struct ContentPtr<T: ContentType> {
+    content: *mut dyn Content<T>,
+}
+impl<T: ContentType> ContentPtr<T> {
+    #[inline(always)]
+    pub(crate) fn new(content: &mut dyn Content<T>) -> Self {
+        Self {
+            content: unsafe { std::mem::transmute::<*mut dyn Content<T>, *mut (dyn Content<T> + 'static)>(content as *mut _) },
+        }
+    }
+    #[inline(always)]
+    pub(crate) fn as_mut(&mut self) -> &mut dyn Content<T> {
+        unsafe { &mut *self.content }
+    }
+    #[inline(always)]
+    pub(crate) fn as_ref(&self) -> &dyn Content<T> {
+        unsafe { &*self.content }
+    }
+}

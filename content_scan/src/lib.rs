@@ -115,6 +115,7 @@ use extraction_context::ExtractionRequest;
 use identifier_set::*;
 use matcher::*;
 use object::Object;
+use content::ContentPtr;
 
 pub use content_path::*;
 pub use content_scan_proc_macro::ContentType;

@@ -126,58 +126,19 @@ pub trait ContentAnalyzer<T: ContentType> {
 /// was identified as `T`, and also when an analyzer requested `T`
 /// via [`Context::request_extract`]. Register extractors with
 /// [`ScannerBuilder::add_extractor`](crate::ScannerBuilder::add_extractor).
-pub trait ContentExtractor<T: ContentType> {
-    /// Begins an extraction session over `content`.
-    ///
-    /// `extract_context` describes the region of `content` this session
-    /// should look at: [`ExtractionContext::offset`], an optional
-    /// [`ExtractionContext::length`], and
-    /// [`ExtractionContext::params`] (analyzer-supplied extras, or an
-    /// empty map). Copy anything you need into the session state keyed
-    /// by the returned handle; the context is only valid for this
-    /// call.
-    ///
-    /// When the scanner invokes this extractor because the parent was
-    /// identified as this type, the context covers the whole object
-    /// (`offset = 0`, `length = Some(content.size())`, empty params).
-    /// When an analyzer queued the pass with
-    /// [`Context::request_extract`](crate::Context::request_extract),
-    /// the context carries that request's offset, length, and params.
-    ///
-    /// The handle itself should come from an
-    /// [`ExtractionPool`](crate::ExtractionPool).
-    ///
-    /// Return `Some(handle)` to proceed with
-    /// [`advance`](Self::advance) / [`extract`](Self::extract), or
-    /// `None` to skip this extractor entirely for the current parent.
-    /// Every successful acquire is paired with a later
-    /// [`release`](Self::release) on the same handle.
+pub trait ContentExtractor_old<T: ContentType> {
     fn acquire(&mut self, content: &mut dyn Content<T>, extract_context: &ExtractionContext) -> Option<ExtractionHandle>;
-
-    /// Advances the session identified by `handle` to the next entry.
-    ///
-    /// Returns `Some(&Entry)` describing the upcoming entry (path and
-    /// size), or `None` when there are no more entries to extract.
-    /// The scanner may consult the entry's path and size against the
-    /// active [`Filter`](crate::Filter) and skip the following
-    /// [`extract`](Self::extract) call accordingly.
     fn advance(&mut self, handle: ExtractionHandle, content: &mut dyn Content<T>) -> Option<&Entry>;
-
-    /// Materializes the [`Content`] for the entry most recently
-    /// announced by [`advance`](Self::advance) on `handle`.
-    ///
-    /// Returning `None` skips the current entry without aborting the
-    /// enumeration (the scanner will still call `advance` again to
-    /// look for the following entry).
     fn extract(&mut self, handle: ExtractionHandle, content: &mut dyn Content<T>) -> Option<Box<dyn Content<T>>>;
-
-    /// Ends the extraction session identified by `handle`.
-    ///
-    /// Called exactly once after a successful
-    /// [`acquire`](Self::acquire), including when the scan stops
-    /// early. Use it to drop per-session resources (open files,
-    /// cursors, pooled buffers, …) keyed by the handle.
     fn release(&mut self, handle: ExtractionHandle);
+}
+
+pub trait ContentExtractor<T: ContentType> {
+    fn create_session(&mut self, content: &mut dyn Content<T>, extract_context: &ExtractionContext) -> Option<Box<dyn ExtractionSession<T>>>;
+}
+pub trait ExtractionSession<T: ContentType> {
+    fn advance(&mut self) -> Option<&Entry>;
+    fn extract(&mut self) -> Option<Box<dyn Content<T>>>;
 }
 
 /// Fast, declarative way to identify a content type without running

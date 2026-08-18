@@ -6,7 +6,7 @@ use crate::utils;
 use crate::ExtractionContext;
 use crate::IdentifierSet;
 use crate::Object;
-use crate::{Context, ScanResult};
+use crate::{ContentPtr, Context, ScanResult};
 use std::collections::HashSet;
 
 /// The engine that drives a scan.
@@ -64,10 +64,11 @@ impl<T: ContentType> Scanner<T> {
                 }
             }
         }
-        self.inner_scan(content, 1, Object::INVALID_INDEX);
+        let cptr = ContentPtr::new(content);
+        self.inner_scan(cptr, 1, Object::INVALID_INDEX);
         ScanResult::new(&self.context)
     }
-    fn inner_scan(&mut self, content: &mut dyn Content<T>, depth: u32, parent_index: u32) -> NextAction {
+    fn inner_scan(&mut self, mut content: ContentPtr<T>, depth: u32, parent_index: u32) -> NextAction {
         self.context.local_varmap_handle = None; // so that next time someone ask for a local varmap, it will get one from the context varmap_pool
         self.context.current_object_index = None;
         let start_req_count = self.context.extraction_requests_stack.len();
@@ -83,10 +84,10 @@ impl<T: ContentType> Scanner<T> {
             NextAction::Exit => NextAction::Exit,
         }
     }
-    fn create_object(&mut self, content: &mut dyn Content<T>, parent_index: u32) -> (Option<T>, u32) {
+    fn create_object(&mut self, mut content: ContentPtr<T>, parent_index: u32) -> (Option<T>, u32) {
         let ty = self.retrieve_content_type(content);
 
-        let path_index = self.context.path_arena.alloc(content.path().as_printable_string().as_bytes());
+        let path_index = self.context.path_arena.alloc(content.as_ref().path().as_printable_string().as_bytes());
         let obj = Object {
             path: path_index,
             parent_index,
@@ -119,7 +120,7 @@ impl<T: ContentType> Scanner<T> {
         }
         (ty, my_index)
     }
-    fn run_analyzers(&mut self, content: &mut dyn Content<T>, content_type: Option<T>) -> NextAction {
+    fn run_analyzers(&mut self, mut content: ContentPtr<T>, content_type: Option<T>) -> NextAction {
         if let Some(ty) = content_type {
             if let Some((start, end)) = self.analyzers.range(ty) {
                 let res = self.scan_range(content, start, end);
@@ -139,7 +140,7 @@ impl<T: ContentType> Scanner<T> {
     }
     fn run_extractors(
         &mut self,
-        content: &mut dyn Content<T>,
+        mut content: ContentPtr<T>,
         content_type: Option<T>,
         depth: u32,
         my_index: u32,
@@ -182,12 +183,12 @@ impl<T: ContentType> Scanner<T> {
         // restore the stack
         self.context.extraction_requests_stack.truncate(start_req_index);
     }
-    fn scan_range(&mut self, content: &mut dyn Content<T>, start: usize, end: usize) -> NextAction {
+    fn scan_range(&mut self, mut content: ContentPtr<T>, start: usize, end: usize) -> NextAction {
         if (end <= start) || (end > self.analyzers.len()) {
             return NextAction::Continue;
         }
         for i in start..end {
-            let result = unsafe { self.analyzers.get(i).analyze(content, &mut self.context) };
+            let result = unsafe { self.analyzers.get(i).analyze(content.as_mut(), &mut self.context) };
             match result {
                 NextAction::Continue => continue,
                 NextAction::Exit => return NextAction::Exit,
@@ -198,7 +199,7 @@ impl<T: ContentType> Scanner<T> {
     }
     fn extract_range(
         &mut self,
-        content: &mut dyn Content<T>,
+        mut content: ContentPtr<T>,
         start: usize,
         end: usize,
         depth: u32,
@@ -231,7 +232,7 @@ impl<T: ContentType> Scanner<T> {
             (
                 ExtractionContext {
                     offset: 0,
-                    length: Some(content.size()),
+                    length: Some(content.as_ref().size()),
                     params: &Self::EMPTY_VAR_MAP,
                 },
                 None,
@@ -261,7 +262,7 @@ impl<T: ContentType> Scanner<T> {
     }
     fn extract_content(
         &mut self,
-        content: &mut dyn Content<T>,
+        mut content: ContentPtr<T>,
         index: usize,
         depth: u32,
         parent_index: u32,
@@ -276,17 +277,17 @@ impl<T: ContentType> Scanner<T> {
             return NextAction::Continue;
         }
         let mut extractor = unsafe { self.extractors.get(index) };
-        let acquired = {
+        let session = {
             let params = ph.and_then(|h| self.context.varmap_pool.get(h)).unwrap_or(ec.params);
             let acquire_ec = ExtractionContext {
                 offset: ec.offset,
                 length: ec.length,
                 params,
             };
-            extractor.acquire(content, &acquire_ec)
+            extractor.create_session(content, &acquire_ec)
         };
-        if let Some(handle) = acquired {
-            while let Some(entry) = unsafe { self.extractors.get(index).advance(handle, content) } {
+        if let Some(session) = session {
+            while let Some(entry) = session.advance() {
                 if !entry.skip_from_filtering {
                     if let Some(filter) = self.filter.as_mut() {
                         if !filter.should_process(&entry.path, entry.size) {
@@ -295,34 +296,24 @@ impl<T: ContentType> Scanner<T> {
                         }
                     }
                 }
-                extractor = unsafe { self.extractors.get(index) };
-                if let Some(mut extracted_content) = extractor.extract(handle, content) {
-                    let result = self.inner_scan(&mut *extracted_content, depth + 1, parent_index);
+                if let Some(mut extracted_content) = session.extract() {
+                    let c_ptr = ContentPtr::new(extracted_content.as_mut());
+                    let result = self.inner_scan(c_ptr, depth + 1, parent_index);
                     match result {
                         NextAction::Continue => continue,
-                        NextAction::Exit => {
-                            extractor = unsafe { self.extractors.get(index) };
-                            extractor.release(handle);
-                            return NextAction::Exit;
-                        }
-                        NextAction::Skip => {
-                            extractor = unsafe { self.extractors.get(index) };
-                            extractor.release(handle);
-                            return NextAction::Continue;
-                        }
+                        NextAction::Exit => return NextAction::Exit,
+                        NextAction::Skip => return NextAction::Continue,
                     }
                 }
             }
-            extractor = unsafe { self.extractors.get(index) };
-            extractor.release(handle);
         }
         NextAction::Continue
     }
-    fn retrieve_content_type(&mut self, content: &mut dyn Content<T>) -> Option<T> {
-        if let Some(ty) = content.content_type() {
+    fn retrieve_content_type(&mut self, mut content: ContentPtr<T>) -> Option<T> {
+        if let Some(ty) = content.as_ref().content_type() {
             return Some(ty);
         }
-        let p = content.path().as_bytes();
+        let p = content.as_ref().path().as_bytes();
         // type from file name
         let file_name = utils::get_file_name(p);
         let type_from_file_name = self.identifiers.type_from_file_name(file_name);
@@ -330,7 +321,7 @@ impl<T: ContentType> Scanner<T> {
         let type_from_extension = self.identifiers.type_from_extension(extension);
         // type from magic
         let type_from_magic = {
-            if let Some(buf) = content.read(0, 16) {
+            if let Some(buf) = content.as_mut().read(0, 16) {
                 self.identifiers.type_from_magic(buf)
             } else {
                 None
@@ -359,10 +350,10 @@ impl<T: ContentType> Scanner<T> {
         None
     }
     #[inline(always)]
-    fn validate_content_type(&self, content: &mut dyn Content<T>, content_type: T) -> bool {
+    fn validate_content_type(&self, mut content: ContentPtr<T>, content_type: T) -> bool {
         self.identifiers
             .get(content_type)
-            .map(|identifier| identifier.validate(content))
+            .map(|identifier| identifier.validate(content.as_mut()))
             .unwrap_or(false)
     }
 }
