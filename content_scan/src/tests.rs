@@ -836,49 +836,48 @@ mod max_depth {
     }
 
     /// Emits one smaller child so scans form a single chain of nested objects.
-    struct NestExtractor {
-        pool: ExtractionPool<bool>,
+    struct NestExtractor;
+
+    struct NestSession {
+        content: OwnedContentPtr<Ty>,
         entry: Entry,
+        done: bool,
     }
-    impl Default for NestExtractor {
-        fn default() -> Self {
-            Self {
-                pool: ExtractionPool::new(4),
-                entry: Entry::default(),
-            }
-        }
-    }
+
     impl ContentExtractor<Ty> for NestExtractor {
-        fn acquire(&mut self, content: &mut dyn Content<Ty>, _: &ExtractionContext) -> Option<ExtractionHandle> {
+        fn create_session(&mut self, content: OwnedContentPtr<Ty>, _: &ExtractionContext) -> Option<Box<dyn ExtractionSession<Ty>>> {
             if content.size() == 0 {
                 return None;
             }
-            Some(self.pool.acquire_slot(false))
+            Some(Box::new(NestSession {
+                content,
+                entry: Entry::default(),
+                done: false,
+            }))
         }
-        fn advance(&mut self, handle: ExtractionHandle, content: &mut dyn Content<Ty>) -> Option<&Entry> {
-            let done = self.pool.get_mut(handle)?;
-            if *done {
+    }
+
+    impl ExtractionSession<Ty> for NestSession {
+        fn advance(&mut self) -> Option<&Entry> {
+            if self.done {
                 return None;
             }
-            *done = true;
+            self.done = true;
             self.entry.path.set_from_str("child");
-            self.entry.size = content.size().saturating_sub(1);
+            self.entry.size = self.content.size().saturating_sub(1);
             self.entry.skip_from_filtering = false;
             Some(&self.entry)
         }
-        fn extract(&mut self, _: ExtractionHandle, content: &mut dyn Content<Ty>) -> Option<Box<dyn Content<Ty>>> {
-            let n = content.size().saturating_sub(1) as usize;
+        fn extract(&mut self) -> Option<Box<dyn Content<Ty>>> {
+            let n = self.content.size().saturating_sub(1) as usize;
             Some(Box::new(BufferContent::<Ty>::with_content_type(&vec![0u8; n], "child", Ty::Nest)))
-        }
-        fn release(&mut self, handle: ExtractionHandle) {
-            self.pool.release_slot(handle);
         }
     }
 
     fn scanned(max_depth: u32) -> u32 {
         let mut scanner = ScannerBuilder::new()
             .max_depth(max_depth)
-            .add_extractor(Ty::Nest, NestExtractor::default())
+            .add_extractor(Ty::Nest, NestExtractor)
             .build();
         let mut content = BufferContent::<Ty>::with_content_type(&[0u8; 16], "root", Ty::Nest);
         scanner.scan(&mut content, true).objects_scanned()
@@ -926,38 +925,35 @@ mod local_varmap {
         }
     }
 
-    struct OneChildExtractor {
-        pool: ExtractionPool<bool>,
+    struct OneChildExtractor;
+
+    struct OneChildSession {
         entry: Entry,
+        done: bool,
     }
-    impl Default for OneChildExtractor {
-        fn default() -> Self {
-            Self {
-                pool: ExtractionPool::new(2),
-                entry: Entry::default(),
-            }
-        }
-    }
+
     impl ContentExtractor<Ty> for OneChildExtractor {
-        fn acquire(&mut self, _: &mut dyn Content<Ty>, _: &ExtractionContext) -> Option<ExtractionHandle> {
-            Some(self.pool.acquire_slot(false))
+        fn create_session(&mut self, _: OwnedContentPtr<Ty>, _: &ExtractionContext) -> Option<Box<dyn ExtractionSession<Ty>>> {
+            Some(Box::new(OneChildSession {
+                entry: Entry::default(),
+                done: false,
+            }))
         }
-        fn advance(&mut self, handle: ExtractionHandle, _: &mut dyn Content<Ty>) -> Option<&Entry> {
-            let done = self.pool.get_mut(handle)?;
-            if *done {
+    }
+
+    impl ExtractionSession<Ty> for OneChildSession {
+        fn advance(&mut self) -> Option<&Entry> {
+            if self.done {
                 return None;
             }
-            *done = true;
+            self.done = true;
             self.entry.path.set_from_str("child");
             self.entry.size = 1;
             self.entry.skip_from_filtering = false;
             Some(&self.entry)
         }
-        fn extract(&mut self, _: ExtractionHandle, _: &mut dyn Content<Ty>) -> Option<Box<dyn Content<Ty>>> {
+        fn extract(&mut self) -> Option<Box<dyn Content<Ty>>> {
             Some(Box::new(BufferContent::<Ty>::with_content_type(b"x", "child", Ty::Leaf)))
-        }
-        fn release(&mut self, handle: ExtractionHandle) {
-            self.pool.release_slot(handle);
         }
     }
 
@@ -988,7 +984,7 @@ mod local_varmap {
         let mut scanner = ScannerBuilder::new()
             .add_analyzer(Ty::Nest, 0, TagAnalyzer(1))
             .add_analyzer(Ty::Leaf, 0, TagAnalyzer(2))
-            .add_extractor(Ty::Nest, OneChildExtractor::default())
+            .add_extractor(Ty::Nest, OneChildExtractor)
             .build();
         let mut content = BufferContent::<Ty>::with_content_type(b"x", "root", Ty::Nest);
         let res = scanner.scan(&mut content, true);
@@ -1085,94 +1081,92 @@ mod request_extract {
     }
 
     struct EmitOnce {
-        pool: ExtractionPool<bool>,
-        entry: Entry,
         child_type: Ty,
         child_path: &'static str,
     }
     impl EmitOnce {
         fn new(child_type: Ty, child_path: &'static str) -> Self {
-            Self {
-                pool: ExtractionPool::new(4),
-                entry: Entry::default(),
-                child_type,
-                child_path,
-            }
+            Self { child_type, child_path }
         }
     }
+
+    struct EmitOnceSession {
+        child_type: Ty,
+        child_path: &'static str,
+        entry: Entry,
+        done: bool,
+    }
+
     impl ContentExtractor<Ty> for EmitOnce {
-        fn acquire(&mut self, _: &mut dyn Content<Ty>, _: &ExtractionContext) -> Option<ExtractionHandle> {
-            Some(self.pool.acquire_slot(false))
+        fn create_session(&mut self, _: OwnedContentPtr<Ty>, _: &ExtractionContext) -> Option<Box<dyn ExtractionSession<Ty>>> {
+            Some(Box::new(EmitOnceSession {
+                child_type: self.child_type,
+                child_path: self.child_path,
+                entry: Entry::default(),
+                done: false,
+            }))
         }
-        fn advance(&mut self, handle: ExtractionHandle, _: &mut dyn Content<Ty>) -> Option<&Entry> {
-            let done = self.pool.get_mut(handle)?;
-            if *done {
+    }
+
+    impl ExtractionSession<Ty> for EmitOnceSession {
+        fn advance(&mut self) -> Option<&Entry> {
+            if self.done {
                 return None;
             }
-            *done = true;
+            self.done = true;
             self.entry.path.set_from_str(self.child_path);
             self.entry.size = 1;
             self.entry.skip_from_filtering = false;
             Some(&self.entry)
         }
-        fn extract(&mut self, _: ExtractionHandle, _: &mut dyn Content<Ty>) -> Option<Box<dyn Content<Ty>>> {
+        fn extract(&mut self) -> Option<Box<dyn Content<Ty>>> {
             Some(Box::new(BufferContent::<Ty>::with_content_type(b"x", self.child_path, self.child_type)))
-        }
-        fn release(&mut self, handle: ExtractionHandle) {
-            self.pool.release_slot(handle);
         }
     }
 
+    struct SliceExtractor;
+
     struct SliceSession {
+        content: OwnedContentPtr<Ty>,
         offset: u64,
         length: u64,
         tag: u32,
         done: bool,
-    }
-    struct SliceExtractor {
-        pool: ExtractionPool<SliceSession>,
         entry: Entry,
     }
-    impl Default for SliceExtractor {
-        fn default() -> Self {
-            Self {
-                pool: ExtractionPool::new(4),
-                entry: Entry::default(),
-            }
-        }
-    }
+
     impl ContentExtractor<Ty> for SliceExtractor {
-        fn acquire(&mut self, content: &mut dyn Content<Ty>, ec: &ExtractionContext) -> Option<ExtractionHandle> {
-            let tag = ec.params.get::<u32>(var!("tag")).unwrap_or(0);
+        fn create_session(&mut self, content: OwnedContentPtr<Ty>, ec: &ExtractionContext) -> Option<Box<dyn ExtractionSession<Ty>>> {
+            let tag = ec.params.and_then(|p| p.get::<u32>(var!("tag"))).unwrap_or(0);
             let length = ec.length.unwrap_or(content.size().saturating_sub(ec.offset));
-            Some(self.pool.acquire_slot(SliceSession {
+            Some(Box::new(SliceSession {
+                content,
                 offset: ec.offset,
                 length,
                 tag,
                 done: false,
+                entry: Entry::default(),
             }))
         }
-        fn advance(&mut self, handle: ExtractionHandle, _: &mut dyn Content<Ty>) -> Option<&Entry> {
-            let session = self.pool.get_mut(handle)?;
-            if session.done {
+    }
+
+    impl ExtractionSession<Ty> for SliceSession {
+        fn advance(&mut self) -> Option<&Entry> {
+            if self.done {
                 return None;
             }
-            session.done = true;
-            let path = format!("t{}", session.tag);
+            self.done = true;
+            let path = format!("t{}", self.tag);
             self.entry.path.set_from_str(&path);
-            self.entry.size = session.length;
+            self.entry.size = self.length;
             self.entry.skip_from_filtering = false;
             Some(&self.entry)
         }
-        fn extract(&mut self, handle: ExtractionHandle, content: &mut dyn Content<Ty>) -> Option<Box<dyn Content<Ty>>> {
-            let session = self.pool.get(handle)?;
-            let n = session.length.min(u32::MAX as u64) as u32;
-            let buf = content.read(session.offset, n)?.to_vec();
-            let path = format!("t{}", session.tag);
+        fn extract(&mut self) -> Option<Box<dyn Content<Ty>>> {
+            let n = self.length.min(u32::MAX as u64) as u32;
+            let buf = self.content.read(self.offset, n)?.to_vec();
+            let path = format!("t{}", self.tag);
             Some(Box::new(BufferContent::<Ty>::from_parts(buf, path, Some(Ty::SliceKid))))
-        }
-        fn release(&mut self, handle: ExtractionHandle) {
-            self.pool.release_slot(handle);
         }
     }
 
@@ -1204,7 +1198,7 @@ mod request_extract {
         let mut scanner = ScannerBuilder::new()
             .add_analyzer(Ty::Root, 0, RequestSlice)
             .add_analyzer(Ty::SliceKid, 0, Tag(1))
-            .add_extractor(Ty::Slice, SliceExtractor::default())
+            .add_extractor(Ty::Slice, SliceExtractor)
             .build();
         let mut content = BufferContent::<Ty>::with_content_type(b"XXABCYY", "root", Ty::Root);
         let res = scanner.scan(&mut content, true);
@@ -1275,7 +1269,7 @@ mod request_extract {
     fn drop_without_emit_does_not_queue_extraction() {
         let mut scanner = ScannerBuilder::new()
             .add_analyzer(Ty::Root, 0, DropWithoutEmit)
-            .add_extractor(Ty::Slice, SliceExtractor::default())
+            .add_extractor(Ty::Slice, SliceExtractor)
             .build();
         let mut content = BufferContent::<Ty>::with_content_type(b"root", "root", Ty::Root);
         let res = scanner.scan(&mut content, true);

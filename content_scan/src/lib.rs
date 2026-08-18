@@ -112,6 +112,7 @@ pub use interfaces::*;
 
 use buffer_arena::BufferArena;
 use extraction_context::ExtractionRequest;
+use extraction_context::ExtractionRequestMetadata;
 use identifier_set::*;
 use matcher::*;
 use object::Object;

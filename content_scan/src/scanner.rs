@@ -2,6 +2,9 @@ use super::{
     analyzer_list::AnalyzerList, extractor_list::ExtractorList, Content, ContentAnalyzer, ContentExtractor, ContentIdentifier, ContentType, Filter,
     NextAction,
 };
+use crate::OwnedContentPtr;
+use crate::ExtractionRequest;
+use crate::ExtractionRequestMetadata;
 use crate::utils;
 use crate::ExtractionContext;
 use crate::IdentifierSet;
@@ -68,7 +71,7 @@ impl<T: ContentType> Scanner<T> {
         self.inner_scan(cptr, 1, Object::INVALID_INDEX);
         ScanResult::new(&self.context)
     }
-    fn inner_scan(&mut self, mut content: ContentPtr<T>, depth: u32, parent_index: u32) -> NextAction {
+    fn inner_scan(&mut self, content: ContentPtr<T>, depth: u32, parent_index: u32) -> NextAction {
         self.context.local_varmap_handle = None; // so that next time someone ask for a local varmap, it will get one from the context varmap_pool
         self.context.current_object_index = None;
         let start_req_count = self.context.extraction_requests_stack.len();
@@ -84,7 +87,7 @@ impl<T: ContentType> Scanner<T> {
             NextAction::Exit => NextAction::Exit,
         }
     }
-    fn create_object(&mut self, mut content: ContentPtr<T>, parent_index: u32) -> (Option<T>, u32) {
+    fn create_object(&mut self, content: ContentPtr<T>, parent_index: u32) -> (Option<T>, u32) {
         let ty = self.retrieve_content_type(content);
 
         let path_index = self.context.path_arena.alloc(content.as_ref().path().as_printable_string().as_bytes());
@@ -120,7 +123,7 @@ impl<T: ContentType> Scanner<T> {
         }
         (ty, my_index)
     }
-    fn run_analyzers(&mut self, mut content: ContentPtr<T>, content_type: Option<T>) -> NextAction {
+    fn run_analyzers(&mut self, content: ContentPtr<T>, content_type: Option<T>) -> NextAction {
         if let Some(ty) = content_type {
             if let Some((start, end)) = self.analyzers.range(ty) {
                 let res = self.scan_range(content, start, end);
@@ -199,7 +202,7 @@ impl<T: ContentType> Scanner<T> {
     }
     fn extract_range(
         &mut self,
-        mut content: ContentPtr<T>,
+        content: ContentPtr<T>,
         start: usize,
         end: usize,
         depth: u32,
@@ -209,39 +212,24 @@ impl<T: ContentType> Scanner<T> {
         if (end <= start) || (end > self.extractors.len()) {
             return NextAction::Continue;
         }
-        let (ec, param_handle) = if let Some(req_index) = req_index {
+        let ec_metadata = if let Some(req_index) = req_index {
             let request = &self.context.extraction_requests_stack[req_index as usize];
-            let params = if let Some(handle) = request.params_handle {
-                if self.context.varmap_pool.get(handle).is_some() {
-                    Some(handle)
-                } else {
-                    None
-                }
-            } else {
-                None
-            };
-            (
-                ExtractionContext {
-                    offset: request.start,
-                    length: request.len,
-                    params: &Self::EMPTY_VAR_MAP,
-                },
-                params,
-            )
+            ExtractionRequestMetadata {
+                start: request.start,
+                len: request.len,
+                params_handle: request.params_handle,
+            }
         } else {
-            (
-                ExtractionContext {
-                    offset: 0,
-                    length: Some(content.as_ref().size()),
-                    params: &Self::EMPTY_VAR_MAP,
-                },
-                None,
-            )
+            ExtractionRequestMetadata {
+                start: 0,
+                len: Some(content.as_ref().size()),
+                params_handle: None,
+            }
         };
         let next_action = {
-            let mut next_action = NextAction::Continue;
+            let mut next_action = NextAction::Continue;          
             for i in start..end {
-                let result = self.extract_content(content, i, depth, parent_index, &ec, param_handle);
+                let result = self.extract_content(content, i, depth, parent_index, &ec_metadata);
                 match result {
                     NextAction::Continue => continue,
                     NextAction::Exit | NextAction::Skip => {
@@ -252,23 +240,15 @@ impl<T: ContentType> Scanner<T> {
             }
             next_action
         };
-        if let Some(handle) = param_handle {
+        if let Some(handle) = ec_metadata.params_handle {
             self.context.varmap_pool.release(handle);
             if let Some(req_index) = req_index {
                 self.context.extraction_requests_stack[req_index as usize].params_handle = None;
             }
-        }
+        }        
         next_action
     }
-    fn extract_content(
-        &mut self,
-        mut content: ContentPtr<T>,
-        index: usize,
-        depth: u32,
-        parent_index: u32,
-        ec: &ExtractionContext,
-        ph: Option<varmap::PoolHandle>,
-    ) -> NextAction {
+    fn extract_content(&mut self, content: ContentPtr<T>, index: usize, depth: u32, parent_index: u32, ec_metadata: &ExtractionRequestMetadata) -> NextAction {
         if depth >= self.max_depth {
             return NextAction::Continue;
         }
@@ -276,17 +256,14 @@ impl<T: ContentType> Scanner<T> {
         if index >= len {
             return NextAction::Continue;
         }
-        let mut extractor = unsafe { self.extractors.get(index) };
-        let session = {
-            let params = ph.and_then(|h| self.context.varmap_pool.get(h)).unwrap_or(ec.params);
-            let acquire_ec = ExtractionContext {
-                offset: ec.offset,
-                length: ec.length,
-                params,
-            };
-            extractor.create_session(content, &acquire_ec)
+        let extractor = unsafe { self.extractors.get(index) };
+        let ec = ExtractionContext {
+            offset: ec_metadata.start,
+            length: ec_metadata.len,
+            params: ec_metadata.params_handle.and_then(|h| self.context.varmap_pool.get(h)),
         };
-        if let Some(session) = session {
+        let session = extractor.create_session(OwnedContentPtr::new(content), &ec);
+        if let Some(mut session) = session {
             while let Some(entry) = session.advance() {
                 if !entry.skip_from_filtering {
                     if let Some(filter) = self.filter.as_mut() {

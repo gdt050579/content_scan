@@ -2,6 +2,7 @@ use super::{Content, ContentType, Context};
 use crate::ContentPath;
 use crate::ExtractionContext;
 use crate::ExtractionHandle;
+use crate::OwnedContentPtr;
 
 /// Return value used by analyzers to steer the scan.
 ///
@@ -134,7 +135,7 @@ pub trait ContentExtractor_old<T: ContentType> {
 }
 
 pub trait ContentExtractor<T: ContentType> {
-    fn create_session(&mut self, content: &mut dyn Content<T>, extract_context: &ExtractionContext) -> Option<Box<dyn ExtractionSession<T>>>;
+    fn create_session(&mut self, content: OwnedContentPtr<T>, extract_context: &ExtractionContext) -> Option<Box<dyn ExtractionSession<T>>>;
 }
 pub trait ExtractionSession<T: ContentType> {
     fn advance(&mut self) -> Option<&Entry>;

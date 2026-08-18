@@ -1,5 +1,5 @@
 use super::{FileContent, FolderContent};
-use crate::{Content, ContentExtractor, ContentType, ExtractionContext, ExtractionPool};
+use crate::{Content, ContentExtractor, ContentType, ExtractionContext, ExtractionSession, OwnedContentPtr};
 use std::marker::PhantomData;
 
 /// Returns `true` if the directory entry is itself a link (not its target).
@@ -62,9 +62,6 @@ fn is_link(ft: &std::fs::FileType, _ent: &std::fs::DirEntry) -> bool {
 ///   counts directory nesting levels.
 pub struct FolderExtractor<T: ContentType> {
     _marker: PhantomData<T>,
-    pool: ExtractionPool<std::fs::ReadDir>,
-    entry: crate::Entry,
-    current_is_folder: bool,
     recursive: bool,
     open_files_exclusively: bool,
 }
@@ -79,24 +76,39 @@ impl<T: ContentType> FolderExtractor<T> {
     pub fn new(recursive: bool, open_files_exclusively: bool) -> Self {
         Self {
             _marker: PhantomData,
-            pool: ExtractionPool::new(4),
-            entry: crate::Entry::default(),
-            current_is_folder: false,
             recursive,
             open_files_exclusively,
         }
     }
 }
-impl<T: ContentType + 'static> ContentExtractor<T> for FolderExtractor<T> {
-    fn acquire(&mut self, content: &mut dyn Content<T>, _: &ExtractionContext) -> Option<crate::ExtractionHandle> {
-        let obj = std::fs::read_dir(content.path().as_path()).ok()?;
-        Some(self.pool.acquire_slot(obj))
-    }
 
-    fn advance(&mut self, handle: crate::ExtractionHandle, _: &mut dyn Content<T>) -> Option<&crate::Entry> {
-        let rd = self.pool.get_mut(handle)?;
+struct FolderSession<T: ContentType> {
+    content_type: T,
+    rd: std::fs::ReadDir,
+    entry: crate::Entry,
+    current_is_folder: bool,
+    recursive: bool,
+    open_files_exclusively: bool,
+}
+
+impl<T: ContentType + 'static> ContentExtractor<T> for FolderExtractor<T> {
+    fn create_session(&mut self, content: OwnedContentPtr<T>, _: &ExtractionContext) -> Option<Box<dyn ExtractionSession<T>>> {
+        let rd = std::fs::read_dir(content.path().as_path()).ok()?;
+        Some(Box::new(FolderSession {
+            content_type: content.content_type()?,
+            rd,
+            entry: crate::Entry::default(),
+            current_is_folder: false,
+            recursive: self.recursive,
+            open_files_exclusively: self.open_files_exclusively,
+        }))
+    }
+}
+
+impl<T: ContentType + 'static> ExtractionSession<T> for FolderSession<T> {
+    fn advance(&mut self) -> Option<&crate::Entry> {
         loop {
-            let folder_ent = match rd.next() {
+            let folder_ent = match self.rd.next() {
                 Some(Ok(ent)) => ent,
                 Some(Err(_)) => continue, // skip unreadable entries
                 None => return None,
@@ -148,12 +160,9 @@ impl<T: ContentType + 'static> ContentExtractor<T> for FolderExtractor<T> {
         }
     }
 
-    fn extract(&mut self, _: crate::ExtractionHandle, content: &mut dyn Content<T>) -> Option<Box<dyn Content<T>>> {
+    fn extract(&mut self) -> Option<Box<dyn Content<T>>> {
         if self.current_is_folder {
-            Some(Box::new(FolderContent::with_content_type(
-                self.entry.path.as_path(),
-                content.content_type()?,
-            )))
+            Some(Box::new(FolderContent::with_content_type(self.entry.path.as_path(), self.content_type)))
         } else {
             Some(Box::new(FileContent::with_size(
                 self.entry.path.as_path(),
@@ -161,9 +170,5 @@ impl<T: ContentType + 'static> ContentExtractor<T> for FolderExtractor<T> {
                 self.open_files_exclusively,
             )))
         }
-    }
-
-    fn release(&mut self, handle: crate::ExtractionHandle) {
-        self.pool.release_slot(handle);
     }
 }

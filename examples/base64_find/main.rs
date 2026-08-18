@@ -127,56 +127,53 @@ impl ContentAnalyzer<MyTypes> for Base64Finder {
     }
 }
 
-#[derive(Default)]
-struct Session {
+/// Reads the requested slice, Base64-decodes it into a `Vec<u8>`, and yields it as `Base64Decoded`.
+struct Base64Extractor;
+
+struct Base64Session {
+    content: OwnedContentPtr<MyTypes>,
     offset: u64,
     length: u64,
     done: bool,
-}
-
-/// Reads the requested slice, Base64-decodes it into a `Vec<u8>`, and yields it as `Base64Decoded`.
-#[derive(Default)]
-struct Base64Extractor {
-    pool: ExtractionPool<Session>,
     entry: Entry,
 }
+
 impl ContentExtractor<MyTypes> for Base64Extractor {
-    fn acquire(&mut self, content: &mut dyn Content<MyTypes>, extract_context: &ExtractionContext) -> Option<ExtractionHandle> {
+    fn create_session(&mut self, content: OwnedContentPtr<MyTypes>, extract_context: &ExtractionContext) -> Option<Box<dyn ExtractionSession<MyTypes>>> {
         let length = extract_context.length.unwrap_or(content.size().saturating_sub(extract_context.offset));
         if length == 0 {
             return None;
         }
-        Some(self.pool.acquire_slot(Session {
+        Some(Box::new(Base64Session {
+            content,
             offset: extract_context.offset,
             length,
             done: false,
+            entry: Entry::default(),
         }))
     }
-    fn advance(&mut self, handle: ExtractionHandle, _: &mut dyn Content<MyTypes>) -> Option<&Entry> {
-        let session = self.pool.get_mut(handle)?;
-        if session.done {
+}
+
+impl ExtractionSession<MyTypes> for Base64Session {
+    fn advance(&mut self) -> Option<&Entry> {
+        if self.done {
             return None;
         }
-        session.done = true;
-        let path = format!("base64@{}", session.offset);
+        self.done = true;
+        let path = format!("base64@{}", self.offset);
         self.entry.path.set_from_str(&path);
-        self.entry.size = session.length / 4 * 3;
+        self.entry.size = self.length / 4 * 3;
         self.entry.skip_from_filtering = false;
         Some(&self.entry)
     }
-    fn extract(&mut self, handle: ExtractionHandle, content: &mut dyn Content<MyTypes>) -> Option<Box<dyn Content<MyTypes>>> {
-        let session = self.pool.get(handle)?;
-        let offset = session.offset;
-        let encoded = read_range(content, offset, session.length)?;
+    fn extract(&mut self) -> Option<Box<dyn Content<MyTypes>>> {
+        let encoded = read_range(&mut *self.content, self.offset, self.length)?;
         let decoded = decode_base64(&encoded)?;
         Some(Box::new(BufferContent::<MyTypes>::from_parts(
             decoded,
-            format!("base64@{}", offset),
+            format!("base64@{}", self.offset),
             Some(MyTypes::Base64Decoded),
         )))
-    }
-    fn release(&mut self, handle: ExtractionHandle) {
-        self.pool.release_slot(handle);
     }
 }
 
@@ -195,7 +192,7 @@ fn build_scanner() -> Scanner<MyTypes> {
     ScannerBuilder::new()
         .add_identifier(MyTypes::Text, TextIdentifier {})
         .add_analyzer(MyTypes::Text, 0, Base64Finder {})
-        .add_extractor(MyTypes::Base64, Base64Extractor::default())
+        .add_extractor(MyTypes::Base64, Base64Extractor)
         .add_analyzer(MyTypes::Base64Decoded, 0, Base64DecodedAnalyzer {})
         .add_extractor(MyTypes::Folder, FolderExtractor::<MyTypes>::new(true, false))
         .build()

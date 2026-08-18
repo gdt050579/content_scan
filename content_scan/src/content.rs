@@ -1,5 +1,5 @@
 use crate::ContentPath;
-use std::fmt::Debug;
+use std::{fmt::Debug, ops::{Deref, DerefMut}};
 
 /// Enumeration of content kinds understood by a scanner.
 ///
@@ -140,5 +140,27 @@ impl<T: ContentType> ContentPtr<T> {
     #[inline(always)]
     pub(crate) fn as_ref(&self) -> &dyn Content<T> {
         unsafe { &*self.content }
+    }
+}
+pub struct OwnedContentPtr<T: ContentType> {
+    content: *mut dyn Content<T>,
+}
+impl<T: ContentType> OwnedContentPtr<T> {
+    #[inline(always)]
+    pub(crate) fn new(content: ContentPtr<T>) -> Self {
+        Self { content: content.content }
+    }
+}
+impl<T: ContentType> Deref for OwnedContentPtr<T> {
+    type Target = dyn Content<T>;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        unsafe { &*self.content }
+    }
+}
+impl<T: ContentType> DerefMut for OwnedContentPtr<T> {
+    #[inline(always)]
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        unsafe { &mut *self.content }
     }
 }

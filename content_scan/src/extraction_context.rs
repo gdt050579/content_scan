@@ -27,7 +27,13 @@ pub struct ExtractionContext<'a> {
     /// Analyzer-supplied extras (password, codec, flags, …), or an
     /// empty map when the request had no [`.param()`](ExtractRequestBuilder::param)
     /// calls.
-    pub params: &'a VarMap,
+    pub params: Option<&'a VarMap>,
+}
+
+pub(crate) struct ExtractionRequestMetadata {
+    pub(crate) start: u64,
+    pub(crate) len: Option<u64>,
+    pub(crate) params_handle: Option<varmap::PoolHandle>, 
 }
 
 #[derive(Copy, Clone)]
