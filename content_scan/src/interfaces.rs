@@ -1,7 +1,6 @@
 use super::{Content, ContentType, Context};
 use crate::ContentPath;
 use crate::ExtractionContext;
-use crate::ExtractionHandle;
 use crate::OwnedContentPtr;
 
 /// Return value used by analyzers to steer the scan.
@@ -84,54 +83,6 @@ pub trait ContentAnalyzer<T: ContentType> {
     /// controls whether further analyzers (and extractors) run for
     /// this object.
     fn analyze(&mut self, content: &mut dyn Content<T>, context: &mut Context<T>) -> NextAction;
-}
-
-/// A plugin that produces child content items from a parent.
-///
-/// Extractors are the "recursion" half of the framework. Typical
-/// examples: an archive extractor emitting each stored file, an
-/// executable extractor emitting resource sections, a text extractor
-/// emitting embedded numeric tokens, and so on.
-///
-/// The scanner drives an extractor as a short session keyed by an
-/// opaque [`ExtractionHandle`]:
-///
-/// 1. [`acquire`](Self::acquire) is called once per parent content. If
-///    it returns `None`, this extractor is skipped for the parent.
-///    Otherwise the returned handle identifies the session and is
-///    passed to every subsequent call.
-/// 2. [`advance`](Self::advance) is called repeatedly with that
-///    handle. Each call returns metadata for the next available
-///    entry, or `None` when the extractor is exhausted.
-/// 3. For each accepted entry, [`extract`](Self::extract) is called
-///    (with the same handle) to materialize a [`Content`] object which
-///    is then scanned recursively (subject to the configured max
-///    depth).
-/// 4. [`release`](Self::release) is always called exactly once for a
-///    successfully acquired handle, whether the stream ended
-///    normally, a filter skipped every entry, or the scan aborted
-///    early with [`NextAction::Skip`] / [`NextAction::Exit`].
-///
-/// The handle lets a single extractor instance keep per-session state
-/// (cursor, buffers, open archive handles, …) even when extractions
-/// nest or interleave. Handles are minted by an
-/// [`ExtractionPool`](crate::ExtractionPool), which owns the state
-/// behind them: call
-/// [`acquire_slot`](crate::ExtractionPool::acquire_slot) in `acquire`,
-/// [`get`](crate::ExtractionPool::get) /
-/// [`get_mut`](crate::ExtractionPool::get_mut) in `advance` and
-/// `extract`, and
-/// [`release_slot`](crate::ExtractionPool::release_slot) in `release`.
-///
-/// An extractor registered for type `T` runs when the current object
-/// was identified as `T`, and also when an analyzer requested `T`
-/// via [`Context::request_extract`]. Register extractors with
-/// [`ScannerBuilder::add_extractor`](crate::ScannerBuilder::add_extractor).
-pub trait ContentExtractor_old<T: ContentType> {
-    fn acquire(&mut self, content: &mut dyn Content<T>, extract_context: &ExtractionContext) -> Option<ExtractionHandle>;
-    fn advance(&mut self, handle: ExtractionHandle, content: &mut dyn Content<T>) -> Option<&Entry>;
-    fn extract(&mut self, handle: ExtractionHandle, content: &mut dyn Content<T>) -> Option<Box<dyn Content<T>>>;
-    fn release(&mut self, handle: ExtractionHandle);
 }
 
 pub trait ContentExtractor<T: ContentType> {
