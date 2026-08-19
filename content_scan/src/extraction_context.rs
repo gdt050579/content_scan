@@ -6,14 +6,15 @@ use crate::{ContentType, Context};
 /// [`ContentExtractor`](crate::ContentExtractor) should look at, plus
 /// optional analyzer-supplied parameters.
 ///
-/// Passed to [`ContentExtractor::acquire`](crate::ContentExtractor::acquire).
-/// Copy the fields you need into session state; the context is only
-/// valid for that call.
+/// Passed to
+/// [`ContentExtractor::create_session`](crate::ContentExtractor::create_session).
+/// Copy the fields you need into the [`ExtractionSession`](crate::ExtractionSession);
+/// the context is only valid for that call.
 ///
 /// When the scanner invokes an extractor because the parent was
 /// identified as that extractor's type, the context covers the whole
-/// object: `offset = 0`, `length = Some(content.size())`, empty
-/// `params`. When an analyzer queued the pass with
+/// object: `offset = 0`, `length = Some(content.size())`,
+/// `params = None`. When an analyzer queued the pass with
 /// [`Context::request_extract`], the fields come from that request.
 pub struct ExtractionContext<'a> {
     /// First byte of the region within the parent content.
@@ -24,16 +25,20 @@ pub struct ExtractionContext<'a> {
     /// extractor determines the extent itself (parse until the format
     /// ends, scan to EOF, …).
     pub length: Option<u64>,
-    /// Analyzer-supplied extras (password, codec, flags, …), or an
-    /// empty map when the request had no [`.param()`](ExtractRequestBuilder::param)
-    /// calls.
+    /// Analyzer-supplied extras (password, codec, flags, …).
+    ///
+    /// `None` when the request had no
+    /// [`.param()`](ExtractRequestBuilder::param) calls (including
+    /// type-specific extraction of the parent itself). `Some` borrows
+    /// the pooled map for the duration of `create_session` only —
+    /// copy values out if the session needs them later.
     pub params: Option<&'a VarMap>,
 }
 
 pub(crate) struct ExtractionRequestMetadata {
     pub(crate) start: u64,
     pub(crate) len: Option<u64>,
-    pub(crate) params_handle: Option<varmap::PoolHandle>, 
+    pub(crate) params_handle: Option<varmap::PoolHandle>,
 }
 
 #[derive(Copy, Clone)]
@@ -102,8 +107,8 @@ impl<'c, T: ContentType> ExtractRequestBuilder<'c, T> {
     ///
     /// The first call reserves a pooled [`VarMap`]; subsequent calls
     /// write into the same map. A request with no `.param()` call
-    /// carries no map, and `acquire` sees an empty
-    /// [`ExtractionContext::params`].
+    /// carries no map, and `create_session` sees
+    /// [`ExtractionContext::params`] as `None`.
     ///
     /// `V` must implement [`varmap::VarMapValue`]. Keys are typically
     /// created with the `var!` macro re-exported from this crate.

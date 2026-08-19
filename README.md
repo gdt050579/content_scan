@@ -35,11 +35,13 @@ Typical use cases:
     - [`Content`](#content)
     - [`ContentPath`](#contentpath)
     - [`ContentIdentifier`](#contentidentifier)
+    - [`ZipIdentifier`](#zipidentifier)
     - [`ContentAnalyzer`](#contentanalyzer)
     - [`ContentExtractor`](#contentextractor)
+    - [`ExtractionSession`](#extractionsession)
+    - [`OwnedContentPtr`](#ownedcontentptr)
     - [`ExtractionContext`](#extractioncontext)
     - [Requesting extraction](#requesting-extraction)
-    - [`ExtractionPool`](#extractionpool)
     - [Walking the file system](#walking-the-file-system)
     - [`Filter` / `FilterBuilder`](#filter--filterbuilder)
     - [`Scanner` / `ScannerBuilder`](#scanner--scannerbuilder)
@@ -74,7 +76,7 @@ The framework is built around a few small traits:
 - **`ContentPath`** — the path or synthetic address of a piece of content. Holds a UTF-8 printable view always, and keeps the original OS path when the name is not valid UTF-8 so the file can still be opened.
 - **`ContentIdentifier<T>`** — decides *what* a piece of content is (by magic bytes, extension, or file name) and validates the guess.
 - **`ContentAnalyzer<T>`** — reads content and produces information (stored in a shared `Context`). Analyzers can also queue extra extraction passes with `context.request_extract(ty)`.
-- **`ContentExtractor<T>`** — pulls sub-contents out of a container through an `acquire` / `advance` / `extract` / `release` session keyed by an `ExtractionHandle`. `acquire` receives an `ExtractionContext` describing the region of the parent to look at (`offset`, optional `length`, optional `params`). `ExtractionPool<T>` is the helper that mints those handles and stores the per-session state behind them. `FolderExtractor<T>` is a ready-made extractor that enumerates a directory.
+- **`ContentExtractor<T>`** — pulls sub-contents out of a container. `create_session` receives an `OwnedContentPtr` to the parent and an `ExtractionContext` describing the region to look at (`offset`, optional `length`, optional `params`), and returns an `ExtractionSession`. The session then yields children via `advance` / `extract`. Per-session state (cursors, open archives, the current `Entry`) lives on that session object, not on the extractor — one extractor instance is shared and sessions may nest. `FolderExtractor<T>` is a ready-made extractor that enumerates a directory.
 - **`Filter`** — decides which paths / sizes should be processed at all.
 - **`Scanner<T>`** — the orchestrator; built via `ScannerBuilder<T>`.
 - **`ScanResult<T>` / `ScanContentHandle`** — after a scan, the framework exposes the full **tree** of visited objects (parent / child / sibling links), each with its interned path, resolved content type and its own local `VarMap`.
@@ -198,7 +200,7 @@ fn main() {
 
 ### Summing numbers extracted from text
 
-This example shows the full pipeline — a text container is *identified* by magic bytes, an *extractor* pulls numeric substrings out of it as independent `Number` contents, and a numeric *analyzer* both sums them into a shared **global** variable and stashes each value into a per-object **local** `VarMap`. After the scan, the example walks the resulting tree via `ScanResult`. The extractor keeps its cursor in an [`ExtractionPool`](#extractionpool), so it can be re-entered while a previous session is still open. See [`examples/sum/main.rs`](examples/sum/main.rs).
+This example shows the full pipeline — a text container is *identified* by magic bytes, an *extractor* pulls numeric substrings out of it as independent `Number` contents, and a numeric *analyzer* both sums them into a shared **global** variable and stashes each value into a per-object **local** `VarMap`. After the scan, the example walks the resulting tree via `ScanResult`. The extractor's cursor lives on an [`ExtractionSession`](#extractionsession) that holds an [`OwnedContentPtr`](#ownedcontentptr) to the parent, so a nested extraction can open another session without overwriting the first. See [`examples/sum/main.rs`](examples/sum/main.rs).
 
 ```rust
 struct NumericAnalyzer;
@@ -301,13 +303,32 @@ impl ContentAnalyzer<MyTypes> for Base64Finder {
 }
 
 impl ContentExtractor<MyTypes> for Base64Extractor {
-    fn extract(&mut self, handle: ExtractionHandle, content: &mut dyn Content<MyTypes>) -> Option<Box<dyn Content<MyTypes>>> {
-        let session = self.pool.get(handle)?;
-        let encoded = content.read(session.offset, session.length as u32)?;
-        let decoded = decode_base64(encoded)?;
+    fn create_session(
+        &mut self,
+        content: OwnedContentPtr<MyTypes>,
+        extract_context: &ExtractionContext,
+    ) -> Option<Box<dyn ExtractionSession<MyTypes>>> {
+        let length = extract_context.length.unwrap_or(content.size().saturating_sub(extract_context.offset));
+        if length == 0 {
+            return None;
+        }
+        Some(Box::new(Base64Session {
+            content,
+            offset: extract_context.offset,
+            length,
+            done: false,
+            entry: Entry::default(),
+        }))
+    }
+}
+
+impl ExtractionSession<MyTypes> for Base64Session {
+    fn extract(&mut self) -> Option<Box<dyn Content<MyTypes>>> {
+        let encoded = read_range(&mut *self.content, self.offset, self.length)?;
+        let decoded = decode_base64(&encoded)?;
         Some(Box::new(BufferContent::<MyTypes>::from_parts(
             decoded,
-            format!("base64@{}", session.offset),
+            format!("base64@{}", self.offset),
             Some(MyTypes::Base64Decoded),
         )))
     }
@@ -440,6 +461,8 @@ pub struct ContentPath { /* ... */ }
 impl ContentPath {
     pub fn from_str(s: &str) -> Self;            // synthetic / known UTF-8
     pub fn from_os(p: &Path) -> Self;            // real filesystem path
+    pub fn empty() -> Self;                      // reusable empty buffer
+    pub fn clear(&mut self);                     // reset, keep capacity
     pub fn set_from_str(&mut self, s: &str);     // reuse allocation
     pub fn set_from_os(&mut self, p: &Path);     // reuse allocation
     pub fn as_printable_string(&self) -> &str;   // always valid UTF-8 (lossy if needed)
@@ -451,6 +474,7 @@ impl ContentPath {
 
 - **`from_str` / `set_from_str`** — use for archive members, in-memory buffers, and any label you already know is UTF-8. Do **not** stringify a real OS path and pass it here: a non-UTF-8 filesystem name would lose the bytes needed to reopen it.
 - **`from_os` / `set_from_os`** — use for `DirEntry`, `PathBuf`, and anything that came from the filesystem. When the path is valid UTF-8 only the string is stored. Otherwise the original `OsString` is kept alongside a lossy printable view (`U+FFFD` for invalid sequences), so `as_path()` still names the original file and `is_lossless()` is `false`.
+- **`empty` / `clear`** — construct or reset an empty path while keeping the string allocation. Sessions typically `clear` then `set_from_os` / `set_from_str` on a reused `Entry`.
 - **`as_printable_string`** — always available, never fails. Safe to log or print. Exact only when `is_lossless()` is `true`.
 - **`as_path`** — the `&Path` to hand to `fs::read_dir`, `File::open`, and similar. For a non-UTF-8 path this is the preserved OS name, not the lossy string.
 - **`as_bytes`** — what identification and `Filter` inspect (file name / extension). On Unix this is the faithful path bytes; on Windows it is the printable string's bytes.
@@ -487,11 +511,19 @@ If `identify_method` returns `None`, `validate()` is still called — after magi
 
 At most **one identifier per `ContentType`** may be registered; the builder will panic otherwise. It also panics if a `Magic` / `MultipleMagic` pattern is longer than 16 bytes.
 
+### `ZipIdentifier`
+
+`ZipIdentifier<T>` is a built-in identifier for ZIP archives. Fast identification is the local-file magic `PK\x03\x04`; `validate` then looks for an End of Central Directory record in the tail of the content, so a file that merely starts with those four bytes is rejected. Identification is by content, not by `.zip` extension.
+
+```rust
+.add_identifier(MyTypes::Zip, ZipIdentifier::new())
+```
+
 ### `ContentAnalyzer`
 
 ```rust
 pub trait ContentAnalyzer<T: ContentType> {
-    fn analyze(&mut self, content: &mut dyn Content<T>, context: &mut Context) -> NextAction;
+    fn analyze(&mut self, content: &mut dyn Content<T>, context: &mut Context<T>) -> NextAction;
 }
 ```
 
@@ -512,22 +544,11 @@ Within a bucket, analyzers execute in ascending `priority` order.
 
 ```rust
 pub trait ContentExtractor<T: ContentType> {
-    fn acquire(
+    fn create_session(
         &mut self,
-        content: &mut dyn Content<T>,
+        content: OwnedContentPtr<T>,
         extract_context: &ExtractionContext,
-    ) -> Option<ExtractionHandle>;
-    fn advance(
-        &mut self,
-        handle: ExtractionHandle,
-        content: &mut dyn Content<T>,
-    ) -> Option<&Entry>;
-    fn extract(
-        &mut self,
-        handle: ExtractionHandle,
-        content: &mut dyn Content<T>,
-    ) -> Option<Box<dyn Content<T>>>;
-    fn release(&mut self, handle: ExtractionHandle);
+    ) -> Option<Box<dyn ExtractionSession<T>>>;
 }
 
 pub struct Entry {
@@ -535,43 +556,107 @@ pub struct Entry {
     pub size: u64,
     pub skip_from_filtering: bool,
 }
-
-pub struct ExtractionHandle { /* opaque */ }
 ```
 
-Extractors turn a container into a stream of children, driven as a short session keyed by an opaque `ExtractionHandle`. Their methods return `Option` (or nothing, for `release`) — they do **not** return `NextAction` and cannot Skip or Exit on their own:
+Extractors turn a container into a stream of children. The scanner calls `create_session` once per parent; the returned [`ExtractionSession`](#extractionsession) then enumerates children. Methods return `Option` — they do **not** return `NextAction` and cannot Skip or Exit on their own.
 
-1. `acquire` — called once per parent, after that object's analyzers have run. Receives an [`ExtractionContext`](#extractioncontext) describing the region of `content` to look at (`offset`, optional `length`, optional `params`). Copy anything you need into session state. Return `Some(handle)` to start the session, or `None` to skip this extractor (the scanner moves on to the next registered extractor). Handles are minted by an [`ExtractionPool`](#extractionpool); `ExtractionHandle` is opaque and cannot be constructed directly.
-2. `advance` — advances the session to the next child and returns a lightweight `Entry` describing its path/size. Returning `None` ends the stream.
-3. `extract` — materializes the current child as a boxed `Content<T>`. The scanner then recursively scans it (subject to `max_depth`). Returning `None` skips just this entry; enumeration continues with the next `advance`.
-4. `release` — called exactly once for every successfully acquired handle. That includes a nested child's analyzer returning `NextAction::Exit`: the current session is released before the scan unwinds. A child's `Skip` does not end this session — the scanner continues with the next `advance`. Use `release` to free per-session resources.
+`create_session` is called after that object's analyzers have run. It receives:
+
+- an [`OwnedContentPtr`](#ownedcontentptr) to the parent — store it on the session if `advance` / `extract` need to read the parent;
+- an [`ExtractionContext`](#extractioncontext) describing the region to look at (`offset`, optional `length`, optional `params`). Copy those fields into the session; the context is only valid for this call.
+
+Return `Some(session)` to start enumerating, or `None` to skip this extractor (the scanner moves on to the next one registered for the same type). The session is dropped when enumeration ends, when a nested child's analyzer returns `NextAction::Exit`, or when the scanner moves on. Implement `Drop` on the session if you need to close files or free buffers.
 
 An extractor registered for type `T` runs in two situations:
 
-- The current object was **identified as `T`**. The context then covers the whole object (`offset = 0`, `length = Some(content.size())`, empty `params`).
+- The current object was **identified as `T`**. The context then covers the whole object (`offset = 0`, `length = Some(content.size())`, `params = None`).
 - An analyzer **requested** extraction of `T` from the current object via [`context.request_extract`](#requesting-extraction). The context then carries the requested offset, length, and params. The parent does not need to have been identified as `T`.
 
-Set `Entry::skip_from_filtering` to `true` to exempt an entry from the active `Filter`. This matters for container entries that would never pass the filter themselves: a `FolderExtractor` restricted to `*.png` files, for example, still has to descend into subdirectories, whose names carry no `.png` extension. Keep one `Entry` as a field on the extractor and overwrite `entry.path` in place with `ContentPath::set_from_str` (synthetic names) or `ContentPath::set_from_os` (real OS paths) so `advance` does not allocate a new path for every child.
+One extractor instance is shared by every object of its type, and `create_session` can be re-entered while a previous session is still live (nested containers). Keep configuration on the extractor and put cursors, open archives, and the current `Entry` on the session. Extractors are registered with `add_extractor` for a specific `ContentType`. Multiple extractors for the same type run in registration order.
 
-The handle lets one extractor instance keep per-session state even when extractions nest or interleave. The `Entry` itself is owned by the extractor (not the pool), because `advance` has to return `&Entry` while the pool may be borrowed mutably for session data. Extractors are registered with `add_extractor` for a specific `ContentType`. Multiple extractors for the same type run in registration order.
+### `ExtractionSession`
+
+```rust
+pub trait ExtractionSession<T: ContentType> {
+    fn advance(&mut self) -> Option<&Entry>;
+    fn extract(&mut self) -> Option<Box<dyn Content<T>>>;
+}
+```
+
+A session is a live extraction of children from one parent. The scanner drives it as a short loop:
+
+1. `advance` — move to the next child and return a lightweight `Entry` describing its path/size. Returning `None` ends the stream and the session is dropped.
+2. `extract` — materialize that child as a boxed `Content<T>`. The scanner then recursively scans it (subject to `max_depth`). Returning `None` skips just this entry; enumeration continues with the next `advance`.
+
+A child's `Skip` does not end this session — the scanner continues with the next `advance`. A child's `Exit` drops the session immediately as the scan unwinds.
+
+Set `Entry::skip_from_filtering` to `true` to exempt an entry from the active `Filter`. This matters for container entries that would never pass the filter themselves: a `FolderExtractor` restricted to `*.png` files, for example, still has to descend into subdirectories, whose names carry no `.png` extension. Keep one `Entry` as a field on the session and overwrite `entry.path` in place with `ContentPath::set_from_str` (synthetic names) or `ContentPath::set_from_os` (real OS paths) so `advance` does not allocate a new path for every child.
+
+### `OwnedContentPtr`
+
+`OwnedContentPtr<T>` is the handle `create_session` receives instead of a `&mut dyn Content<T>`. It does **not** own the parent — it is a non-owning pointer that [derefs](https://doc.rust-lang.org/std/ops/Deref.html) to `dyn Content<T>`, so a session can call `path()`, `size()`, `read()`, and `content_type()` through it across `advance` / `extract` without fighting the borrow checker.
+
+The scanner guarantees the parent outlives the session. Do not store the pointer after the session is dropped.
+
+A typical extractor therefore looks like this (the `sum` example, simplified):
+
+```rust
+struct NumericExtractor;
+
+struct NumericSession {
+    content: OwnedContentPtr<MyTypes>,
+    pos: u64,
+    start: u64,
+    len: u64,
+    entry: Entry,
+}
+
+impl ContentExtractor<MyTypes> for NumericExtractor {
+    fn create_session(
+        &mut self,
+        content: OwnedContentPtr<MyTypes>,
+        _: &ExtractionContext,
+    ) -> Option<Box<dyn ExtractionSession<MyTypes>>> {
+        Some(Box::new(NumericSession {
+            content,
+            pos: 0,
+            start: u64::MAX,
+            len: 0,
+            entry: Entry::default(),
+        }))
+    }
+}
+
+impl ExtractionSession<MyTypes> for NumericSession {
+    fn advance(&mut self) -> Option<&Entry> {
+        // ...scan forward through `self.content`, updating `self.pos` / `self.start` / `self.len`...
+        self.entry.path.set_from_str("number");
+        self.entry.size = self.len;
+        self.entry.skip_from_filtering = false;
+        Some(&self.entry)
+    }
+    fn extract(&mut self) -> Option<Box<dyn Content<MyTypes>>> {
+        let buf = self.content.read(self.start, self.len as u32)?;
+        Some(Box::new(BufferContent::<MyTypes>::with_content_type(buf, "number", MyTypes::Number)))
+    }
+}
+```
 
 ### `ExtractionContext`
 
-`ExtractionContext` is what `acquire` receives. It names a window inside the parent `Content` plus an optional parameter map:
+`ExtractionContext` is what `create_session` receives. It names a window inside the parent `Content` plus an optional parameter map:
 
 ```rust
 pub struct ExtractionContext<'a> {
-    pub offset: u64,           // start byte within the parent
-    pub length: Option<u64>,   // Some(n) = known size; None = extractor decides
-    pub params: &'a VarMap,    // analyzer-supplied extras, or empty
+    pub offset: u64,               // start byte within the parent
+    pub length: Option<u64>,       // Some(n) = known size; None = extractor decides
+    pub params: Option<&'a VarMap>, // analyzer-supplied extras, or None
 }
 ```
 
 - **`offset`** — first byte of the region. Type-specific extraction of the parent itself always starts at `0`.
 - **`length`** — `Some(n)` when the caller knows the region is `n` bytes. `None` means the extractor determines the extent itself (parse until the format ends, scan to EOF, …). Type-specific extraction of the parent itself passes `Some(content.size())`.
-- **`params`** — a `VarMap` of extras an analyzer attached with [`.param(...)`](#requesting-extraction) (password, codec, flags, …). When nothing was attached this is an empty map, not `None`.
-
-Copy the fields you need into the session state keyed by the `ExtractionHandle`; the context is only valid for the `acquire` call.
+- **`params`** — extras an analyzer attached with [`.param(...)`](#requesting-extraction) (password, codec, flags, …). `None` when the request had no `.param()` calls, including type-specific extraction of the parent itself. The borrow lasts only for `create_session` — copy values into the session if you need them later.
 
 ### Requesting extraction
 
@@ -597,7 +682,7 @@ Builder methods:
 | ------ | ------ |
 | `at(offset)` | Byte offset within the parent. Defaults to `0`. |
 | `len(n)` | Asserts the region is `n` bytes. Omit to leave `length = None`. |
-| `param(key, value)` | Adds one extractor-specific parameter. The first call reserves a pooled `VarMap`; later calls write into the same map. A request with no `.param()` carries no map. |
+| `param(key, value)` | Adds one extractor-specific parameter. The first call reserves a pooled `VarMap`; later calls write into the same map. A request with no `.param()` carries no map (`params = None`). |
 | `emit()` | Commits the request. Required — the builder is `#[must_use]`. |
 
 After this object's analyzers finish, the scanner:
@@ -607,64 +692,18 @@ After this object's analyzers finish, the scanner:
 
 The current object does not need to have been identified as the requested type. Several requests (of the same or different types) may be emitted from one analyzer; each is independent. Nested child scans start with an empty request queue.
 
-The Zip extractor then reads the region from `acquire`:
+The Zip extractor then copies the region out of `create_session`:
 
 ```rust
-fn acquire(&mut self, content: &mut dyn Content<MyTypes>, ctx: &ExtractionContext) -> Option<ExtractionHandle> {
+fn create_session(
+    &mut self,
+    content: OwnedContentPtr<MyTypes>,
+    ctx: &ExtractionContext,
+) -> Option<Box<dyn ExtractionSession<MyTypes>>> {
     let start = ctx.offset;
     let len = ctx.length; // None = parse until the ZIP ends
-    let password = ctx.params.get::<&str>(var!("password"));
-    Some(self.pool.acquire_slot(ZipSession { start, len, password: password.map(str::to_string) }))
-}
-```
-
-### `ExtractionPool`
-
-Because one extractor instance is shared by every object of its type, per-session state cannot live in plain fields — a nested or re-entered extraction would overwrite it. `ExtractionPool<T>` solves this: it stores one `T` per live session and hands back the `ExtractionHandle` that identifies it.
-
-```rust
-pub struct ExtractionPool<T> { /* ... */ }
-
-impl<T> ExtractionPool<T> {
-    pub fn new(capacity: usize) -> Self;
-    pub fn acquire_slot(&mut self, obj: T) -> ExtractionHandle;
-    pub fn release_slot(&mut self, handle: ExtractionHandle);
-    pub fn get(&self, handle: ExtractionHandle) -> Option<&T>;
-    pub fn get_mut(&mut self, handle: ExtractionHandle) -> Option<&mut T>;
-}
-```
-
-Slots are recycled through a free list, and every handle carries a monotonically increasing uid, so a stale handle whose slot has already been reused resolves to `None` instead of silently aliasing another session's data. The `Entry` announced by `advance` lives on the extractor itself — overwrite `entry.path` with `set_from_str` / `set_from_os` so the path is not reallocated for every child.
-
-```rust
-struct ExtractData { pos: u64, start: u64, len: u64 }
-
-#[derive(Default)]
-struct NumericExtractor {
-    e: ExtractionPool<ExtractData>,
-    entry: Entry,
-}
-
-impl ContentExtractor<MyTypes> for NumericExtractor {
-    fn acquire(&mut self, _: &mut dyn Content<MyTypes>, _: &ExtractionContext) -> Option<ExtractionHandle> {
-        Some(self.e.acquire_slot(ExtractData { pos: 0, start: u64::MAX, len: 0 }))
-    }
-    fn advance(&mut self, handle: ExtractionHandle, content: &mut dyn Content<MyTypes>) -> Option<&Entry> {
-        let data = self.e.get_mut(handle)?;
-        // ...scan forward through `content`, updating `data`...
-        self.entry.path.set_from_str("number");
-        self.entry.size = len;
-        self.entry.skip_from_filtering = false;
-        Some(&self.entry)
-    }
-    fn extract(&mut self, handle: ExtractionHandle, content: &mut dyn Content<MyTypes>) -> Option<Box<dyn Content<MyTypes>>> {
-        let data = self.e.get(handle)?;
-        let buf = content.read(data.start, data.len as u32)?;
-        Some(Box::new(BufferContent::<MyTypes>::with_content_type(buf, "number", MyTypes::Number)))
-    }
-    fn release(&mut self, handle: ExtractionHandle) {
-        self.e.release_slot(handle);
-    }
+    let password = ctx.params.and_then(|p| p.get::<&str>(var!("password"))).map(str::to_string);
+    Some(Box::new(ZipSession { content, start, len, password, ... }))
 }
 ```
 
@@ -850,15 +889,15 @@ For every scanned object, the scanner performs the following steps (see [`conten
    Each fast-matcher candidate is confirmed via the corresponding identifier's `validate()` method. Custom identifiers have no pre-filter; `validate()` is the identification.
 3. **Type-specific analyzers** for the resolved type run in priority order.
 4. **Generic analyzers** run for every object in priority order.
-5. **Type-specific extractors** for the resolved type run in registration order (`acquire` → `advance`/`extract` loop → `release`). Each `acquire` receives an `ExtractionContext` covering the whole object (`offset = 0`, `length = Some(size)`, empty `params`). For each entry they emit, the scanner recurses (subject to `max_depth` and `Filter`). Entries marked `skip_from_filtering` bypass the `Filter` check.
+5. **Type-specific extractors** for the resolved type run in registration order (`create_session` → `advance`/`extract` loop; the session is dropped when the loop ends). Each `create_session` receives an `OwnedContentPtr` to the parent and an `ExtractionContext` covering the whole object (`offset = 0`, `length = Some(size)`, `params = None`). For each entry they emit, the scanner recurses (subject to `max_depth` and `Filter`). Entries marked `skip_from_filtering` bypass the `Filter` check.
 6. **Extraction requests** queued by analyzers via `context.request_extract(ty)` then run, in emission order. For each request the extractors registered for `ty` run on the **same** parent, with that request's offset, length, and params. The parent does not need to have been identified as `ty`.
 
 While this is happening, the scanner also **records the object** into `Context::objects` — interned from `ContentPath::as_printable_string()` into an internal arena, tagged with the resolved content type, and linked into its parent's child list. After `scan()` returns, that tree is exposed to the caller through [`ScanResult`](#navigating-the-scan-result-tree).
 
-Only **analyzers** return `NextAction`. Extractor methods return `Option` (`acquire` / `advance` / `extract`) or nothing (`release`); they cannot short-circuit the scan themselves.
+Only **analyzers** return `NextAction`. Extractor and session methods return `Option` (`create_session` / `advance` / `extract`); they cannot short-circuit the scan themselves.
 
-- Analyzer `Skip` on an object stops remaining analyzers and extractors **on that object**. The scanner maps that Skip to `Continue` for the parent, so the extractor that produced the object keeps enumerating siblings.
-- Analyzer `Exit` aborts the whole scan. The extractor session that produced the current object is `release`d as the call stack unwinds; remaining extractors on ancestors do not run.
+- Analyzer `Skip` on an object stops remaining analyzers and extractors **on that object**. The scanner maps that Skip to `Continue` for the parent, so the session that produced the object keeps enumerating siblings.
+- Analyzer `Exit` aborts the whole scan. The extraction session that produced the current object is dropped as the call stack unwinds; remaining extractors on ancestors do not run.
 
 ---
 

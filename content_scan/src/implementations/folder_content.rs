@@ -6,8 +6,9 @@ use std::path::Path;
 /// It carries only a path: [`size`](Content::size) is always `0` and
 /// [`read`](Content::read) always returns `None`. Its purpose is to
 /// give the scanner an object it can dispatch on, so that a
-/// [`FolderExtractor`](crate::FolderExtractor) registered for the same content type can
-/// enumerate the directory's entries.
+/// [`FolderExtractor`](crate::FolderExtractor) registered for the same
+/// content type can enumerate the directory's entries as an
+/// [`ExtractionSession`](crate::ExtractionSession).
 ///
 /// The content type is mandatory (there is nothing to identify a
 /// directory by), and callers supply a variant of their own enum:

@@ -32,12 +32,15 @@
 //!   analyzer can also queue extra extraction with
 //!   [`Context::request_extract`].
 //! - **[`ContentExtractor`]** – produces child [`Content`] items from a
-//!   parent (e.g. entries of an archive). `acquire` receives an
-//!   [`ExtractionContext`] naming the region of the parent to look at.
+//!   parent (e.g. entries of an archive). `create_session` receives an
+//!   [`OwnedContentPtr`] to the parent and an [`ExtractionContext`]
+//!   naming the region to look at, and returns an [`ExtractionSession`].
+//!   The session then yields children via `advance` / `extract`.
 //!   Extracted children are scanned recursively up to a configurable
-//!   depth. Per-session state lives in an [`ExtractionPool`], keyed by
-//!   an [`ExtractionHandle`]. [`FolderExtractor`] is a ready-made
-//!   implementation that walks a directory.
+//!   depth. Put per-session state on the session object, not on the
+//!   extractor — one extractor instance is shared and sessions may
+//!   nest. [`FolderExtractor`] is a ready-made implementation that
+//!   walks a directory.
 //! - **[`Filter`]** – optional inclusion/exclusion rules applied before
 //!   any plugin runs on a piece of content.
 //! - **[`Scanner`] / [`ScannerBuilder`]** – wires all plugins together
@@ -110,12 +113,12 @@ pub use filter::*;
 pub use interfaces::*;
 
 use buffer_arena::BufferArena;
+use content::ContentPtr;
 use extraction_context::ExtractionRequest;
 use extraction_context::ExtractionRequestMetadata;
 use identifier_set::*;
 use matcher::*;
 use object::Object;
-use content::ContentPtr;
 
 pub use content_path::*;
 pub use content_scan_proc_macro::ContentType;

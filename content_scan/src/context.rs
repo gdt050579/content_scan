@@ -20,8 +20,8 @@ use varmap::{VarMap, VarMapPool};
 ///   [`ScanResult::local`].
 /// - **[`request_extract`](Self::request_extract)** – queues a pass
 ///   that runs extractors registered for another [`ContentType`] on a
-///   region of the current object. Each `acquire` then receives an
-///   [`ExtractionContext`](crate::ExtractionContext) with that
+///   region of the current object. Each `create_session` then receives
+///   an [`ExtractionContext`](crate::ExtractionContext) with that
 ///   request's offset, length, and params.
 ///
 /// `Context` is owned by the [`Scanner`](crate::Scanner) and cleared

@@ -139,7 +139,11 @@ struct Base64Session {
 }
 
 impl ContentExtractor<MyTypes> for Base64Extractor {
-    fn create_session(&mut self, content: OwnedContentPtr<MyTypes>, extract_context: &ExtractionContext) -> Option<Box<dyn ExtractionSession<MyTypes>>> {
+    fn create_session(
+        &mut self,
+        content: OwnedContentPtr<MyTypes>,
+        extract_context: &ExtractionContext,
+    ) -> Option<Box<dyn ExtractionSession<MyTypes>>> {
         let length = extract_context.length.unwrap_or(content.size().saturating_sub(extract_context.offset));
         if length == 0 {
             return None;

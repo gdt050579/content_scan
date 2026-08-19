@@ -1,11 +1,25 @@
 use crate::{ContentIdentifier, ContentType};
 use std::marker::PhantomData;
 
+/// A [`ContentIdentifier`] for ZIP archives.
+///
+/// Fast identification is the local-file magic `PK\x03\x04`.
+/// [`validate`](ContentIdentifier::validate) then looks for an End of
+/// Central Directory record in the tail of the content, so a file
+/// that merely starts with those four bytes is rejected. Identification
+/// is by content, not by `.zip` extension.
+///
+/// ```ignore
+/// let mut scanner = ScannerBuilder::<MyTypes>::new()
+///     .add_identifier(MyTypes::Zip, ZipIdentifier::new())
+///     .build();
+/// ```
 pub struct ZipIdentifier<T: ContentType> {
     _marker: PhantomData<T>,
 }
 impl<T: ContentType> ZipIdentifier<T> {
     const EOCD_SIG: [u8; 4] = [0x50, 0x4b, 0x05, 0x06];
+    /// Creates a new ZIP identifier.
     pub fn new() -> Self {
         Self { _marker: PhantomData }
     }
@@ -55,7 +69,7 @@ impl<T: ContentType> ContentIdentifier<T> for ZipIdentifier<T> {
         while pos < size {
             let remains = size - pos;
             if let Some(bf) = content.read(pos, remains as u32) {
-                buf[index ..index + bf.len()].copy_from_slice(bf);
+                buf[index..index + bf.len()].copy_from_slice(bf);
                 index += bf.len();
                 pos += bf.len() as u64;
                 if bf.len() == 0 {

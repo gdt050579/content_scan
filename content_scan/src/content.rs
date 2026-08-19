@@ -1,5 +1,8 @@
 use crate::ContentPath;
-use std::{fmt::Debug, ops::{Deref, DerefMut}};
+use std::{
+    fmt::Debug,
+    ops::{Deref, DerefMut},
+};
 
 /// Enumeration of content kinds understood by a scanner.
 ///
@@ -142,6 +145,20 @@ impl<T: ContentType> ContentPtr<T> {
         unsafe { &*self.content }
     }
 }
+/// Non-owning handle to the parent [`Content`] of an extraction session.
+///
+/// [`ContentExtractor::create_session`](crate::ContentExtractor::create_session)
+/// receives this instead of a `&mut dyn Content<T>` so the session can
+/// keep the parent across [`advance`](crate::ExtractionSession::advance)
+/// / [`extract`](crate::ExtractionSession::extract) without fighting
+/// the borrow checker. It [derefs](std::ops::Deref) to `dyn Content<T>`,
+/// so a session can call [`path`](Content::path), [`size`](Content::size),
+/// [`read`](Content::read), and [`content_type`](Content::content_type)
+/// through it.
+///
+/// The handle is valid for the lifetime of the session that received
+/// it. The scanner guarantees the parent outlives that session; do not
+/// store the pointer after the session is dropped.
 pub struct OwnedContentPtr<T: ContentType> {
     content: *mut dyn Content<T>,
 }

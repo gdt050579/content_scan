@@ -49,8 +49,11 @@ enum FilterRule {
 /// A `Filter` is built with [`FilterBuilder`] and then handed to a
 /// [`ScannerBuilder`](crate::ScannerBuilder) via
 /// [`ScannerBuilder::filter`](crate::ScannerBuilder::filter). The
-/// scanner consults it both for the top-level content and for every
-/// item returned by an extractor.
+/// scanner consults it for the top-level content when
+/// [`Scanner::scan`](crate::Scanner::scan) is called with
+/// `filter_root = true`, and for every [`Entry`](crate::Entry) an
+/// extractor emits (unless that entry sets
+/// [`skip_from_filtering`](crate::Entry::skip_from_filtering)).
 ///
 /// Extension and file-name rules are ASCII case-insensitive: both the
 /// registered patterns and the path basename / extension are compared
@@ -239,8 +242,8 @@ impl ReadyFilterBuilder {
     /// Consumes the builder and produces the compiled [`Filter`].
     ///
     /// Rules are compiled into efficient matchers (tries / magic
-    /// tables) so that [`Filter::should_process`] is cheap even when
-    /// many patterns are registered. They are then ordered from
+    /// tables) so evaluating the filter is cheap even when many
+    /// patterns are registered. They are then ordered from
     /// [`Precedence::Highest`] to [`Precedence::Lowest`]; rules that
     /// share a precedence keep the order they were added.
     pub fn build(self) -> Filter {

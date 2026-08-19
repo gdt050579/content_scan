@@ -93,7 +93,7 @@ impl ContentPath {
     /// existing allocation.
     ///
     /// Typical use: fill [`Entry::path`](crate::Entry::path) from
-    /// [`ContentExtractor::advance`](crate::ContentExtractor::advance)
+    /// [`ExtractionSession::advance`](crate::ExtractionSession::advance)
     /// so a hot loop (directory walk, archive enumeration) does not
     /// reallocate per item.
     #[inline]

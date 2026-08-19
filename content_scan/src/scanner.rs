@@ -384,9 +384,11 @@ impl<T: ContentType> ScannerBuilder<T> {
 
     /// Attaches a pre-built [`Filter`] to the scanner.
     ///
-    /// The filter is consulted for every content object (top-level
-    /// and extracted) before any plugin runs. If a filter was
-    /// previously set, it is replaced.
+    /// Extracted children are always tested against the filter
+    /// (unless their [`Entry`](crate::Entry) sets
+    /// `skip_from_filtering`). The top-level object is tested only
+    /// when [`scan`](Scanner::scan) is called with `filter_root =
+    /// true`. If a filter was previously set, it is replaced.
     pub fn filter(mut self, filter: Filter) -> Self {
         self.filter = Some(filter);
         self
@@ -441,8 +443,8 @@ impl<T: ContentType> ScannerBuilder<T> {
     ///
     /// Only one identifier is allowed per content type; registering
     /// two identifiers for the same type will cause
-    /// [`build`](Self::build) to panic. An [`IdentifyMethod::Magic`]
-    /// or [`IdentifyMethod::MultipleMagic`] pattern longer than 16
+    /// [`build`](Self::build) to panic. An [`IdentifyMethod::Magic`](crate::IdentifyMethod::Magic)
+    /// or [`IdentifyMethod::MultipleMagic`](crate::IdentifyMethod::MultipleMagic) pattern longer than 16
     /// bytes also panics at build.
     pub fn add_identifier<I>(mut self, content_type: T, identifier: I) -> Self
     where
@@ -480,8 +482,8 @@ impl<T: ContentType> ScannerBuilder<T> {
     /// # Panics
     ///
     /// Panics if two identifiers are registered for the same
-    /// [`ContentType`], or if an [`IdentifyMethod::Magic`] /
-    /// [`IdentifyMethod::MultipleMagic`] pattern is longer than 16
+    /// [`ContentType`], or if an [`IdentifyMethod::Magic`](crate::IdentifyMethod::Magic) /
+    /// [`IdentifyMethod::MultipleMagic`](crate::IdentifyMethod::MultipleMagic) pattern is longer than 16
     /// bytes.
     pub fn build(self) -> Scanner<T> {
         self.check_unique_identifiers();

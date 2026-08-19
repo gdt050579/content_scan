@@ -749,10 +749,7 @@ mod max_depth {
     }
 
     fn scanned(max_depth: u32) -> u32 {
-        let mut scanner = ScannerBuilder::new()
-            .max_depth(max_depth)
-            .add_extractor(Ty::Nest, NestExtractor)
-            .build();
+        let mut scanner = ScannerBuilder::new().max_depth(max_depth).add_extractor(Ty::Nest, NestExtractor).build();
         let mut content = BufferContent::<Ty>::with_content_type(&[0u8; 16], "root", Ty::Nest);
         scanner.scan(&mut content, true).objects_scanned()
     }

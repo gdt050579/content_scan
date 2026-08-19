@@ -7,8 +7,9 @@ use crate::OwnedContentPtr;
 ///
 /// [`ContentAnalyzer::analyze`] returns a `NextAction` that tells the
 /// scanner whether to continue this object, skip the rest of it, or
-/// abort the entire scan. [`ContentExtractor`] methods do not return
-/// this type: they yield [`Option`] at each session step.
+/// abort the entire scan. [`ContentExtractor`] and
+/// [`ExtractionSession`] methods do not return this type: they yield
+/// [`Option`] at each session step.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NextAction {
     /// Continue with the next analyzer for this object, then extractors.
@@ -31,16 +32,16 @@ pub enum NextAction {
 
 /// Metadata for a single entry produced by a [`ContentExtractor`].
 ///
-/// An extractor advertises the next item it is about to extract via
-/// this struct. The scanner uses it to apply
+/// An [`ExtractionSession`] advertises the next item it is about to
+/// extract via this struct. The scanner uses it to apply
 /// [`Filter`](crate::Filter) rules cheaply (path + size) before asking
-/// the extractor to materialize the actual [`Content`].
+/// the session to materialize the actual [`Content`].
 #[derive(Default)]
 pub struct Entry {
     /// Path of the entry (a filesystem path, or a synthetic address
     /// such as the name inside an archive).
     ///
-    /// Extractors typically keep one `Entry` as a field and overwrite
+    /// Sessions typically keep one `Entry` as a field and overwrite
     /// this path in place with [`ContentPath::set_from_str`] (virtual
     /// names) or [`ContentPath::set_from_os`] (real OS paths) so the
     /// allocation is reused across children.
@@ -85,11 +86,97 @@ pub trait ContentAnalyzer<T: ContentType> {
     fn analyze(&mut self, content: &mut dyn Content<T>, context: &mut Context<T>) -> NextAction;
 }
 
+/// A plugin that turns a container into a stream of child [`Content`]
+/// items.
+///
+/// Extractors are the "produce children" half of the framework. The
+/// scanner calls [`create_session`](Self::create_session) once per
+/// parent; the returned [`ExtractionSession`] then enumerates children
+/// with [`advance`](ExtractionSession::advance) /
+/// [`extract`](ExtractionSession::extract). Methods return [`Option`]
+/// (or nothing, when the session is dropped) — they do **not** return
+/// [`NextAction`] and cannot Skip or Exit on their own.
+///
+/// An extractor registered for type `T` runs in two situations:
+///
+/// - The current object was **identified as `T`**. The
+///   [`ExtractionContext`] then covers the whole object
+///   (`offset = 0`, `length = Some(content.size())`, `params = None`).
+/// - An analyzer **requested** extraction of `T` from the current
+///   object via [`Context::request_extract`]. The context then carries
+///   the requested offset, length, and params. The parent does not
+///   need to have been identified as `T`.
+///
+/// One extractor instance is shared by every object of its type, and
+/// `create_session` can be re-entered while a previous session is
+/// still live (nested containers). Keep configuration on the extractor
+/// and put cursors, open archives, and the current [`Entry`] on the
+/// session.
+///
+/// Register extractors via
+/// [`ScannerBuilder::add_extractor`](crate::ScannerBuilder::add_extractor).
+/// Multiple extractors for the same type run in registration order.
 pub trait ContentExtractor<T: ContentType> {
+    /// Opens an extraction session on `content`.
+    ///
+    /// `content` is a non-owning handle to the parent. Store it on the
+    /// session if [`advance`](ExtractionSession::advance) /
+    /// [`extract`](ExtractionSession::extract) need to read the parent;
+    /// it stays valid until the session is dropped.
+    ///
+    /// `extract_context` names the region of the parent to look at and
+    /// is only valid for this call — copy [`ExtractionContext::offset`],
+    /// [`ExtractionContext::length`], and any
+    /// [`ExtractionContext::params`] you need into the session.
+    ///
+    /// Return `Some(session)` to start enumerating children, or `None`
+    /// to skip this extractor (the scanner moves on to the next one
+    /// registered for the same type). The session is dropped when
+    /// enumeration ends, when a nested child's analyzer returns
+    /// [`NextAction::Exit`], or when the scanner moves on — implement
+    /// [`Drop`] on the session if you need to close files or free
+    /// buffers.
     fn create_session(&mut self, content: OwnedContentPtr<T>, extract_context: &ExtractionContext) -> Option<Box<dyn ExtractionSession<T>>>;
 }
+
+/// A live extraction of children from one parent [`Content`].
+///
+/// Produced by [`ContentExtractor::create_session`] and driven by the
+/// scanner as a short loop:
+///
+/// 1. [`advance`](Self::advance) — move to the next child and return
+///    a lightweight [`Entry`] (path / size / filter skip). `None`
+///    ends the stream and the session is dropped.
+/// 2. [`extract`](Self::extract) — materialize that child as a boxed
+///    [`Content`]. The scanner then recursively scans it (subject to
+///    `max_depth`). `None` skips just this entry; enumeration
+///    continues with the next `advance`.
+///
+/// A child's [`NextAction::Skip`] does not end this session — the
+/// scanner continues with the next `advance`. A child's
+/// [`NextAction::Exit`] drops the session immediately as the scan
+/// unwinds.
+///
+/// Keep one [`Entry`] as a field and overwrite `entry.path` in place
+/// with [`ContentPath::set_from_str`](crate::ContentPath::set_from_str)
+/// (synthetic names) or
+/// [`ContentPath::set_from_os`](crate::ContentPath::set_from_os)
+/// (real OS paths) so `advance` does not allocate a new path for
+/// every child.
 pub trait ExtractionSession<T: ContentType> {
+    /// Advances to the next child and returns its [`Entry`].
+    ///
+    /// Returning `None` ends the stream. The returned reference must
+    /// remain valid until the next call to `advance` or `extract`, or
+    /// until the session is dropped — typically it borrows a field on
+    /// `self`.
     fn advance(&mut self) -> Option<&Entry>;
+
+    /// Materializes the child announced by the last [`advance`](Self::advance).
+    ///
+    /// Returning `None` skips this entry; the scanner will call
+    /// `advance` again. The boxed content is scanned recursively
+    /// before the next `advance`.
     fn extract(&mut self) -> Option<Box<dyn Content<T>>>;
 }
 
