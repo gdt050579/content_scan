@@ -35,10 +35,8 @@ impl<T: ContentType> ZipIdentifier<T> {
             return false;
         }
         for i in (0..=buf.len() - 4).rev() {
-            if buf[i..i + 4] == Self::EOCD_SIG {
-                if Self::eocd_tail_ok(&buf, i, ofs, size) {
-                    return true;
-                }
+            if buf[i..i + 4] == Self::EOCD_SIG && Self::eocd_tail_ok(buf, i, ofs, size) {
+                return true;
             }
         }
         false
@@ -58,12 +56,12 @@ impl<T: ContentType> ContentIdentifier<T> for ZipIdentifier<T> {
         let quick_len = size.min(512);
         let quick_start = size - quick_len;
         if let Some(buf) = content.read(quick_start, quick_len as u32) {
-            if Self::contains_eocd(&buf, quick_start, size) {
+            if Self::contains_eocd(buf, quick_start, size) {
                 return true;
             }
         }
-        let mut buf: [u8; 0xFFFF] = [0; 0xFFFF];
-        let mut pos = size.saturating_sub(0xFFFF);
+        let mut buf: [u8; 65557] = [0; 65557];
+        let mut pos = size.saturating_sub(65557);
         let region_start = pos;
         let mut index = 0;
         while pos < size {
@@ -72,7 +70,7 @@ impl<T: ContentType> ContentIdentifier<T> for ZipIdentifier<T> {
                 buf[index..index + bf.len()].copy_from_slice(bf);
                 index += bf.len();
                 pos += bf.len() as u64;
-                if bf.len() == 0 {
+                if bf.is_empty() {
                     break;
                 }
             } else {
@@ -80,5 +78,10 @@ impl<T: ContentType> ContentIdentifier<T> for ZipIdentifier<T> {
             }
         }
         Self::contains_eocd(&buf[..index], region_start, size)
+    }
+}
+impl<T: ContentType> Default for ZipIdentifier<T> {
+    fn default() -> Self {
+        Self::new()
     }
 }

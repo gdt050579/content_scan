@@ -21,7 +21,7 @@ pub(crate) fn contains_uppercase(buf: &[u8]) -> bool {
             return true;
         }
     }
-    return false;
+    false
 }
 pub(crate) fn copy_lowercase<'a>(source: &[u8], output: &'a mut Vec<u8>) -> &'a [u8] {
     output.clear();

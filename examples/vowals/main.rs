@@ -11,7 +11,7 @@ impl ContentAnalyzer<MyType> for VowelAnalyzer {
     fn analyze(&mut self, content: &mut dyn Content<MyType>, context: &mut Context<MyType>) -> NextAction {
         let sz = content.size();
         let mut count = 0u32;
-        for i in 4..sz as u64 {
+        for i in 4..sz {
             if let Some(b) = content.read(i, 1) {
                 let b = b[0].to_ascii_lowercase();
                 if b == b'a' || b == b'e' || b == b'i' || b == b'o' || b == b'u' {

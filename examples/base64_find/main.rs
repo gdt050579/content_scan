@@ -38,7 +38,7 @@ fn read_range(content: &mut dyn Content<MyTypes>, offset: u64, length: u64) -> O
 }
 
 fn decode_base64(input: &[u8]) -> Option<Vec<u8>> {
-    if input.is_empty() || input.len() % 4 != 0 {
+    if input.is_empty() || !input.len().is_multiple_of(4) {
         return None;
     }
     let value = |c: u8| -> Option<u8> {
@@ -118,7 +118,7 @@ impl ContentAnalyzer<MyTypes> for Base64Finder {
                 }
             }
             let len = pos - start + pads;
-            if len >= MIN_BASE64_LEN && len % 4 == 0 {
+            if len >= MIN_BASE64_LEN && len.is_multiple_of(4) {
                 context.request_extract(MyTypes::Base64).at(start).len(len).emit();
             }
             pos += pads;

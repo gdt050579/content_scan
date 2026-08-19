@@ -317,12 +317,7 @@ impl<T: ContentType> Scanner<T> {
                 return Some(ty);
             }
         }
-        for &ty in self.identifiers.identifiers_without_prefilter() {
-            if self.validate_content_type(content, ty) {
-                return Some(ty);
-            }
-        }
-        None
+        self.identifiers.identifiers_without_prefilter().iter().find(|&&ty| self.validate_content_type(content, ty)).copied()
     }
     #[inline(always)]
     fn validate_content_type(&self, mut content: ContentPtr<T>, content_type: T) -> bool {
@@ -498,5 +493,10 @@ impl<T: ContentType> ScannerBuilder<T> {
             context: Context::new(),
             max_depth: self.max_depth,
         }
+    }
+}
+impl<T: ContentType> Default for ScannerBuilder<T> {
+    fn default() -> Self {
+        Self::new()
     }
 }

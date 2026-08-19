@@ -229,6 +229,12 @@ impl FilterBuilder {
     }
 }
 
+impl Default for FilterBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Finalized [`FilterBuilder`] ready to produce a [`Filter`].
 ///
 /// This intermediate type exists to force the caller to explicitly
@@ -258,7 +264,7 @@ impl ReadyFilterBuilder {
             .iter()
             .any(|(_, rule)| matches!(rule, FilterRule::IncludeFileNames(_) | FilterRule::ExcludeFileNames(_)));
         let mut ranked = self.builder.rules;
-        ranked.sort_by(|a, b| b.0.rank().cmp(&a.0.rank()));
+        ranked.sort_by_key(|b| std::cmp::Reverse(b.0.rank()));
         let rules = ranked.into_iter().map(|(_, rule)| rule).collect();
         Filter {
             rules,

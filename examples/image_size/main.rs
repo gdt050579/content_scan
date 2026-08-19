@@ -30,7 +30,7 @@ fn print_results(result: &ScanResult<ImageType>, handle: ScanContentHandle, dept
     if let Some(size) = result.local(handle).and_then(|v| v.get::<Size>(var!("size"))) {
         println!("  => {} x {}", size.width, size.height);
     } else {
-        println!("");
+        println!();
     }
     if let Some(child) = result.child(handle) {
         print_results(result, child, depth + 1);

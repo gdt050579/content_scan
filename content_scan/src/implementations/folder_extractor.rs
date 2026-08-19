@@ -126,7 +126,7 @@ impl<T: ContentType + 'static> ExtractionSession<T> for FolderSession<T> {
             let mut link_target_len: Option<u64> = None;
 
             if is_link {
-                match std::fs::metadata(&folder_ent.path()) {
+                match std::fs::metadata(folder_ent.path()) {
                     // Symlink -> folder: skip, to avoid circular references.
                     Ok(target) if target.is_dir() => continue,
                     // Symlink -> file: keep, and remember the target size.

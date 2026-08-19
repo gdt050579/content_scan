@@ -863,7 +863,7 @@ mod local_varmap {
         let child = res.child(root).unwrap();
         assert_eq!(tag(&res, root), Some(1));
         assert_eq!(tag(&res, child), Some(2));
-        assert!(res.local(root).unwrap() as *const _ != res.local(child).unwrap() as *const _);
+        assert!(!std::ptr::eq(res.local(root).unwrap(), res.local(child).unwrap()));
     }
 
     #[test]

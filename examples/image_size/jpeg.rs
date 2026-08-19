@@ -67,7 +67,7 @@ impl ContentAnalyzer<ImageType> for JpegAnalyzer {
                     var!("size"),
                     Size {
                         width: w as u32,
-                        height: h as u32,
+                        height: h,
                     },
                 );
                 return NextAction::Continue;
