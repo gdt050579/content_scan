@@ -2,13 +2,12 @@ use super::{
     analyzer_list::AnalyzerList, extractor_list::ExtractorList, Content, ContentAnalyzer, ContentExtractor, ContentIdentifier, ContentType, Filter,
     NextAction,
 };
-use crate::OwnedContentPtr;
-use crate::ExtractionRequest;
-use crate::ExtractionRequestMetadata;
 use crate::utils;
 use crate::ExtractionContext;
+use crate::ExtractionRequestMetadata;
 use crate::IdentifierSet;
 use crate::Object;
+use crate::OwnedContentPtr;
 use crate::{ContentPtr, Context, ScanResult};
 use std::collections::HashSet;
 
@@ -33,7 +32,6 @@ pub struct Scanner<T: ContentType> {
     max_depth: u32,
 }
 impl<T: ContentType> Scanner<T> {
-    const EMPTY_VAR_MAP: varmap::VarMap = varmap::VarMap::new();
     /// Scans a single top-level [`Content`] and returns the results.
     ///
     /// The scanner:
@@ -141,14 +139,7 @@ impl<T: ContentType> Scanner<T> {
         }
         NextAction::Continue
     }
-    fn run_extractors(
-        &mut self,
-        mut content: ContentPtr<T>,
-        content_type: Option<T>,
-        depth: u32,
-        my_index: u32,
-        start_req_index: usize,
-    ) -> NextAction {
+    fn run_extractors(&mut self, content: ContentPtr<T>, content_type: Option<T>, depth: u32, my_index: u32, start_req_index: usize) -> NextAction {
         // type-specific extractors
         if let Some(ty) = content_type {
             if let Some((start, end)) = self.extractors.range(ty) {
@@ -227,7 +218,7 @@ impl<T: ContentType> Scanner<T> {
             }
         };
         let next_action = {
-            let mut next_action = NextAction::Continue;          
+            let mut next_action = NextAction::Continue;
             for i in start..end {
                 let result = self.extract_content(content, i, depth, parent_index, &ec_metadata);
                 match result {
@@ -245,10 +236,17 @@ impl<T: ContentType> Scanner<T> {
             if let Some(req_index) = req_index {
                 self.context.extraction_requests_stack[req_index as usize].params_handle = None;
             }
-        }        
+        }
         next_action
     }
-    fn extract_content(&mut self, content: ContentPtr<T>, index: usize, depth: u32, parent_index: u32, ec_metadata: &ExtractionRequestMetadata) -> NextAction {
+    fn extract_content(
+        &mut self,
+        content: ContentPtr<T>,
+        index: usize,
+        depth: u32,
+        parent_index: u32,
+        ec_metadata: &ExtractionRequestMetadata,
+    ) -> NextAction {
         if depth >= self.max_depth {
             return NextAction::Continue;
         }
