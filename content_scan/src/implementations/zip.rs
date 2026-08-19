@@ -1,6 +1,20 @@
-use crate::{ContentIdentifier, ContentType};
-use std::marker::PhantomData;
+use crate::{
+    BufferContent, ContentExtractor, ContentIdentifier, ContentReader, ContentType, Entry, ExtractionContext, ExtractionSession, FileContent,
+    OwnedContentPtr,
+};
+use std::io::Write;
+use std::{io::Read, marker::PhantomData};
+use zip::ZipArchive;
 
+use std::sync::atomic::{AtomicU64, Ordering};
+
+fn unique_temp_path() -> std::path::PathBuf {
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let mut p = std::env::temp_dir();
+    p.push(format!("content_scan_zip_{}_{}.tmp", std::process::id(), n));
+    p
+}
 /// A [`ContentIdentifier`] for ZIP archives.
 ///
 /// Fast identification is the local-file magic `PK\x03\x04`.
@@ -83,5 +97,94 @@ impl<T: ContentType> ContentIdentifier<T> for ZipIdentifier<T> {
 impl<T: ContentType> Default for ZipIdentifier<T> {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+pub struct ZipExtractor<T: ContentType> {
+    _marker: PhantomData<T>,
+}
+impl<T: ContentType> ZipExtractor<T> {
+    pub fn new() -> Self {
+        Self { _marker: PhantomData }
+    }
+}
+impl<T: ContentType + 'static> ContentExtractor<T> for ZipExtractor<T> {
+    fn create_session(&mut self, content: OwnedContentPtr<T>, _: &ExtractionContext) -> Option<Box<dyn ExtractionSession<T>>> {
+        ZipArchive::new(ContentReader::new(content))
+            .ok()
+            .map(|archive| Box::new(ZipExtractionSession::new(archive)) as Box<dyn ExtractionSession<T>>)
+    }
+}
+
+struct ZipExtractionSession<T: ContentType> {
+    _marker: PhantomData<T>,
+    archive: ZipArchive<ContentReader<T>>,
+    idx: usize,
+    count: usize,
+    entry: Entry,
+}
+impl<T: ContentType> ZipExtractionSession<T> {
+    pub fn new(archive: ZipArchive<ContentReader<T>>) -> Self {
+        let files_count = archive.len();
+        Self {
+            _marker: PhantomData,
+            archive,
+            idx: usize::MAX,
+            count: files_count,
+            entry: Entry::default(),
+        }
+    }
+}
+impl<T: ContentType + 'static> ExtractionSession<T> for ZipExtractionSession<T> {
+    fn advance(&mut self) -> Option<&crate::Entry> {
+        loop {
+            if self.idx == usize::MAX {
+                if self.count == 0 {
+                    return None;
+                }
+                self.idx = 0;
+            } else {
+                if self.idx >= self.count {
+                    return None;
+                }
+                self.idx += 1;
+            }
+
+            if let Ok(zip_entry) = self.archive.by_index(self.idx) {
+                if zip_entry.is_dir() {
+                    continue;
+                }
+                self.entry.size = zip_entry.size();
+                self.entry.skip_from_filtering = false;
+                if let Some(p) = zip_entry.enclosed_name() {
+                    self.entry.path.set_from_os(p.as_path());
+                } else {
+                    self.entry.path.set_from_str("");
+                }
+                return Some(&self.entry);
+            }
+        }
+    }
+
+    fn extract(&mut self) -> Option<Box<dyn crate::Content<T>>> {
+        let mut zip_entry = self.archive.by_index(self.idx).ok()?;
+        let size = zip_entry.size();
+
+        if size < 0x100000 {
+            let mut data = Vec::with_capacity(size as usize);
+            zip_entry.read_to_end(&mut data).ok()?;
+            Some(Box::new(BufferContent::<T>::from_vec(data, self.entry.path.as_printable_string())))
+        } else {
+            // Large: decompress to a temp file
+            let path = unique_temp_path();
+            let mut out = std::fs::File::create(&path).ok()?;
+            std::io::copy(&mut zip_entry, &mut out).ok()?;
+            out.flush().ok()?;
+            drop(out);
+
+            Some(Box::new(FileContent::<T>::with_size(
+                &path, size, false, // shared LRU: temp file is short-lived, don't mmap/lock it
+            )))
+        }
     }
 }

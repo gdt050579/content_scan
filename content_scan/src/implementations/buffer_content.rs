@@ -27,6 +27,14 @@ impl<T: ContentType> BufferContent<T> {
         }
     }
 
+    pub fn from_vec(buffer: Vec<u8>, path: &str) -> Self {
+        Self {
+            buffer,
+            path: ContentPath::from_str(path),
+            content_type: None,
+        }
+    }
+
     /// Creates a new `BufferContent` by copying `buffer` and pinning it
     /// to a specific content type.
     ///

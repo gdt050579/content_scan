@@ -1,6 +1,7 @@
 use crate::ContentPath;
 use std::{
     fmt::Debug,
+    io::{Read, Seek, SeekFrom},
     ops::{Deref, DerefMut},
 };
 
@@ -179,5 +180,72 @@ impl<T: ContentType> DerefMut for OwnedContentPtr<T> {
     #[inline(always)]
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { &mut *self.content }
+    }
+}
+
+pub struct ContentReader<T: ContentType> {
+    content: OwnedContentPtr<T>,
+    offset: u64,
+}
+impl<T: ContentType> ContentReader<T> {
+    pub fn new(content: OwnedContentPtr<T>) -> Self {
+        Self { content, offset: 0 }
+    }
+}
+impl<T: ContentType> Read for ContentReader<T> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        if buf.is_empty() {
+            return Ok(0);
+        }
+        let len = self.content.size();
+        if self.offset >= len {
+            return Ok(0); // at or past EOF: clean end of stream
+        }
+
+        let remaining = len - self.offset;
+        let want = (buf.len() as u64).min(remaining).min(u32::MAX as u64) as u32;
+
+        match self.content.read(self.offset, want) {
+            Some(src) => {
+                let n = src.len().min(buf.len());
+                buf[..n].copy_from_slice(&src[..n]);
+                self.offset += n as u64;
+                Ok(n)
+            }
+            None => Err(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
+                "Content::read failed before end of content",
+            )),
+        }
+    }
+}
+
+impl<T: ContentType> Seek for ContentReader<T> {
+    fn seek(&mut self, pos: SeekFrom) -> std::io::Result<u64> {
+        let (base, delta) = match pos {
+            SeekFrom::Start(o) => {
+                self.offset = o;
+                return Ok(o);
+            }
+            SeekFrom::End(o) => (self.content.size(), o),
+            SeekFrom::Current(o) => (self.offset, o),
+        };
+
+        let new = if delta >= 0 {
+            base.checked_add(delta as u64)
+        } else {
+            base.checked_sub(delta.unsigned_abs())
+        };
+
+        match new {
+            Some(p) => {
+                self.offset = p;
+                Ok(p)
+            }
+            None => Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "seek to a negative or overflowing position",
+            )),
+        }
     }
 }
