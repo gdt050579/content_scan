@@ -75,6 +75,13 @@ pub struct Entry {
 /// [`ScannerBuilder::add_analyzer`](crate::ScannerBuilder::add_analyzer)
 /// or as generic (all types) plugins via
 /// [`ScannerBuilder::add_generic_analyzer`](crate::ScannerBuilder::add_generic_analyzer).
+///
+/// Every analyzer must implement [`Dependencies`] — typically with
+/// `#[derive(Dependencies)]` and a `#[Dependencies(name = "...")]`
+/// attribute. In debug builds,
+/// [`ScannerBuilder::build`](crate::ScannerBuilder::build) uses that
+/// name (and any `requires`) to check that required analyzers are
+/// registered with a strictly lower priority.
 pub trait ContentAnalyzer<T: ContentType>: Dependencies {
     /// Analyzes `content` and reports findings through `context`.
     ///
@@ -266,9 +273,45 @@ pub trait ContentIdentifier<T: ContentType> {
     fn validate(&self, content: &mut dyn Content<T>) -> bool;
 }
 
+/// Debug-only name and required-analyzer list for a plugin.
+///
+/// [`ContentAnalyzer`] requires this trait. The usual implementation
+/// is `#[derive(Dependencies)]` with a helper attribute:
+///
+/// ```ignore
+/// use content_scan::Dependencies;
+///
+/// #[derive(Dependencies)]
+/// #[Dependencies(name = "NeedsHash", requires = "ComputeHash")]
+/// struct NeedsHash;
+/// ```
+///
+/// - `name` is required and must be a non-empty string. It is the
+///   identifier other analyzers use in `requires`.
+/// - `requires` is optional. It may be a single string or an array of
+///   strings naming other analyzers that must run first.
+///
+/// `name()` and `dependencies()` exist only when `debug_assertions`
+/// are enabled. In debug builds,
+/// [`ScannerBuilder::build`](crate::ScannerBuilder::build) verifies
+/// that every required name is a registered analyzer and that each
+/// dependency has a **strictly smaller** `priority`. The check is
+/// global: typed and generic analyzers share one name space,
+/// regardless of [`ContentType`].
 pub trait Dependencies {
+    /// Unique name of this analyzer.
+    ///
+    /// Only available in debug builds. Used by
+    /// [`ScannerBuilder::build`](crate::ScannerBuilder::build) to
+    /// resolve `requires` entries.
     #[cfg(debug_assertions)]
     fn name(&self) -> &'static str;
+
+    /// Names of analyzers this one requires, matching their [`name`](Self::name).
+    ///
+    /// Only available in debug builds. Empty when `requires` was
+    /// omitted. Each listed analyzer must be registered with a
+    /// strictly smaller `priority` than this one.
     #[cfg(debug_assertions)]
     fn dependencies(&self) -> &'static [&'static str];
 }

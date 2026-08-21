@@ -30,7 +30,10 @@
 //! - **[`ContentAnalyzer`]** – inspects content and records information
 //!   into the [`Context`] (global or per-object variable maps). An
 //!   analyzer can also queue extra extraction with
-//!   [`Context::request_extract`].
+//!   [`Context::request_extract`]. Every analyzer implements
+//!   [`Dependencies`] (typically via `#[derive(Dependencies)]`) so
+//!   debug builds can check that required analyzers are registered
+//!   with a lower priority.
 //! - **[`ContentExtractor`]** – produces child [`Content`] items from a
 //!   parent (e.g. entries of an archive). `create_session` receives an
 //!   [`OwnedContentPtr`] to the parent and an [`ExtractionContext`]

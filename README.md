@@ -36,6 +36,7 @@ Typical use cases:
     - [`ContentPath`](#contentpath)
     - [`ContentIdentifier`](#contentidentifier)
     - [`ZipIdentifier`](#zipidentifier)
+    - [`Dependencies`](#dependencies)
     - [`ContentAnalyzer`](#contentanalyzer)
     - [`ContentExtractor`](#contentextractor)
     - [`ExtractionSession`](#extractionsession)
@@ -60,7 +61,7 @@ This repository is a Cargo workspace with three members:
 | Crate                     | Path                                                  | Purpose                                                                                        |
 | ------------------------- | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
 | `content_scan`            | [`content_scan/`](content_scan)                       | The main library: scanner, traits, matchers, filters.                                          |
-| `content_scan_proc_macro` | [`content-scan-proc-macro/`](content-scan-proc-macro) | Companion proc-macro crate exposing `#[derive(ContentType)]`. Re-exported from `content_scan`. |
+| `content_scan_proc_macro` | [`content-scan-proc-macro/`](content-scan-proc-macro) | Companion proc-macro crate exposing `#[derive(ContentType)]` and `#[derive(Dependencies)]`. Re-exported from `content_scan`. |
 | `examples`                | [`examples/`](examples)                               | Runnable examples (`sum`, `vowals`, `image_size`, `base64_find`, `md5`, `find_zip`).              |
 
 You normally only depend on `content_scan` — the proc-macro is re-exported for you.
@@ -75,13 +76,13 @@ The framework is built around a few small traits:
 - **`Content<T>`** — an abstract, seekable, read-only byte source with a `ContentPath` and a size. Ready-made `BufferContent<T>` (in-memory), `FileContent<T>` (memory-mapped file) and `FolderContent<T>` (a directory, used as a container) implementations are provided.
 - **`ContentPath`** — the path or synthetic address of a piece of content. Holds a UTF-8 printable view always, and keeps the original OS path when the name is not valid UTF-8 so the file can still be opened.
 - **`ContentIdentifier<T>`** — decides *what* a piece of content is (by magic bytes, extension, or file name) and validates the guess.
-- **`ContentAnalyzer<T>`** — reads content and produces information (stored in a shared `Context`). Analyzers can also queue extra extraction passes with `context.request_extract(ty)`.
+- **`ContentAnalyzer<T>`** — reads content and produces information (stored in a shared `Context`). Analyzers can also queue extra extraction passes with `context.request_extract(ty)`. Every analyzer implements `Dependencies` (typically via `#[derive(Dependencies)]`) so debug builds can check that required analyzers are registered with a lower priority.
 - **`ContentExtractor<T>`** — pulls sub-contents out of a container. `create_session` receives an `OwnedContentPtr` to the parent and an `ExtractionContext` describing the region to look at (`offset`, optional `length`, optional `params`), and returns an `ExtractionSession`. The session then yields children via `advance` / `extract`. Per-session state (cursors, open archives, the current `Entry`) lives on that session object, not on the extractor — one extractor instance is shared and sessions may nest. `FolderExtractor<T>` is a ready-made extractor that enumerates a directory.
 - **`Filter`** — decides which paths / sizes should be processed at all.
 - **`Scanner<T>`** — the orchestrator; built via `ScannerBuilder<T>`.
 - **`ScanResult<T>` / `ScanContentHandle`** — after a scan, the framework exposes the full **tree** of visited objects (parent / child / sibling links), each with its interned path, resolved content type and its own local `VarMap`.
 
-Analyzers are either **specific** to a `ContentType` or **generic** (run on every scanned object), and each is registered with a `priority` byte to control execution order. Extractors are registered per type and run in registration order — both when the current object is that type, and when an analyzer [requests](#requesting-extraction) that type.
+Analyzers are either **specific** to a `ContentType` or **generic** (run on every scanned object), and each is registered with a `priority` byte to control execution order. In debug builds, `ScannerBuilder::build` also checks each analyzer's [`Dependencies`](#dependencies) `requires` list: every named analyzer must be registered with a **strictly smaller** priority. Extractors are registered per type and run in registration order — both when the current object is that type, and when an analyzer [requests](#requesting-extraction) that type.
 
 ---
 
@@ -100,7 +101,7 @@ Bring the prelude into scope:
 use content_scan::*;
 ```
 
-Define your content types, plug in identifiers / analyzers / extractors, build a `Scanner`, and call `scan()`:
+Define your content types, plug in identifiers / analyzers / extractors, build a `Scanner`, and call `scan()`. Analyzers need `#[derive(Dependencies)]` in addition to `ContentAnalyzer`.
 
 ```rust
 use content_scan::*;
@@ -158,6 +159,8 @@ enum MyType {
     TextBuffer,
 }
 
+#[derive(Dependencies)]
+#[Dependencies(name = "VowelAnalyzer")]
 struct VowelAnalyzer;
 impl ContentAnalyzer<MyType> for VowelAnalyzer {
     fn analyze(&mut self, content: &mut dyn Content<MyType>, context: &mut Context) -> NextAction {
@@ -203,6 +206,8 @@ fn main() {
 This example shows the full pipeline — a text container is *identified* by magic bytes, an *extractor* pulls numeric substrings out of it as independent `Number` contents, and a numeric *analyzer* both sums them into a shared **global** variable and stashes each value into a per-object **local** `VarMap`. After the scan, the example walks the resulting tree via `ScanResult`. The extractor's cursor lives on an [`ExtractionSession`](#extractionsession) that holds an [`OwnedContentPtr`](#ownedcontentptr) to the parent, so a nested extraction can open another session without overwriting the first. See [`examples/sum/main.rs`](examples/sum/main.rs).
 
 ```rust
+#[derive(Dependencies)]
+#[Dependencies(name = "NumericAnalyzer")]
 struct NumericAnalyzer;
 impl ContentAnalyzer<MyTypes> for NumericAnalyzer {
     fn analyze(&mut self, content: &mut dyn Content<MyTypes>, context: &mut Context) -> NextAction {
@@ -294,6 +299,9 @@ cargo run --example base64_find -- ./inbox
 ```
 
 ```rust
+#[derive(Dependencies)]
+#[Dependencies(name = "Base64Finder")]
+struct Base64Finder;
 impl ContentAnalyzer<MyTypes> for Base64Finder {
     fn analyze(&mut self, content: &mut dyn Content<MyTypes>, context: &mut Context<MyTypes>) -> NextAction {
         // ...locate a run at `start` of length `len`...
@@ -335,6 +343,9 @@ impl ExtractionSession<MyTypes> for Base64Session {
     // ...
 }
 
+#[derive(Dependencies)]
+#[Dependencies(name = "Base64DecodedAnalyzer")]
+struct Base64DecodedAnalyzer;
 impl ContentAnalyzer<MyTypes> for Base64DecodedAnalyzer {
     fn analyze(&mut self, content: &mut dyn Content<MyTypes>, _: &mut Context<MyTypes>) -> NextAction {
         let buf = content.read(0, content.size() as u32).unwrap_or(&[]);
@@ -356,6 +367,8 @@ cargo run --example md5 -- ./content_scan/src
 ```
 
 ```rust
+#[derive(Dependencies)]
+#[Dependencies(name = "ComputeHashAnalyzer")]
 struct ComputeHashAnalyzer;
 impl ContentAnalyzer<MyTypes> for ComputeHashAnalyzer {
     fn analyze(&mut self, content: &mut dyn Content<MyTypes>, _: &mut Context<MyTypes>) -> NextAction {
@@ -519,10 +532,40 @@ At most **one identifier per `ContentType`** may be registered; the builder will
 .add_identifier(MyTypes::Zip, ZipIdentifier::new())
 ```
 
+### `Dependencies`
+
+Every [`ContentAnalyzer`](#contentanalyzer) must implement `Dependencies`. The `#[derive(Dependencies)]` macro (re-exported from `content_scan`) does that from a helper attribute:
+
+```rust
+#[derive(Dependencies)]
+#[Dependencies(name = "NeedsHash", requires = "ComputeHash")]
+struct NeedsHash;
+
+#[derive(Dependencies)]
+#[Dependencies(name = "ComputeHash", requires = ["OpenFile", "MapPages"])]
+struct ComputeHash;
+
+#[derive(Dependencies)]
+#[Dependencies(name = "OpenFile")]
+struct OpenFile;
+```
+
+- `name` is required and must be a non-empty string. Other analyzers refer to this plugin by that name in `requires`.
+- `requires` is optional. It may be a single string or an array of strings naming analyzers that must run **first**.
+
+The derived `name()` / `dependencies()` methods exist only when `debug_assertions` are enabled. In debug builds, `ScannerBuilder::build` checks that:
+
+1. Every name listed in `requires` is a registered analyzer (typed or generic — names are global, not per `ContentType`).
+2. Each required analyzer has a **strictly smaller** `priority` than the one that requires it (lower numbers run first).
+
+Release builds skip the check. Duplicate `name`s among registered analyzers are not rejected; the last registration wins for the debug map.
+
+Generics are not supported by the derive. Unit structs, tuple structs, named-field structs, enums, and unions all work.
+
 ### `ContentAnalyzer`
 
 ```rust
-pub trait ContentAnalyzer<T: ContentType> {
+pub trait ContentAnalyzer<T: ContentType>: Dependencies {
     fn analyze(&mut self, content: &mut dyn Content<T>, context: &mut Context<T>) -> NextAction;
 }
 ```
@@ -538,7 +581,7 @@ Register analyzers with:
 - `add_analyzer(content_type, priority, analyzer)` — runs only when the content matches `content_type`.
 - `add_generic_analyzer(priority, analyzer)` — runs for every scanned object, regardless of type.
 
-Within a bucket, analyzers execute in ascending `priority` order.
+Within a bucket, analyzers execute in ascending `priority` order. If an analyzer `requires` another (see [`Dependencies`](#dependencies)), register that dependency with a smaller priority; debug builds enforce this in `build()`.
 
 ### `ContentExtractor`
 
@@ -793,6 +836,8 @@ let result: ScanResult = scanner.scan(&mut content, /* filter_root */ true);
 The second argument to `scan` decides whether the configured `Filter` is applied to the root object itself. Pass `true` for a normal file — the scan then returns an empty `ScanResult` if the filter rejects it. Pass `false` when the root is a container that the filter was never written to accept, such as a folder being walked with a filter that only allows `png` files. Extracted children are always filtered regardless of this flag (unless their `Entry` opts out via `skip_from_filtering`).
 
 A scanner is reusable: `scan` clears its internal `Context` on entry, so one instance can process many inputs in sequence.
+
+`build()` panics if two identifiers are registered for the same `ContentType`, or if a magic pattern is longer than 16 bytes. In **debug** builds it also panics if an analyzer `requires` a name that is not registered, or if that dependency does not have a strictly smaller `priority` — see [`Dependencies`](#dependencies).
 
 ### `Context` / `ScanResult`
 

@@ -343,6 +343,15 @@ impl<T: ContentType> Scanner<T> {
 /// Extractors have no priority: multiple extractors for the same type
 /// run in registration order.
 ///
+/// # Dependencies
+///
+/// Every analyzer implements [`Dependencies`](crate::Dependencies)
+/// (typically via `#[derive(Dependencies)]`). Its `name` identifies it
+/// to other analyzers; `requires` lists names that must run first.
+/// In debug builds, [`build`](Self::build) checks that each required
+/// name is registered and has a **strictly smaller** `priority`.
+/// Names are global across typed and generic analyzers.
+///
 /// # Generic vs. typed plugins
 ///
 /// - `add_analyzer` registers a plugin against a specific
@@ -395,6 +404,11 @@ impl<T: ContentType> ScannerBuilder<T> {
     /// same type; lower values run first. Multiple analyzers for the
     /// same `(content_type, priority)` are allowed and their relative
     /// order is unspecified.
+    ///
+    /// If this analyzer's [`Dependencies`](crate::Dependencies)
+    /// `requires` another analyzer, that analyzer must be registered
+    /// (typed or generic) with a strictly smaller `priority`. Debug
+    /// builds check this in [`build`](Self::build).
     pub fn add_analyzer<A>(mut self, content_type: T, priority: u8, analyzer: A) -> Self
     where
         A: ContentAnalyzer<T> + 'static,
@@ -409,6 +423,10 @@ impl<T: ContentType> ScannerBuilder<T> {
     /// Generic analyzers run after all type-specific analyzers for a
     /// given object. `priority` (`0..=255`) orders generic analyzers
     /// among themselves; lower values run first.
+    ///
+    /// [`Dependencies`](crate::Dependencies) `requires` names are
+    /// resolved against **all** registered analyzers (typed and
+    /// generic). Debug builds check this in [`build`](Self::build).
     pub fn add_generic_analyzer<A>(mut self, priority: u8, analyzer: A) -> Self
     where
         A: ContentAnalyzer<T> + 'static,
@@ -506,6 +524,11 @@ impl<T: ContentType> ScannerBuilder<T> {
     /// [`ContentType`], or if an [`IdentifyMethod::Magic`](crate::IdentifyMethod::Magic) /
     /// [`IdentifyMethod::MultipleMagic`](crate::IdentifyMethod::MultipleMagic) pattern is longer than 16
     /// bytes.
+    ///
+    /// In debug builds, also panics if an analyzer's
+    /// [`Dependencies`](crate::Dependencies) `requires` a name that is
+    /// not registered, or if a required analyzer does not have a
+    /// strictly smaller `priority`.
     pub fn build(self) -> Scanner<T> {
         self.check_unique_identifiers();
         #[cfg(debug_assertions)]

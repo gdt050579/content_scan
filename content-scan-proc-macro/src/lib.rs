@@ -53,7 +53,9 @@ pub fn derive_content_type(input: TokenStream) -> TokenStream {
 
 /// Derives an implementation of `content_scan::Dependencies`.
 ///
-/// The type must be annotated with `#[Dependencies(...)]`:
+/// The type must be annotated with `#[Dependencies(...)]`. `name` is
+/// required and must be a non-empty string. `requires` is optional
+/// and may be a single string or an array of strings:
 ///
 /// ```ignore
 /// use content_scan::Dependencies;
@@ -65,10 +67,22 @@ pub fn derive_content_type(input: TokenStream) -> TokenStream {
 /// #[derive(Dependencies)]
 /// #[Dependencies(name = "xyz", requires = ["abc", "123", "blablabla"])]
 /// struct PluginB;
+///
+/// #[derive(Dependencies)]
+/// #[Dependencies(name = "solo")]
+/// struct PluginC;
 /// ```
 ///
-/// `name` is required and must be a non-empty string. `requires` is
-/// optional and may be a single string or an array of strings.
+/// The derived methods exist only when `debug_assertions` are
+/// enabled. In debug builds, `ScannerBuilder::build` uses `name` and
+/// `requires` to check that required analyzers are registered with a
+/// strictly smaller priority.
+///
+/// # Requirements
+///
+/// The target must be a non-generic `struct`, `enum`, or `union`.
+/// Analyzers typically use this derive because
+/// `content_scan::ContentAnalyzer` requires `Dependencies`.
 #[proc_macro_derive(Dependencies, attributes(Dependencies))]
 pub fn derive_dependencies(input: TokenStream) -> TokenStream {
     match dependencies_derive::process(input) {
