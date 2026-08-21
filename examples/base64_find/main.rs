@@ -89,6 +89,8 @@ impl ContentIdentifier<MyTypes> for TextIdentifier {
 }
 
 /// Walks a file looking for contiguous Base64 runs and queues a `Base64` extraction for each one.
+#[derive(Dependencies)]
+#[Dependencies(name = "Base64Finder")]
 struct Base64Finder;
 impl ContentAnalyzer<MyTypes> for Base64Finder {
     fn analyze(&mut self, content: &mut dyn Content<MyTypes>, context: &mut Context<MyTypes>) -> NextAction {
@@ -128,6 +130,8 @@ impl ContentAnalyzer<MyTypes> for Base64Finder {
 }
 
 /// Reads the requested slice, Base64-decodes it into a `Vec<u8>`, and yields it as `Base64Decoded`.
+#[derive(Dependencies)]
+#[Dependencies(name = "Base64Extractor")]
 struct Base64Extractor;
 
 struct Base64Session {
@@ -181,6 +185,8 @@ impl ExtractionSession<MyTypes> for Base64Session {
     }
 }
 
+#[derive(Dependencies)]
+#[Dependencies(name = "Base64DecodedAnalyzer")]
 struct Base64DecodedAnalyzer;
 impl ContentAnalyzer<MyTypes> for Base64DecodedAnalyzer {
     fn analyze(&mut self, content: &mut dyn Content<MyTypes>, _: &mut Context<MyTypes>) -> NextAction {

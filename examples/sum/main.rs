@@ -86,6 +86,8 @@ impl ExtractionSession<MyTypes> for NumericSession {
     }
 }
 
+#[derive(Dependencies)]
+#[Dependencies(name = "NumericAnalyzer")]
 struct NumericAnalyzer;
 impl ContentAnalyzer<MyTypes> for NumericAnalyzer {
     fn analyze(&mut self, content: &mut dyn Content<MyTypes>, context: &mut Context<MyTypes>) -> NextAction {

@@ -8,6 +8,8 @@ enum MyTypes {
     Folder,
 }
 
+#[derive(Dependencies)]
+#[Dependencies(name = "ZipPrinter")]
 struct ZipPrinter;
 impl ContentAnalyzer<MyTypes> for ZipPrinter {
     fn analyze(&mut self, content: &mut dyn Content<MyTypes>, _: &mut Context<MyTypes>) -> NextAction {

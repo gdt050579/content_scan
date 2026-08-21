@@ -13,6 +13,8 @@ impl ContentIdentifier<ImageType> for JpegIdentifier {
     }
 }
 
+#[derive(Dependencies)]
+#[Dependencies(name = "JpegAnalyzer")]
 pub struct JpegAnalyzer;
 impl ContentAnalyzer<ImageType> for JpegAnalyzer {
     fn analyze(&mut self, content: &mut dyn Content<ImageType>, context: &mut Context<ImageType>) -> NextAction {

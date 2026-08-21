@@ -6,6 +6,8 @@ enum MyType {
     TextBuffer,
 }
 
+#[derive(Dependencies)]
+#[Dependencies(name = "VowelAnalyzer")]
 struct VowelAnalyzer;
 impl ContentAnalyzer<MyType> for VowelAnalyzer {
     fn analyze(&mut self, content: &mut dyn Content<MyType>, context: &mut Context<MyType>) -> NextAction {
