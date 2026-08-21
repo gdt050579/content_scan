@@ -1,14 +1,15 @@
 //! Procedural macros for the [`content_scan`] crate.
 //!
-//! This crate provides the `#[derive(ContentType)]` macro used to
-//! automatically implement the `ContentType` trait for user-defined
-//! `#[repr(u16)]` enums. End users normally import it through the
-//! `content_scan` re-export rather than depending on this crate
+//! This crate provides the `#[derive(ContentType)]` and
+//! `#[derive(Dependencies)]` macros used to automatically implement
+//! the corresponding traits. End users normally import them through
+//! the `content_scan` re-export rather than depending on this crate
 //! directly.
 //!
 //! [`content_scan`]: https://docs.rs/content_scan
 
-mod derive;
+mod content_type_derive;
+mod dependencies_derive;
 use proc_macro::*;
 extern crate proc_macro;
 
@@ -44,7 +45,33 @@ extern crate proc_macro;
 /// ```
 #[proc_macro_derive(ContentType)]
 pub fn derive_content_type(input: TokenStream) -> TokenStream {
-    match derive::process_content_type(input) {
+    match content_type_derive::process(input) {
+        Ok(ts) => ts,
+        Err(msg) => format!("compile_error!({:?});", msg).parse().unwrap(),
+    }
+}
+
+/// Derives an implementation of `content_scan::Dependencies`.
+///
+/// The type must be annotated with `#[Dependencies(...)]`:
+///
+/// ```ignore
+/// use content_scan::Dependencies;
+///
+/// #[derive(Dependencies)]
+/// #[Dependencies(name = "xyz", requires = "abc")]
+/// struct PluginA;
+///
+/// #[derive(Dependencies)]
+/// #[Dependencies(name = "xyz", requires = ["abc", "123", "blablabla"])]
+/// struct PluginB;
+/// ```
+///
+/// `name` is required and must be a non-empty string. `requires` is
+/// optional and may be a single string or an array of strings.
+#[proc_macro_derive(Dependencies, attributes(Dependencies))]
+pub fn derive_dependencies(input: TokenStream) -> TokenStream {
+    match dependencies_derive::process(input) {
         Ok(ts) => ts,
         Err(msg) => format!("compile_error!({:?});", msg).parse().unwrap(),
     }

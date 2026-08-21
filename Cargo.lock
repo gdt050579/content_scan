@@ -109,7 +109,7 @@ checksum = "3d52eff69cd5e647efe296129160853a42795992097e8af39800e1060caeea9b"
 name = "content_scan"
 version = "0.1.7"
 dependencies = [
- "content_scan_proc_macro 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "content_scan_proc_macro",
  "filecache",
  "varmap",
  "zip",
@@ -118,12 +118,6 @@ dependencies = [
 [[package]]
 name = "content_scan_proc_macro"
 version = "0.1.3"
-
-[[package]]
-name = "content_scan_proc_macro"
-version = "0.1.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "71bee4302f7e6da39818dad7e27836276773183016138bb9db6f95b646582eba"
 
 [[package]]
 name = "cpubits"

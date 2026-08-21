@@ -121,7 +121,7 @@ use matcher::*;
 use object::Object;
 
 pub use content_path::*;
-pub use content_scan_proc_macro::ContentType;
+pub use content_scan_proc_macro::{ContentType, Dependencies};
 pub use context::Context;
 pub use context::ScanContentHandle;
 pub use context::ScanResult;

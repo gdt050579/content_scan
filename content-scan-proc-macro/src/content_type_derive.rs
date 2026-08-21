@@ -1,6 +1,6 @@
 use proc_macro::{Delimiter, TokenStream, TokenTree};
 
-pub(crate) fn process_content_type(input: TokenStream) -> Result<TokenStream, String> {
+pub(crate) fn process(input: TokenStream) -> Result<TokenStream, String> {
     let tokens: Vec<TokenTree> = input.into_iter().collect();
     let mut i = 0;
 

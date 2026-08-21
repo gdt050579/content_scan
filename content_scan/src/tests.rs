@@ -1291,3 +1291,37 @@ mod folder_symlinks {
         assert!(!names.iter().any(|n| n == "dangling"), "{names:?}");
     }
 }
+
+mod dependencies_derive {
+    use crate::Dependencies;
+
+    #[derive(Dependencies)]
+    #[Dependencies(name = "xyz", requires = "abc")]
+    struct PluginA;
+
+    #[derive(Dependencies)]
+    #[Dependencies(name = "xyz", requires = ["abc", "123", "blablabla"])]
+    struct PluginB;
+
+    #[derive(Dependencies)]
+    #[Dependencies(name = "solo")]
+    struct PluginC;
+
+    #[test]
+    fn single_requires_string() {
+        assert_eq!(PluginA::NAME, "xyz");
+        assert_eq!(PluginA::DEPENDENCIES, &["abc"]);
+    }
+
+    #[test]
+    fn requires_array() {
+        assert_eq!(PluginB::NAME, "xyz");
+        assert_eq!(PluginB::DEPENDENCIES, &["abc", "123", "blablabla"]);
+    }
+
+    #[test]
+    fn requires_optional() {
+        assert_eq!(PluginC::NAME, "solo");
+        assert_eq!(PluginC::DEPENDENCIES, &[] as &[&str]);
+    }
+}

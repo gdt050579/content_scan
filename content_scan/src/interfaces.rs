@@ -265,3 +265,8 @@ pub trait ContentIdentifier<T: ContentType> {
     /// a fully custom identifier (`identify_method` returning `None`).
     fn validate(&self, content: &mut dyn Content<T>) -> bool;
 }
+
+pub trait Dependencies {
+    const NAME: &'static str;
+    const DEPENDENCIES: &'static [&'static str];
+}
