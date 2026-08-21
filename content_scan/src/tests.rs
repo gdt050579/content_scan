@@ -1310,39 +1310,215 @@ mod folder_symlinks {
     }
 }
 
-mod dependencies_derive {
-    use crate::Dependencies;
+mod dependencies {
+    use crate::*;
+
+    #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, ContentType)]
+    #[repr(u16)]
+    enum Ty {
+        A,
+        B,
+    }
 
     #[derive(Dependencies)]
     #[Dependencies(name = "xyz", requires = "abc")]
-    struct PluginA;
+    struct RequiresString;
 
     #[derive(Dependencies)]
     #[Dependencies(name = "xyz", requires = ["abc", "123", "blablabla"])]
-    struct PluginB;
+    struct RequiresArray;
 
     #[derive(Dependencies)]
     #[Dependencies(name = "solo")]
-    struct PluginC;
+    struct NoRequires;
+
+    #[derive(Dependencies)]
+    #[Dependencies(name = "empty_array", requires = [])]
+    struct EmptyRequiresArray;
+
+    #[derive(Dependencies)]
+    #[Dependencies(requires = ["abc"], name = "reversed")]
+    struct ReversedParams;
+
+    #[derive(Dependencies)]
+    #[Dependencies(name = "trailing", requires = ["a", "b"],)]
+    struct TrailingComma;
+
+    #[derive(Dependencies)]
+    #[Dependencies(name = "tuple")]
+    struct TuplePlugin(#[allow(dead_code)] u8);
+
+    #[derive(Dependencies)]
+    #[Dependencies(name = "enum_plugin", requires = "solo")]
+    enum EnumPlugin {
+        Only,
+    }
+
+    #[derive(Dependencies)]
+    #[Dependencies(name = "base")]
+    struct Base;
+    impl ContentAnalyzer<Ty> for Base {
+        fn analyze(&mut self, _: &mut dyn Content<Ty>, _: &mut Context<Ty>) -> NextAction {
+            NextAction::Continue
+        }
+    }
+
+    #[derive(Dependencies)]
+    #[Dependencies(name = "needs_base", requires = "base")]
+    struct NeedsBase;
+    impl ContentAnalyzer<Ty> for NeedsBase {
+        fn analyze(&mut self, _: &mut dyn Content<Ty>, _: &mut Context<Ty>) -> NextAction {
+            NextAction::Continue
+        }
+    }
+
+    #[derive(Dependencies)]
+    #[Dependencies(name = "needs_two", requires = ["base", "solo_analyzer"])]
+    struct NeedsTwo;
+    impl ContentAnalyzer<Ty> for NeedsTwo {
+        fn analyze(&mut self, _: &mut dyn Content<Ty>, _: &mut Context<Ty>) -> NextAction {
+            NextAction::Continue
+        }
+    }
+
+    #[derive(Dependencies)]
+    #[Dependencies(name = "solo_analyzer")]
+    struct SoloAnalyzer;
+    impl ContentAnalyzer<Ty> for SoloAnalyzer {
+        fn analyze(&mut self, _: &mut dyn Content<Ty>, _: &mut Context<Ty>) -> NextAction {
+            NextAction::Continue
+        }
+    }
+
+    #[derive(Dependencies)]
+    #[Dependencies(name = "missing_dep", requires = "does_not_exist")]
+    struct MissingDep;
+    impl ContentAnalyzer<Ty> for MissingDep {
+        fn analyze(&mut self, _: &mut dyn Content<Ty>, _: &mut Context<Ty>) -> NextAction {
+            NextAction::Continue
+        }
+    }
+
+    #[cfg(debug_assertions)]
+    fn names_of(p: &dyn Dependencies) -> (&'static str, &'static [&'static str]) {
+        (p.name(), p.dependencies())
+    }
 
     #[test]
     #[cfg(debug_assertions)]
     fn single_requires_string() {
-        assert_eq!(PluginA{}.name(), "xyz");
-        assert_eq!(PluginA{}.dependencies(), &["abc"]);
+        assert_eq!(RequiresString.name(), "xyz");
+        assert_eq!(RequiresString.dependencies(), &["abc"]);
     }
 
     #[test]
     #[cfg(debug_assertions)]
     fn requires_array() {
-        assert_eq!(PluginB{}.name(), "xyz");
-        assert_eq!(PluginB{}.dependencies(), &["abc", "123", "blablabla"]);
+        assert_eq!(RequiresArray.name(), "xyz");
+        assert_eq!(RequiresArray.dependencies(), &["abc", "123", "blablabla"]);
     }
 
     #[test]
     #[cfg(debug_assertions)]
     fn requires_optional() {
-        assert_eq!(PluginC{}.name(), "solo");
-        assert_eq!(PluginC{}.dependencies(), &[] as &[&str]);
+        assert_eq!(NoRequires.name(), "solo");
+        assert_eq!(NoRequires.dependencies(), &[] as &[&str]);
+    }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    fn empty_requires_array_is_no_dependencies() {
+        assert_eq!(EmptyRequiresArray.name(), "empty_array");
+        assert_eq!(EmptyRequiresArray.dependencies(), &[] as &[&str]);
+    }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    fn parameter_order_does_not_matter() {
+        assert_eq!(ReversedParams.name(), "reversed");
+        assert_eq!(ReversedParams.dependencies(), &["abc"]);
+    }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    fn trailing_comma_in_attribute() {
+        assert_eq!(TrailingComma.name(), "trailing");
+        assert_eq!(TrailingComma.dependencies(), &["a", "b"]);
+    }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    fn works_on_tuple_structs_and_enums() {
+        assert_eq!(TuplePlugin(0).name(), "tuple");
+        assert_eq!(TuplePlugin(0).dependencies(), &[] as &[&str]);
+        assert_eq!(EnumPlugin::Only.name(), "enum_plugin");
+        assert_eq!(EnumPlugin::Only.dependencies(), &["solo"]);
+    }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    fn methods_are_available_on_dyn_dependencies() {
+        assert_eq!(names_of(&RequiresString), ("xyz", &["abc"] as &[&str]));
+        assert_eq!(names_of(&NoRequires), ("solo", &[] as &[&str]));
+    }
+
+    #[test]
+    fn build_succeeds_when_required_analyzer_has_lower_priority() {
+        let _ = ScannerBuilder::new().add_analyzer(Ty::A, 0, Base).add_analyzer(Ty::A, 1, NeedsBase).build();
+    }
+
+    #[test]
+    fn build_succeeds_when_dependency_is_on_another_type() {
+        let _ = ScannerBuilder::new().add_analyzer(Ty::A, 0, Base).add_analyzer(Ty::B, 10, NeedsBase).build();
+    }
+
+    #[test]
+    fn build_succeeds_with_generic_dependency() {
+        let _ = ScannerBuilder::new()
+            .add_generic_analyzer(0, Base)
+            .add_analyzer(Ty::A, 5, NeedsBase)
+            .build();
+    }
+
+    #[test]
+    fn build_succeeds_with_multiple_requires() {
+        let _ = ScannerBuilder::new()
+            .add_analyzer(Ty::A, 0, Base)
+            .add_generic_analyzer(1, SoloAnalyzer)
+            .add_analyzer(Ty::A, 2, NeedsTwo)
+            .build();
+    }
+
+    #[test]
+    fn build_succeeds_when_analyzer_has_no_requires() {
+        let _ = ScannerBuilder::new().add_analyzer(Ty::A, 0, SoloAnalyzer).build();
+    }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    #[should_panic(expected = "Dependency does_not_exist not found for analyzer missing_dep")]
+    fn build_panics_when_required_analyzer_is_missing() {
+        let _ = ScannerBuilder::new().add_analyzer(Ty::A, 0, MissingDep).build();
+    }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    #[should_panic(expected = "priority smaller")]
+    fn build_panics_when_dependency_has_higher_priority() {
+        let _ = ScannerBuilder::new().add_analyzer(Ty::A, 5, Base).add_analyzer(Ty::A, 1, NeedsBase).build();
+    }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    #[should_panic(expected = "priority smaller")]
+    fn build_panics_when_dependency_has_equal_priority() {
+        let _ = ScannerBuilder::new().add_analyzer(Ty::A, 3, Base).add_analyzer(Ty::A, 3, NeedsBase).build();
+    }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    #[should_panic(expected = "Dependency solo_analyzer not found")]
+    fn build_panics_when_one_of_several_requires_is_missing() {
+        let _ = ScannerBuilder::new().add_analyzer(Ty::A, 0, Base).add_analyzer(Ty::A, 2, NeedsTwo).build();
     }
 }
