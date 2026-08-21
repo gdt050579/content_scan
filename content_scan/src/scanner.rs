@@ -472,6 +472,32 @@ impl<T: ContentType> ScannerBuilder<T> {
             m.insert(content_type.as_u16());
         }
     }
+    #[cfg(debug_assertions)]
+    fn check_dependencies(&self) {
+        use std::collections::HashMap;
+
+        let mut map = HashMap::new();
+        for (hash, analyzer) in &self.analyzers {
+            let priority = hash & 0xFFFF;
+            let name = analyzer.name();
+            map.insert(name, priority);
+        }
+        // check dependencies
+        for (hash, analyzer) in &self.analyzers {
+            let priority = hash & 0xFFFF;
+            let name = analyzer.name();
+            let dep = analyzer.dependencies();
+            for d in dep {
+                if let Some(dep_priority) = map.get(d) {
+                    if *dep_priority >= priority {
+                        panic!("Analizer {} requiers dependecy {} to have a priority smaller than his. ", name, *d);
+                    }
+                } else {
+                    panic!("Dependency {} not found for analyzer {}", d, name);
+                }
+            }
+        }
+    }
     /// Consumes the builder and produces a ready-to-use [`Scanner`].
     ///
     /// # Panics
@@ -482,6 +508,8 @@ impl<T: ContentType> ScannerBuilder<T> {
     /// bytes.
     pub fn build(self) -> Scanner<T> {
         self.check_unique_identifiers();
+        #[cfg(debug_assertions)]
+        self.check_dependencies();
         let analyzers = AnalyzerList::new(self.analyzers, T::COUNT);
         let extractors = ExtractorList::new(self.extractors);
         let identifiers = IdentifierSet::new(self.identifiers);

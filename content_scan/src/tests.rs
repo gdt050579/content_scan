@@ -781,7 +781,7 @@ mod local_varmap {
     }
 
     #[derive(Dependencies)]
-    #[Dependencies(name = "TagAnalyzer", requires = "Leaf")]
+    #[Dependencies(name = "TagAnalyzer")]
     struct TagAnalyzer(u32);
     impl ContentAnalyzer<Ty> for TagAnalyzer {
         fn analyze(&mut self, _: &mut dyn Content<Ty>, context: &mut Context<Ty>) -> NextAction {
@@ -914,7 +914,7 @@ mod request_extract {
 
 
     #[derive(Dependencies)]
-    #[Dependencies(name = "RequestTwo", requires = "Request")]
+    #[Dependencies(name = "RequestTwo")]
     struct RequestTwo(Ty, Ty);
     impl ContentAnalyzer<Ty> for RequestTwo {
         fn analyze(&mut self, _: &mut dyn Content<Ty>, context: &mut Context<Ty>) -> NextAction {
