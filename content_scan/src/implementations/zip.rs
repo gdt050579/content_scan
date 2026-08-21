@@ -115,6 +115,11 @@ impl<T: ContentType + 'static> ContentExtractor<T> for ZipExtractor<T> {
             .map(|archive| Box::new(ZipExtractionSession::new(archive)) as Box<dyn ExtractionSession<T>>)
     }
 }
+impl<T: ContentType> Default for ZipExtractor<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 struct ZipExtractionSession<T: ContentType> {
     _marker: PhantomData<T>,
