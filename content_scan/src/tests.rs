@@ -780,6 +780,8 @@ mod local_varmap {
         Nest,
     }
 
+    #[derive(Dependencies)]
+    #[Dependencies(name = "TagAnalyzer", requires = "Leaf")]
     struct TagAnalyzer(u32);
     impl ContentAnalyzer<Ty> for TagAnalyzer {
         fn analyze(&mut self, _: &mut dyn Content<Ty>, context: &mut Context<Ty>) -> NextAction {
@@ -788,6 +790,8 @@ mod local_varmap {
         }
     }
 
+    #[derive(Dependencies)]
+    #[Dependencies(name = "SkipAfterLocal")]
     struct SkipAfterLocal;
     impl ContentAnalyzer<Ty> for SkipAfterLocal {
         fn analyze(&mut self, _: &mut dyn Content<Ty>, context: &mut Context<Ty>) -> NextAction {
@@ -898,6 +902,8 @@ mod request_extract {
         Missing,
     }
 
+    #[derive(Dependencies)]
+    #[Dependencies(name = "Request")]
     struct Request(Ty);
     impl ContentAnalyzer<Ty> for Request {
         fn analyze(&mut self, _: &mut dyn Content<Ty>, context: &mut Context<Ty>) -> NextAction {
@@ -906,6 +912,9 @@ mod request_extract {
         }
     }
 
+
+    #[derive(Dependencies)]
+    #[Dependencies(name = "RequestTwo", requires = "Request")]
     struct RequestTwo(Ty, Ty);
     impl ContentAnalyzer<Ty> for RequestTwo {
         fn analyze(&mut self, _: &mut dyn Content<Ty>, context: &mut Context<Ty>) -> NextAction {
@@ -915,6 +924,9 @@ mod request_extract {
         }
     }
 
+
+    #[derive(Dependencies)]
+    #[Dependencies(name = "RequestSlice")]
     struct RequestSlice;
     impl ContentAnalyzer<Ty> for RequestSlice {
         fn analyze(&mut self, _: &mut dyn Content<Ty>, context: &mut Context<Ty>) -> NextAction {
@@ -923,6 +935,8 @@ mod request_extract {
         }
     }
 
+    #[derive(Dependencies)]
+    #[Dependencies(name = "DropWithoutEmit")]
     struct DropWithoutEmit;
     impl ContentAnalyzer<Ty> for DropWithoutEmit {
         fn analyze(&mut self, _: &mut dyn Content<Ty>, context: &mut Context<Ty>) -> NextAction {
@@ -931,6 +945,8 @@ mod request_extract {
         }
     }
 
+    #[derive(Dependencies)]
+    #[Dependencies(name = "RequestMissing")]
     struct RequestMissing;
     impl ContentAnalyzer<Ty> for RequestMissing {
         fn analyze(&mut self, _: &mut dyn Content<Ty>, context: &mut Context<Ty>) -> NextAction {
@@ -939,6 +955,8 @@ mod request_extract {
         }
     }
 
+    #[derive(Dependencies)]
+    #[Dependencies(name = "Tag")]
     struct Tag(u32);
     impl ContentAnalyzer<Ty> for Tag {
         fn analyze(&mut self, content: &mut dyn Content<Ty>, context: &mut Context<Ty>) -> NextAction {
@@ -1308,20 +1326,23 @@ mod dependencies_derive {
     struct PluginC;
 
     #[test]
+    #[cfg(debug_assertions)]
     fn single_requires_string() {
-        assert_eq!(PluginA::NAME, "xyz");
-        assert_eq!(PluginA::DEPENDENCIES, &["abc"]);
+        assert_eq!(PluginA{}.name(), "xyz");
+        assert_eq!(PluginA{}.dependencies(), &["abc"]);
     }
 
     #[test]
+    #[cfg(debug_assertions)]
     fn requires_array() {
-        assert_eq!(PluginB::NAME, "xyz");
-        assert_eq!(PluginB::DEPENDENCIES, &["abc", "123", "blablabla"]);
+        assert_eq!(PluginB{}.name(), "xyz");
+        assert_eq!(PluginB{}.dependencies(), &["abc", "123", "blablabla"]);
     }
 
     #[test]
+    #[cfg(debug_assertions)]
     fn requires_optional() {
-        assert_eq!(PluginC::NAME, "solo");
-        assert_eq!(PluginC::DEPENDENCIES, &[] as &[&str]);
+        assert_eq!(PluginC{}.name(), "solo");
+        assert_eq!(PluginC{}.dependencies(), &[] as &[&str]);
     }
 }

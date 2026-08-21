@@ -76,8 +76,14 @@ pub(crate) fn process(input: TokenStream) -> Result<TokenStream, String> {
     let out = format!(
         r#"
         impl Dependencies for {type_name} {{
-            const NAME: &'static str = {name_lit};
-            const DEPENDENCIES: &'static [&'static str] = {deps};
+            #[cfg(debug_assertions)]
+            fn name(&self) -> &'static str {{
+                {name_lit}
+            }}
+            #[cfg(debug_assertions)]
+            fn dependencies(&self) -> &'static [&'static str] {{
+                {deps}
+            }}
         }}
         "#,
         type_name = type_name,

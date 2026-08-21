@@ -75,7 +75,7 @@ pub struct Entry {
 /// [`ScannerBuilder::add_analyzer`](crate::ScannerBuilder::add_analyzer)
 /// or as generic (all types) plugins via
 /// [`ScannerBuilder::add_generic_analyzer`](crate::ScannerBuilder::add_generic_analyzer).
-pub trait ContentAnalyzer<T: ContentType> {
+pub trait ContentAnalyzer<T: ContentType>: Dependencies {
     /// Analyzes `content` and reports findings through `context`.
     ///
     /// Use [`Context::local`] / [`Context::global`] to record results,
@@ -267,6 +267,8 @@ pub trait ContentIdentifier<T: ContentType> {
 }
 
 pub trait Dependencies {
-    const NAME: &'static str;
-    const DEPENDENCIES: &'static [&'static str];
+    #[cfg(debug_assertions)]
+    fn name(&self) -> &'static str;
+    #[cfg(debug_assertions)]
+    fn dependencies(&self) -> &'static [&'static str];
 }
