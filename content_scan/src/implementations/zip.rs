@@ -100,10 +100,29 @@ impl<T: ContentType> Default for ZipIdentifier<T> {
     }
 }
 
+/// A [`ContentExtractor`] that unpacks the members of a ZIP archive.
+///
+/// Pair it with [`ZipIdentifier`] so the scanner both recognizes ZIP
+/// files and enumerates their entries. Each regular file becomes a
+/// child [`Content`]: small members (`< 1 MiB`) are emitted as an
+/// in-memory [`BufferContent`], larger ones are decompressed to a
+/// temp file and wrapped in [`FileContent`]. Directory entries inside
+/// the archive are skipped.
+///
+/// The session reads the parent through a [`ContentReader`], so the
+/// source can be a file, a buffer, or any other [`Content`].
+///
+/// ```ignore
+/// let mut scanner = ScannerBuilder::<MyTypes>::new()
+///     .add_identifier(MyTypes::Zip, ZipIdentifier::new())
+///     .add_extractor(MyTypes::Zip, ZipExtractor::new())
+///     .build();
+/// ```
 pub struct ZipExtractor<T: ContentType> {
     _marker: PhantomData<T>,
 }
 impl<T: ContentType> ZipExtractor<T> {
+    /// Creates a new ZIP extractor.
     pub fn new() -> Self {
         Self { _marker: PhantomData }
     }

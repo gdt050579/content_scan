@@ -64,14 +64,22 @@ pub struct Entry {
 /// A plugin that inspects a piece of content and records information.
 ///
 /// Analyzers are the "read-only" half of the framework: they observe
-/// content and write findings into the [`Context`]. Use
-/// [`Context::local`] for per-object results and
-/// [`Context::global`] for scan-wide aggregates. To run extractors
-/// registered for a *different* type on a region of this object
-/// (for example the byte offset of an embedded ZIP), call
-/// [`Context::request_extract`]. Analyzers do not
-/// produce child content themselves —
-/// for that, use a [`ContentExtractor`].
+/// content and write results into the [`Context`]. Use
+/// [`Context::local`] for per-object maps,
+/// [`Context::global`] for scan-wide aggregates, and
+/// [`Context::add_finding`] for a flat list of
+/// [`Finding`](crate::Finding)s retrieved after the scan via
+/// [`ScanResult::findings`](crate::ScanResult::findings). To run
+/// extractors registered for a *different* type on a region of this
+/// object (for example the byte offset of an embedded ZIP), call
+/// [`Context::request_extract`]. Analyzers do not produce child
+/// content themselves — for that, use a [`ContentExtractor`].
+///
+/// The `M` type parameter is the [`FindingMetadata`](crate::FindingMetadata)
+/// attached to each finding. It defaults to
+/// [`NoMetadata`](crate::NoMetadata); use
+/// [`ScannerBuilder::with_metadata`](crate::ScannerBuilder::with_metadata)
+/// when analyzers need a custom metadata type.
 ///
 /// Analyzers can be registered per [`ContentType`] via
 /// [`ScannerBuilder::add_analyzer`](crate::ScannerBuilder::add_analyzer)
@@ -87,8 +95,10 @@ pub struct Entry {
 pub trait ContentAnalyzer<T: ContentType, M: FindingMetadata = NoMetadata>: Dependencies {
     /// Analyzes `content` and reports findings through `context`.
     ///
-    /// Use [`Context::local`] / [`Context::global`] to record results,
-    /// and [`Context::request_extract`] to queue extractors of another
+    /// Use [`Context::local`] / [`Context::global`] to record maps,
+    /// [`Context::add_finding`] to emit a
+    /// [`Finding`](crate::Finding), and
+    /// [`Context::request_extract`] to queue extractors of another
     /// type on a region of `content`. The returned [`NextAction`]
     /// controls whether further analyzers (and extractors) run for
     /// this object.

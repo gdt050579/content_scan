@@ -183,11 +183,31 @@ impl<T: ContentType> DerefMut for OwnedContentPtr<T> {
     }
 }
 
+/// Sequential [`Read`] + [`Seek`] adapter over an [`OwnedContentPtr`].
+///
+/// [`Content::read`] is random-access and returns a borrowed slice.
+/// Libraries that expect a `std::io::Read` / `Seek` stream (for
+/// example the `zip` crate used by [`ZipExtractor`](crate::ZipExtractor))
+/// need a cursor instead. `ContentReader` wraps the parent handle,
+/// starts at offset `0`, and advances on each `read`.
+///
+/// A short slice from the underlying [`Content`] is not treated as
+/// EOF: the adapter copies what it got, advances, and the next
+/// `Read::read` continues from there. A `Content::read` that returns
+/// `None` before the advertised [`size`](Content::size) becomes an
+/// `UnexpectedEof` error. Seeking past the end is allowed (same as
+/// [`std::io::Cursor`]); a later read then returns `Ok(0)`.
+///
+/// ```ignore
+/// let mut reader = ContentReader::new(parent);
+/// let mut archive = zip::ZipArchive::new(reader)?;
+/// ```
 pub struct ContentReader<T: ContentType> {
     content: OwnedContentPtr<T>,
     offset: u64,
 }
 impl<T: ContentType> ContentReader<T> {
+    /// Wraps `content` with the read cursor at offset `0`.
     pub fn new(content: OwnedContentPtr<T>) -> Self {
         Self { content, offset: 0 }
     }

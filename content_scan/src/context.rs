@@ -16,18 +16,25 @@ use varmap::{VarMap, VarMapPool};
 ///
 /// A single `Context` is threaded through every
 /// [`ContentAnalyzer::analyze`](crate::ContentAnalyzer::analyze) call
-/// so plugins can record findings and queue extra extraction:
+/// so plugins can record results, emit findings, and queue extra
+/// extraction:
 ///
 /// - **[`global`](Self::global)** – lives for the entire scan and can
 ///   be inspected via [`ScanResult::global`] after the scan finishes.
 /// - **[`local`](Self::local)** – attached to the currently scanned
 ///   content object. Retrievable per object from the result tree via
 ///   [`ScanResult::local`].
+/// - **[`add_finding`](Self::add_finding)** – records a
+///   [`Finding`](crate::Finding) on the current object. Iterate them
+///   after the scan with [`ScanResult::findings`].
 /// - **[`request_extract`](Self::request_extract)** – queues a pass
 ///   that runs extractors registered for another [`ContentType`] on a
 ///   region of the current object. Each `create_session` then receives
 ///   an [`ExtractionContext`](crate::ExtractionContext) with that
 ///   request's offset, length, and params.
+///
+/// The `M` type parameter is the [`FindingMetadata`](crate::FindingMetadata)
+/// stored on each finding. It defaults to [`NoMetadata`](crate::NoMetadata).
 ///
 /// `Context` is owned by the [`Scanner`](crate::Scanner) and cleared
 /// automatically at the start of every scan; plugins never construct
@@ -135,6 +142,27 @@ impl<T: ContentType, M: FindingMetadata> Context<T, M> {
         self.objects.len() as u32
     }
 
+    /// Records a finding on the currently scanned object.
+    ///
+    /// The `finding` text is interned (hash digest, message, match
+    /// string, …). `source` is an optional label for who produced it
+    /// (rule name, plugin id). `metadata` is optional typed extra
+    /// data of type `M`; pass `None` when using
+    /// [`NoMetadata`](crate::NoMetadata).
+    ///
+    /// The finding is attached to the current object, so
+    /// [`Finding::path`](crate::Finding::path) and
+    /// [`Finding::content_type`](crate::Finding::content_type) later
+    /// report that object's identity. Calling this when no object is
+    /// current (outside an analyzer) is a no-op.
+    ///
+    /// After the scan, iterate findings with
+    /// [`ScanResult::findings`] in the order they were recorded.
+    ///
+    /// ```ignore
+    /// context.add_finding("deadbeef", Some("ComputeHash"), None);
+    /// context.add_finding("embedded zip", None, Some(Severity::Info));
+    /// ```
     pub fn add_finding(&mut self, finding: &str, source: Option<&str>, metadata: Option<M>) {
         if let Some(objindex) = self.current_object_index {
             let source = if let Some(source) = source {
@@ -182,7 +210,12 @@ pub struct ScanContentHandle {
 ///   [`child`](Self::child), [`next_sibling`](Self::next_sibling)),
 /// - per-object information ([`path`](Self::path),
 ///   [`content_type`](Self::content_type),
-///   [`local`](Self::local)).
+///   [`local`](Self::local)),
+/// - the [`findings`](Self::findings) recorded by analyzers via
+///   [`Context::add_finding`].
+///
+/// The `M` type parameter is the [`FindingMetadata`](crate::FindingMetadata)
+/// stored on each finding. It defaults to [`NoMetadata`](crate::NoMetadata).
 ///
 /// The result borrows immutably from the scanner. Copy anything you
 /// need to keep out of the result before starting another scan.
@@ -314,6 +347,19 @@ impl<'a, T: ContentType, M: FindingMetadata> ScanResult<'a, T, M> {
         T::from_u16(object.type_id)
     }
 
+    /// Iterates every [`Finding`](crate::Finding) recorded during the
+    /// scan, in emission order.
+    ///
+    /// Analyzers add findings with [`Context::add_finding`]. Each
+    /// finding is linked to the object that was current at the time,
+    /// so [`Finding::path`](crate::Finding::path) / [`Finding::content_type`](crate::Finding::content_type)
+    /// resolve against this result's object tree.
+    ///
+    /// ```ignore
+    /// for f in res.findings() {
+    ///     println!("{}  {}", f.finding(), f.path().unwrap_or("?"));
+    /// }
+    /// ```
     pub fn findings(&self) -> FindigsIterator<'a, T, M> {
         FindigsIterator::new(self.context)
     }

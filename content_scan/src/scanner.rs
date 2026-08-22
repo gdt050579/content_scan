@@ -23,6 +23,12 @@ use std::marker::PhantomData;
 /// [`Filter`], and a maximum recursion depth. Build one with
 /// [`ScannerBuilder`] and drive scans with [`Scanner::scan`].
 ///
+/// The `M` type parameter is the [`FindingMetadata`](crate::FindingMetadata)
+/// stored on each [`Finding`](crate::Finding). It is chosen when the
+/// builder is constructed ([`ScannerBuilder::new`] for
+/// [`NoMetadata`](crate::NoMetadata), or
+/// [`ScannerBuilder::with_metadata`] for a custom type).
+///
 /// Scanners are reusable: the internal [`Context`] is cleared at the
 /// start of every [`scan`](Self::scan) call, so a single instance can
 /// process many independent inputs sequentially.
@@ -57,8 +63,11 @@ impl<T: ContentType, M: FindingMetadata> Scanner<T, M> {
     /// [`Entry`](crate::Entry) sets `skip_from_filtering`.
     ///
     /// The returned [`ScanResult`] borrows from `self` and stays
-    /// valid until the next call on this scanner. Copy anything you
-    /// need to keep out before starting another scan.
+    /// valid until the next call on this scanner. It includes the
+    /// object tree, global / local [`VarMap`](varmap::VarMap)s, and
+    /// every [`Finding`](crate::Finding) recorded via
+    /// [`Context::add_finding`]. Copy anything you need to keep out
+    /// before starting another scan.
     pub fn scan<'a>(&'a mut self, content: &mut dyn Content<T>, filter_root: bool) -> ScanResult<'a, T, M> {
         self.context.clear();
         if filter_root {
@@ -337,6 +346,14 @@ impl<T: ContentType, M: FindingMetadata> Scanner<T, M> {
 /// then call [`build`](Self::build) to obtain a ready-to-use
 /// [`Scanner`].
 ///
+/// The `M` type parameter is the [`FindingMetadata`](crate::FindingMetadata)
+/// stored on each [`Finding`](crate::Finding). [`new`](Self::new)
+/// produces a builder with [`NoMetadata`](crate::NoMetadata). For a
+/// custom metadata type, start from [`with_metadata`](Self::with_metadata)
+/// so analyzers can implement
+/// [`ContentAnalyzer<T, M>`](crate::ContentAnalyzer) and pass `Some(m)`
+/// to [`Context::add_finding`](crate::Context::add_finding).
+///
 /// # Priorities
 ///
 /// Analyzers are registered with a `priority` byte. Within the same
@@ -560,7 +577,22 @@ impl<T: ContentType> ScannerBuilder<T, NoMetadata> {
         Self::empty()
     }
 
-    /// Creates an empty builder that records findings with metadata type `M`.
+    /// Creates an empty builder whose findings carry metadata of type `M`.
+    ///
+    /// Use this instead of [`new`](Self::new) when analyzers attach
+    /// typed extras (severity, offset, rule id, …) via
+    /// [`Context::add_finding`](crate::Context::add_finding). `M` must
+    /// implement [`FindingMetadata`](crate::FindingMetadata).
+    ///
+    /// ```ignore
+    /// #[derive(Copy, Clone)]
+    /// enum Severity { Info, Warn }
+    /// impl FindingMetadata for Severity {}
+    ///
+    /// let mut scanner = ScannerBuilder::<MyTypes>::with_metadata::<Severity>()
+    ///     .add_generic_analyzer(0, MyAnalyzer {})
+    ///     .build();
+    /// ```
     pub fn with_metadata<M: FindingMetadata>() -> ScannerBuilder<T, M> {
         ScannerBuilder::empty()
     }

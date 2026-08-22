@@ -30,23 +30,27 @@ Typical use cases:
     - [Finding and decoding Base64](#finding-and-decoding-base64)
     - [Computing MD5 hashes](#computing-md5-hashes)
     - [Listing ZIP files](#listing-zip-files)
+    - [Reading PNG dimensions inside a ZIP](#reading-png-dimensions-inside-a-zip)
   - [API overview](#api-overview)
     - [`ContentType`](#contenttype)
     - [`Content`](#content)
     - [`ContentPath`](#contentpath)
     - [`ContentIdentifier`](#contentidentifier)
     - [`ZipIdentifier`](#zipidentifier)
+    - [`ZipExtractor`](#zipextractor)
     - [`Dependencies`](#dependencies)
     - [`ContentAnalyzer`](#contentanalyzer)
     - [`ContentExtractor`](#contentextractor)
     - [`ExtractionSession`](#extractionsession)
     - [`OwnedContentPtr`](#ownedcontentptr)
+    - [`ContentReader`](#contentreader)
     - [`ExtractionContext`](#extractioncontext)
     - [Requesting extraction](#requesting-extraction)
     - [Walking the file system](#walking-the-file-system)
     - [`Filter` / `FilterBuilder`](#filter--filterbuilder)
     - [`Scanner` / `ScannerBuilder`](#scanner--scannerbuilder)
   - [`Context` / `ScanResult`](#context--scanresult)
+  - [Findings](#findings)
   - [Navigating the scan result tree](#navigating-the-scan-result-tree)
 - [Scanning pipeline](#scanning-pipeline)
   - [Building \& testing](#building--testing)
@@ -62,7 +66,7 @@ This repository is a Cargo workspace with three members:
 | ------------------------- | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
 | `content_scan`            | [`content_scan/`](content_scan)                       | The main library: scanner, traits, matchers, filters.                                          |
 | `content_scan_proc_macro` | [`content-scan-proc-macro/`](content-scan-proc-macro) | Companion proc-macro crate exposing `#[derive(ContentType)]` and `#[derive(Dependencies)]`. Re-exported from `content_scan`. |
-| `examples`                | [`examples/`](examples)                               | Runnable examples (`sum`, `vowals`, `image_size`, `base64_find`, `md5`, `find_zip`).              |
+| `examples`                | [`examples/`](examples)                               | Runnable examples (`sum`, `vowals`, `image_size`, `base64_find`, `md5`, `find_zip`, `zip_png_size`). |
 
 You normally only depend on `content_scan` — the proc-macro is re-exported for you.
 
@@ -76,11 +80,11 @@ The framework is built around a few small traits:
 - **`Content<T>`** — an abstract, seekable, read-only byte source with a `ContentPath` and a size. Ready-made `BufferContent<T>` (in-memory), `FileContent<T>` (memory-mapped file) and `FolderContent<T>` (a directory, used as a container) implementations are provided.
 - **`ContentPath`** — the path or synthetic address of a piece of content. Holds a UTF-8 printable view always, and keeps the original OS path when the name is not valid UTF-8 so the file can still be opened.
 - **`ContentIdentifier<T>`** — decides *what* a piece of content is (by magic bytes, extension, or file name) and validates the guess.
-- **`ContentAnalyzer<T>`** — reads content and produces information (stored in a shared `Context`). Analyzers can also queue extra extraction passes with `context.request_extract(ty)`. Every analyzer implements `Dependencies` (typically via `#[derive(Dependencies)]`) so debug builds can check that required analyzers are registered with a lower priority.
-- **`ContentExtractor<T>`** — pulls sub-contents out of a container. `create_session` receives an `OwnedContentPtr` to the parent and an `ExtractionContext` describing the region to look at (`offset`, optional `length`, optional `params`), and returns an `ExtractionSession`. The session then yields children via `advance` / `extract`. Per-session state (cursors, open archives, the current `Entry`) lives on that session object, not on the extractor — one extractor instance is shared and sessions may nest. `FolderExtractor<T>` is a ready-made extractor that enumerates a directory.
+- **`ContentAnalyzer<T, M>`** — reads content and produces information (stored in a shared `Context`). Analyzers write per-object or scan-wide `VarMap`s, emit [`Finding`](#findings)s with `context.add_finding(...)`, and can queue extra extraction with `context.request_extract(ty)`. The optional `M` is [`FindingMetadata`](#findings) attached to each finding (default `NoMetadata`). Every analyzer implements `Dependencies` (typically via `#[derive(Dependencies)]`) so debug builds can check that required analyzers are registered with a lower priority.
+- **`ContentExtractor<T>`** — pulls sub-contents out of a container. `create_session` receives an `OwnedContentPtr` to the parent and an `ExtractionContext` describing the region to look at (`offset`, optional `length`, optional `params`), and returns an `ExtractionSession`. The session then yields children via `advance` / `extract`. Per-session state (cursors, open archives, the current `Entry`) lives on that session object, not on the extractor — one extractor instance is shared and sessions may nest. Ready-made extractors: `FolderExtractor<T>` (directory walk) and `ZipExtractor<T>` (ZIP members). Extractors that need a `std::io::Read` stream wrap the parent in a `ContentReader`.
 - **`Filter`** — decides which paths / sizes should be processed at all.
-- **`Scanner<T>`** — the orchestrator; built via `ScannerBuilder<T>`.
-- **`ScanResult<T>` / `ScanContentHandle`** — after a scan, the framework exposes the full **tree** of visited objects (parent / child / sibling links), each with its interned path, resolved content type and its own local `VarMap`.
+- **`Scanner<T, M>`** — the orchestrator; built via `ScannerBuilder<T>` (`new()` for `NoMetadata`, or `with_metadata::<M>()` for typed finding extras).
+- **`ScanResult<T, M>` / `ScanContentHandle`** — after a scan, the framework exposes the full **tree** of visited objects (parent / child / sibling links), each with its interned path, resolved content type and its own local `VarMap`, plus a flat list of [`Finding`](#findings)s recorded by analyzers.
 
 Analyzers are either **specific** to a `ContentType` or **generic** (run on every scanned object), and each is registered with a `priority` byte to control execution order. In debug builds, `ScannerBuilder::build` also checks each analyzer's [`Dependencies`](#dependencies) `requires` list: every named analyzer must be registered with a **strictly smaller** priority. Extractors are registered per type and run in registration order — both when the current object is that type, and when an analyzer [requests](#requesting-extraction) that type.
 
@@ -144,6 +148,7 @@ cargo run --example base64_find
 cargo run --example base64_find -- path/to/file_or_folder
 cargo run --example md5 -- path/to/file_or_folder
 cargo run --example find_zip -- path/to/folder
+cargo run --example zip_png_size -- path/to/archive.zip
 ```
 
 ### Counting vowels
@@ -359,7 +364,7 @@ The extractor is registered for `Base64`, not for `Text`. It only runs because t
 
 ### Computing MD5 hashes
 
-[`md5`](examples/md5/main.rs) hashes every file with a **generic** analyzer. `ComputeHashAnalyzer` is registered with `add_generic_analyzer`, so it runs on every scanned object regardless of type. A recursive `FolderExtractor` walks the tree when the argument is a directory; folders themselves are skipped (they have no bytes to hash).
+[`md5`](examples/md5/main.rs) hashes every file with a **generic** analyzer. `ComputeHashAnalyzer` is registered with `add_generic_analyzer`, so it runs on every scanned object regardless of type. Instead of printing from the analyzer, it records each digest as a [`Finding`](#findings) via `context.add_finding`. After the scan, the example iterates `res.findings()`. A recursive `FolderExtractor` walks the tree when the argument is a directory; folders themselves are skipped (they have no bytes to hash).
 
 ```bash
 cargo run --example md5 -- README.md
@@ -371,11 +376,12 @@ cargo run --example md5 -- ./content_scan/src
 #[Dependencies(name = "ComputeHashAnalyzer")]
 struct ComputeHashAnalyzer;
 impl ContentAnalyzer<MyTypes> for ComputeHashAnalyzer {
-    fn analyze(&mut self, content: &mut dyn Content<MyTypes>, _: &mut Context<MyTypes>) -> NextAction {
+    fn analyze(&mut self, content: &mut dyn Content<MyTypes>, context: &mut Context<MyTypes>) -> NextAction {
         if content.content_type() == Some(MyTypes::Folder) {
             return NextAction::Continue;
         }
-        // read the file in chunks, feed Md5, print "{hex}  {path}"
+        // read the file in chunks, feed Md5...
+        context.add_finding(format!("{:x}", hasher.finalize()).as_str(), None, None);
         NextAction::Continue
     }
 }
@@ -386,6 +392,10 @@ fn main() {
         .add_extractor(MyTypes::Folder, FolderExtractor::<MyTypes>::new(true, false))
         .build();
     // FileContent for a file, FolderContent + Folder extractor for a directory
+    let res = scanner.scan(&mut content, true);
+    for f in res.findings() {
+        println!("{}  {}", f.finding(), f.path().unwrap_or_default());
+    }
 }
 ```
 
@@ -403,6 +413,32 @@ let mut scanner = ScannerBuilder::new()
     .add_analyzer(MyTypes::Zip, 0, ZipPrinter {})
     .add_extractor(MyTypes::Folder, FolderExtractor::<MyTypes>::new(true, false))
     .build();
+```
+
+### Reading PNG dimensions inside a ZIP
+
+[`zip_png_size`](examples/zip_png_size/main.rs) combines [`ZipIdentifier`](#zipidentifier) + [`ZipExtractor`](#zipextractor) with a PNG identifier / analyzer. The ZIP is the root (`scan(..., false)` so the filter is not applied to the archive itself); the extractor emits each member as a child, the filter keeps only `*.png`, and the PNG analyzer stores `{width, height}` in that child's local `VarMap`.
+
+```bash
+cargo run --example zip_png_size -- photos.zip
+```
+
+```rust
+let mut scanner = ScannerBuilder::new()
+    .filter(
+        FilterBuilder::new()
+            .include_extensions(Precedence::Medium, &["png"])
+            .deny_the_rest()
+            .build(),
+    )
+    .add_identifier(MyTypes::Zip, ZipIdentifier::new())
+    .add_extractor(MyTypes::Zip, ZipExtractor::new())
+    .add_identifier(MyTypes::Png, PngIdentifier)
+    .add_analyzer(MyTypes::Png, 0, PngAnalyzer)
+    .build();
+
+let mut content = FileContent::<MyTypes>::new(&path, false);
+let res = scanner.scan(&mut content, false); // don't filter the ZIP itself
 ```
 
 ---
@@ -446,6 +482,7 @@ Three implementations ship with the crate — an in-memory one, a file-backed on
 
 ```rust
 BufferContent::<MyType>::new(buffer, "path.ext");
+BufferContent::<MyType>::from_vec(owned_vec, "path.ext");          // move, no copy
 BufferContent::<MyType>::with_content_type(buffer, "path.ext", MyType::Text);
 BufferContent::<MyType>::from_parts(vec, "path".into(), Some(MyType::Text));
 
@@ -532,6 +569,17 @@ At most **one identifier per `ContentType`** may be registered; the builder will
 .add_identifier(MyTypes::Zip, ZipIdentifier::new())
 ```
 
+### `ZipExtractor`
+
+`ZipExtractor<T>` is a built-in extractor that unpacks ZIP members as child content. Pair it with [`ZipIdentifier`](#zipidentifier). Small entries (`< 1 MiB`) become an in-memory `BufferContent`; larger ones are decompressed to a temp file and wrapped in `FileContent`. Directory entries inside the archive are skipped. The session reads the parent through a [`ContentReader`](#contentreader), so the archive can be a file, a buffer, or any other `Content`.
+
+```rust
+.add_identifier(MyTypes::Zip, ZipIdentifier::new())
+.add_extractor(MyTypes::Zip, ZipExtractor::new())
+```
+
+See [Reading PNG dimensions inside a ZIP](#reading-png-dimensions-inside-a-zip) for a complete pipeline.
+
 ### `Dependencies`
 
 Every [`ContentAnalyzer`](#contentanalyzer) must implement `Dependencies`. The `#[derive(Dependencies)]` macro (re-exported from `content_scan`) does that from a helper attribute:
@@ -565,12 +613,12 @@ Generics are not supported by the derive. Unit structs, tuple structs, named-fie
 ### `ContentAnalyzer`
 
 ```rust
-pub trait ContentAnalyzer<T: ContentType>: Dependencies {
-    fn analyze(&mut self, content: &mut dyn Content<T>, context: &mut Context<T>) -> NextAction;
+pub trait ContentAnalyzer<T: ContentType, M: FindingMetadata = NoMetadata>: Dependencies {
+    fn analyze(&mut self, content: &mut dyn Content<T>, context: &mut Context<T, M>) -> NextAction;
 }
 ```
 
-Analyzers inspect content and write results into the shared `Context`. Use `context.local()` for per-object findings and `context.global()` for scan-wide aggregates. To pull nested content out of the current object using extractors registered for a **different** type — for example an analyzer that locates an embedded ZIP and wants the Zip extractor to open it — call `context.request_extract(ty)` and [emit an extraction request](#requesting-extraction). Only analyzers return `NextAction`; that value controls the rest of **this** object:
+Analyzers inspect content and write results into the shared `Context`. Use `context.local()` for per-object `VarMap`s, `context.global()` for scan-wide aggregates, and `context.add_finding(...)` for a flat list of [`Finding`](#findings)s. To pull nested content out of the current object using extractors registered for a **different** type — for example an analyzer that locates an embedded ZIP and wants the Zip extractor to open it — call `context.request_extract(ty)` and [emit an extraction request](#requesting-extraction). Only analyzers return `NextAction`; that value controls the rest of **this** object:
 
 - `NextAction::Continue` — run the next analyzer for this object; after the last analyzer, run extractors.
 - `NextAction::Skip` — stop this object: do not run remaining analyzers or any extractors on it. Siblings and later objects still scan.
@@ -682,6 +730,34 @@ impl ExtractionSession<MyTypes> for NumericSession {
         let buf = self.content.read(self.start, self.len as u32)?;
         Some(Box::new(BufferContent::<MyTypes>::with_content_type(buf, "number", MyTypes::Number)))
     }
+}
+```
+
+### `ContentReader`
+
+`ContentReader<T>` is a sequential [`std::io::Read`](https://doc.rust-lang.org/std/io/trait.Read.html) + [`Seek`](https://doc.rust-lang.org/std/io/trait.Seek.html) adapter over an [`OwnedContentPtr`](#ownedcontentptr). [`Content::read`](#content) is random-access and returns a borrowed slice; libraries that expect a stream (the `zip` crate used by [`ZipExtractor`](#zipextractor), parsers, decompressors, …) need a cursor instead.
+
+```rust
+pub struct ContentReader<T: ContentType> { /* ... */ }
+
+impl<T: ContentType> ContentReader<T> {
+    pub fn new(content: OwnedContentPtr<T>) -> Self;  // cursor starts at offset 0
+}
+
+impl<T: ContentType> Read for ContentReader<T> { /* ... */ }
+impl<T: ContentType> Seek for ContentReader<T> { /* ... */ }
+```
+
+A short slice from the underlying `Content` is not treated as EOF: the adapter copies what it got, advances, and the next `Read::read` continues from there. A `Content::read` that returns `None` before the advertised `size()` becomes an `UnexpectedEof` error. Seeking past the end is allowed (same as [`std::io::Cursor`](https://doc.rust-lang.org/std/io/struct.Cursor.html)); a later read then returns `Ok(0)`.
+
+```rust
+fn create_session(
+    &mut self,
+    content: OwnedContentPtr<MyTypes>,
+    _: &ExtractionContext,
+) -> Option<Box<dyn ExtractionSession<MyTypes>>> {
+    let archive = zip::ZipArchive::new(ContentReader::new(content)).ok()?;
+    Some(Box::new(MyZipSession { archive, ... }))
 }
 ```
 
@@ -835,16 +911,19 @@ let result: ScanResult = scanner.scan(&mut content, /* filter_root */ true);
 
 The second argument to `scan` decides whether the configured `Filter` is applied to the root object itself. Pass `true` for a normal file — the scan then returns an empty `ScanResult` if the filter rejects it. Pass `false` when the root is a container that the filter was never written to accept, such as a folder being walked with a filter that only allows `png` files. Extracted children are always filtered regardless of this flag (unless their `Entry` opts out via `skip_from_filtering`).
 
-A scanner is reusable: `scan` clears its internal `Context` on entry, so one instance can process many inputs in sequence.
+A scanner is reusable: `scan` clears its internal `Context` on entry (including the findings list), so one instance can process many inputs in sequence.
+
+`ScannerBuilder::new()` produces a scanner whose findings carry no extra data (`NoMetadata`). When analyzers attach typed extras (severity, offset, rule id, …), start from `ScannerBuilder::<MyType>::with_metadata::<M>()` instead — see [Findings](#findings).
 
 `build()` panics if two identifiers are registered for the same `ContentType`, or if a magic pattern is longer than 16 bytes. In **debug** builds it also panics if an analyzer `requires` a name that is not registered, or if that dependency does not have a strictly smaller `priority` — see [`Dependencies`](#dependencies).
 
 ### `Context` / `ScanResult`
 
-The `Context` passed to analyzers (from the [`varmap`](https://crates.io/crates/varmap) crate, re-exported by `content_scan`) exposes two `VarMap`s plus a way to queue extra extraction:
+The `Context` passed to analyzers (from the [`varmap`](https://crates.io/crates/varmap) crate, re-exported by `content_scan`) exposes two `VarMap`s, a findings list, plus a way to queue extra extraction:
 
 - `context.global()` — persists for the entire `scan()` call. Use it to accumulate results across all analyzed objects.
 - `context.local()` — per-object scratch storage. The first call from an analyzer on a given object lazily grabs a `VarMap` from an internal pool, clears it, and attaches it to that object; subsequent calls (from other analyzers running on the same object) return the same map. It is kept alive after the scan and can be looked up on the corresponding `ScanContentHandle` via `ScanResult::local(handle)`.
+- `context.add_finding(text, source, metadata)` — records a [`Finding`](#findings) on the current object. After the scan, iterate them with `res.findings()`.
 - `context.request_extract(ty)` — queues an extra extraction pass: after this object's own extractors run, the scanner will run extractors registered for `ty` on the current content. See [Requesting extraction](#requesting-extraction). The request queue is cleared at the start of every object's scan, including nested children.
 
 `context.objects_scanned()` returns how many objects have been visited so far.
@@ -866,6 +945,71 @@ pub struct Size { pub width: u32, pub height: u32 }
 context.local().set(var!("size"), Size { width, height });
 ```
 
+### Findings
+
+Analyzers can emit a flat list of **findings** in addition to (or instead of) writing `VarMap`s. A finding is a short interned string attached to the object that was current when it was recorded, plus an optional source label and optional typed metadata.
+
+Record one during `analyze`:
+
+```rust
+context.add_finding("deadbeef", Some("ComputeHash"), None);
+```
+
+| Argument | Meaning |
+| -------- | ------- |
+| `finding` | The text itself (hash digest, message, match string, …). Interned into the scanner's path arena. |
+| `source` | Optional label for who produced it (rule name, plugin id). `None` if unused. |
+| `metadata` | Optional typed extra of type `M`. Pass `None` when using the default `NoMetadata`. |
+
+Calling `add_finding` when no object is current (outside an analyzer) is a no-op. After `scan()` returns, iterate findings in emission order:
+
+```rust
+for f in res.findings() {
+    println!("{}  {}", f.finding(), f.path().unwrap_or("?"));
+    if let Some(src) = f.source() {
+        println!("  from {src}");
+    }
+}
+```
+
+```rust
+pub struct Finding<'a, T: ContentType, M: FindingMetadata> { /* ... */ }
+
+impl<'a, T: ContentType, M: FindingMetadata> Finding<'a, T, M> {
+    pub fn finding(&self) -> &'a str;           // the recorded text
+    pub fn source(&self) -> Option<&'a str>;    // optional producer label
+    pub fn metadata(&self) -> Option<&'a M>;    // typed extras, if any
+    pub fn path(&self) -> Option<&'a str>;      // printable path of the object
+    pub fn content_type(&self) -> Option<T>;    // identified type of the object
+}
+```
+
+`ScanResult::findings()` returns a `FindigsIterator` that yields `Finding`s. The iterator (and each `Finding`) borrows the `ScanResult`; do not start another scan on the same `Scanner` while they are still in use. The finding text and source stay valid for the lifetime of that result because they are interned in the same arena as object paths.
+
+The default metadata type is `NoMetadata` — `ScannerBuilder::new()` and `ContentAnalyzer<T>` use it, and analyzers pass `None` as the third argument. To attach typed extras (severity, offset, rule id, …), implement the `FindingMetadata` marker trait (`Copy` is required so findings stay cheap) and build the scanner with `with_metadata`:
+
+```rust
+#[derive(Copy, Clone, Debug)]
+enum Severity { Info, Warn, Error }
+impl FindingMetadata for Severity {}
+
+#[derive(Dependencies)]
+#[Dependencies(name = "MyAnalyzer")]
+struct MyAnalyzer;
+impl ContentAnalyzer<MyTypes, Severity> for MyAnalyzer {
+    fn analyze(&mut self, _: &mut dyn Content<MyTypes>, context: &mut Context<MyTypes, Severity>) -> NextAction {
+        context.add_finding("suspicious overlay", Some("MyAnalyzer"), Some(Severity::Warn));
+        NextAction::Continue
+    }
+}
+
+let mut scanner = ScannerBuilder::<MyTypes>::with_metadata::<Severity>()
+    .add_generic_analyzer(0, MyAnalyzer {})
+    .build();
+```
+
+The same `M` flows through `Scanner<T, M>`, `Context<T, M>`, `ScanResult<T, M>`, and `ContentAnalyzer<T, M>`. See [Computing MD5 hashes](#computing-md5-hashes) for a complete example that records findings without custom metadata.
+
 ### Navigating the scan result tree
 
 Every object visited by the scanner is recorded, along with its resolved content type, its path (interned from `ContentPath::as_printable_string()` into an internal arena) and its optional local `VarMap`. Objects are linked as a **parent / first-child / next-sibling** tree that mirrors the extraction hierarchy.
@@ -875,9 +1019,10 @@ You navigate the tree with opaque `ScanContentHandle`s returned by `ScanResult<T
 ```rust
 pub struct ScanContentHandle { /* opaque */ }
 
-impl<'a, T: ContentType> ScanResult<'a, T> {
+impl<'a, T: ContentType, M: FindingMetadata> ScanResult<'a, T, M> {
     pub fn global(&self) -> &VarMap;
     pub fn objects_scanned(&self) -> u32;
+    pub fn findings(&self) -> FindigsIterator<'a, T, M>;
 
     // Tree navigation
     pub fn root(&self) -> Option<ScanContentHandle>;
@@ -932,12 +1077,12 @@ For every scanned object, the scanner performs the following steps (see [`conten
    4. identifiers that returned `None` from `identify_method` (each `validate()` is tried in registration order).
 
    Each fast-matcher candidate is confirmed via the corresponding identifier's `validate()` method. Custom identifiers have no pre-filter; `validate()` is the identification.
-3. **Type-specific analyzers** for the resolved type run in priority order.
-4. **Generic analyzers** run for every object in priority order.
+3. **Type-specific analyzers** for the resolved type run in priority order. They may write `VarMap`s, emit [`Finding`](#findings)s via `context.add_finding`, or queue extra extraction.
+4. **Generic analyzers** run for every object in priority order (same recording APIs).
 5. **Type-specific extractors** for the resolved type run in registration order (`create_session` → `advance`/`extract` loop; the session is dropped when the loop ends). Each `create_session` receives an `OwnedContentPtr` to the parent and an `ExtractionContext` covering the whole object (`offset = 0`, `length = Some(size)`, `params = None`). For each entry they emit, the scanner recurses (subject to `max_depth` and `Filter`). Entries marked `skip_from_filtering` bypass the `Filter` check.
 6. **Extraction requests** queued by analyzers via `context.request_extract(ty)` then run, in emission order. For each request the extractors registered for `ty` run on the **same** parent, with that request's offset, length, and params. The parent does not need to have been identified as `ty`.
 
-While this is happening, the scanner also **records the object** into `Context::objects` — interned from `ContentPath::as_printable_string()` into an internal arena, tagged with the resolved content type, and linked into its parent's child list. After `scan()` returns, that tree is exposed to the caller through [`ScanResult`](#navigating-the-scan-result-tree).
+While this is happening, the scanner also **records the object** into `Context::objects` — interned from `ContentPath::as_printable_string()` into an internal arena, tagged with the resolved content type, and linked into its parent's child list. Findings emitted during the analyzer steps are appended to the same `Context` and later exposed through [`ScanResult::findings`](#findings). After `scan()` returns, the tree is available through [`ScanResult`](#navigating-the-scan-result-tree).
 
 Only **analyzers** return `NextAction`. Extractor and session methods return `Option` (`create_session` / `advance` / `extract`); they cannot short-circuit the scan themselves.
 
@@ -961,6 +1106,8 @@ cargo test
 cargo run --example vowals
 cargo run --example sum
 cargo run --example image_size -- path/to/image.jpg
+cargo run --example md5 -- path/to/file_or_folder
+cargo run --example zip_png_size -- path/to/archive.zip
 ```
 
 The workspace pins `resolver = "2"` and applies a couple of shared Clippy overrides (`module_inception`, `new_without_default`) — see the root [`Cargo.toml`](Cargo.toml).

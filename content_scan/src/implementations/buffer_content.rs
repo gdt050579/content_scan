@@ -27,6 +27,15 @@ impl<T: ContentType> BufferContent<T> {
         }
     }
 
+    /// Creates a `BufferContent` from an already-owned buffer.
+    ///
+    /// Unlike [`new`](Self::new), this moves `buffer` in without
+    /// copying it. `path` is a synthetic UTF-8 address stored via
+    /// [`ContentPath::from_str`]. The content type is left unset, so
+    /// the scanner will identify it automatically.
+    ///
+    /// Prefer [`from_parts`](Self::from_parts) when you also already
+    /// own the path `String` or want to pin a content type.
     pub fn from_vec(buffer: Vec<u8>, path: &str) -> Self {
         Self {
             buffer,

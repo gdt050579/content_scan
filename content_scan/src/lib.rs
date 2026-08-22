@@ -28,12 +28,14 @@
 //!   `ContentType` (via magic bytes, file name, or extension) and
 //!   validates the guess.
 //! - **[`ContentAnalyzer`]** – inspects content and records information
-//!   into the [`Context`] (global or per-object variable maps). An
+//!   into the [`Context`] (global or per-object variable maps, plus
+//!   a flat list of [`Finding`]s via [`Context::add_finding`]). An
 //!   analyzer can also queue extra extraction with
 //!   [`Context::request_extract`]. Every analyzer implements
 //!   [`Dependencies`] (typically via `#[derive(Dependencies)]`) so
 //!   debug builds can check that required analyzers are registered
-//!   with a lower priority.
+//!   with a lower priority. Findings may carry typed
+//!   [`FindingMetadata`]; the default is [`NoMetadata`].
 //! - **[`ContentExtractor`]** – produces child [`Content`] items from a
 //!   parent (e.g. entries of an archive). `create_session` receives an
 //!   [`OwnedContentPtr`] to the parent and an [`ExtractionContext`]
@@ -48,7 +50,10 @@
 //!   any plugin runs on a piece of content.
 //! - **[`Scanner`] / [`ScannerBuilder`]** – wires all plugins together
 //!   and drives a scan. The scan produces a [`ScanResult`] that can be
-//!   navigated as a tree of [`ScanContentHandle`]s.
+//!   navigated as a tree of [`ScanContentHandle`]s, and whose
+//!   [`findings`](ScanResult::findings) iterate every recorded
+//!   [`Finding`]. Use [`ScannerBuilder::with_metadata`] when findings
+//!   need a custom [`FindingMetadata`] type.
 //!
 //! ## Example
 //!
