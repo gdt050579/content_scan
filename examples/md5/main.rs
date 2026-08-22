@@ -12,7 +12,7 @@ enum MyTypes {
 #[Dependencies(name = "ComputeHashAnalyzer")]
 struct ComputeHashAnalyzer;
 impl ContentAnalyzer<MyTypes> for ComputeHashAnalyzer {
-    fn analyze(&mut self, content: &mut dyn Content<MyTypes>, _: &mut Context<MyTypes>) -> NextAction {
+    fn analyze(&mut self, content: &mut dyn Content<MyTypes>, context: &mut Context<MyTypes>) -> NextAction {
         if content.content_type() == Some(MyTypes::Folder) {
             return NextAction::Continue;
         }
@@ -29,7 +29,7 @@ impl ContentAnalyzer<MyTypes> for ComputeHashAnalyzer {
                 _ => break,
             }
         }
-        println!("{:x}  {}", hasher.finalize(), content.path().as_printable_string());
+        context.add_finding(format!("{:x}", hasher.finalize()).as_str(), None, None);
         NextAction::Continue
     }
 }
@@ -56,4 +56,7 @@ fn main() {
         scanner.scan(&mut content, true)
     };
     println!("scanned {} objects", res.objects_scanned());
+    for f in res.findings() {
+        println!("{}  {}", f.finding(), f.path().unwrap_or_default());
+    }
 }
