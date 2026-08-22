@@ -198,7 +198,7 @@ impl ContentAnalyzer<MyTypes> for Base64DecodedAnalyzer {
     }
 }
 
-fn build_scanner() -> Scanner<MyTypes> {
+fn build_scanner() -> Scanner<MyTypes, NoMetadata> {
     ScannerBuilder::new()
         .add_identifier(MyTypes::Text, TextIdentifier {})
         .add_analyzer(MyTypes::Text, 0, Base64Finder {})
