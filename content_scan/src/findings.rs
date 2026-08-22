@@ -17,6 +17,39 @@ pub struct Finding<'a, T: ContentType, M: FindingMetadata> {
     ctx: &'a Context<T, M>,
 }
 
+impl<'a, T: ContentType, M: FindingMetadata> Finding<'a, T, M> {
+    pub fn source(&self) -> Option<&'a str> {
+        if self.inner.source.is_valid() {
+            self.ctx
+                .path_arena
+                .get(self.inner.source)
+                .map(|s| unsafe { std::str::from_utf8_unchecked(s) })
+        } else {
+            None
+        }
+    }
+    pub fn finding(&self) -> &'a str {
+        self.ctx
+            .path_arena
+            .get(self.inner.finding)
+            .map(|s| unsafe { std::str::from_utf8_unchecked(s) })
+            .unwrap_or_default()
+    }
+    pub fn metadata(&self) -> Option<&'a M> {
+        self.inner.metadata.as_ref()
+    }
+    pub fn content_type(&self) -> Option<T> {
+        self.ctx.objects.get(self.inner.objindex as usize).and_then(|f| T::from_u16(f.type_id))
+    }
+    pub fn path(&self) -> Option<&'a str> {
+        if let Some(obj) = self.ctx.objects.get(self.inner.objindex as usize) {
+            self.ctx.path_arena.get(obj.path).map(|s| unsafe { std::str::from_utf8_unchecked(s) })
+        } else {
+            None
+        }
+    }
+}
+
 pub struct FindigsIterator<'a, T: ContentType, M: FindingMetadata> {
     id: u32,
     len: u32,
