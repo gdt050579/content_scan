@@ -36,7 +36,8 @@ impl ContentPath {
     /// Do **not** stringify a real OS path yourself and pass it here — a
     /// non-UTF-8 filesystem path would lose the bytes needed to reopen it.
     /// Route real paths through [`from_os`](Self::from_os) instead.
-    #[inline]
+    #[inline(always)]
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Self {
         Self {
             path: s.to_string(),
