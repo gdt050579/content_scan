@@ -3,9 +3,13 @@ pub(crate) struct ArenaIndex {
     pub(crate) pos: u32,
     pub(crate) size: u32,
 }
-// impl ArenaIndex {
-//     const INVALID: ArenaIndex = ArenaIndex { pos: u32::MAX, size: u32::MAX };
-// }
+impl ArenaIndex {
+    pub(crate) const INVALID: ArenaIndex = ArenaIndex { pos: u32::MAX, size: u32::MAX };
+    #[inline(always)]
+    pub(crate) fn is_valid(&self) -> bool {
+        self.pos != u32::MAX
+    }
+}
 
 #[derive(Copy, Clone, Debug)]
 pub(crate) struct Object {

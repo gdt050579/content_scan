@@ -8,6 +8,7 @@ use crate::Object;
 use crate::FindingMetadata;
 use crate::InternalFinding;
 use crate::NoMetadata;
+use crate::object::ArenaIndex;
 use varmap::{VarMap, VarMapPool};
 
 /// Mutable state shared with plugins during a scan.
@@ -133,7 +134,23 @@ impl<T: ContentType, M: FindingMetadata> Context<T, M> {
         self.objects.len() as u32
     }
 
-    pub fn add_finding(&mut self, finding: &str, source: Option<&str>, metadata: Option<M>) {}
+    pub fn add_finding(&mut self, finding: &str, source: Option<&str>, metadata: Option<M>) {
+        if let Some(objindex) = self.current_object_index {
+            let source = if let Some(source) = source {
+                self.path_arena.alloc(source.as_bytes())
+            } else {
+                ArenaIndex::INVALID
+            };
+            
+            let finding = InternalFinding {
+                objindex,
+                finding: self.path_arena.alloc(finding.as_bytes()),
+                source,
+                metadata,
+            };
+            self.findings.push(finding);
+        }
+    } 
 }
 
 /// Opaque handle to a content object inside a [`ScanResult`].
