@@ -5,6 +5,9 @@ use crate::ContentType;
 use crate::ExtractRequestBuilder;
 use crate::ExtractionRequest;
 use crate::Object;
+use crate::FindingMetadata;
+use crate::InternalFinding;
+use crate::NoMetadata;
 use varmap::{VarMap, VarMapPool};
 
 /// Mutable state shared with plugins during a scan.
@@ -27,7 +30,7 @@ use varmap::{VarMap, VarMapPool};
 /// `Context` is owned by the [`Scanner`](crate::Scanner) and cleared
 /// automatically at the start of every scan; plugins never construct
 /// one themselves.
-pub struct Context<T: ContentType> {
+pub struct Context<T: ContentType, M: FindingMetadata = NoMetadata> {
     pub(crate) global: VarMap,
     pub(crate) objects: Vec<Object>,
     pub(crate) path_arena: BufferArena,
@@ -35,8 +38,9 @@ pub struct Context<T: ContentType> {
     pub(crate) local_varmap_handle: Option<varmap::PoolHandle>,
     pub(crate) current_object_index: Option<u32>,
     pub(crate) extraction_requests_stack: Vec<ExtractionRequest<T>>,
+    pub(crate) findings: Vec<InternalFinding<M>>,
 }
-impl<T: ContentType> Context<T> {
+impl<T: ContentType, M: FindingMetadata> Context<T, M> {
     pub(crate) fn new() -> Self {
         Self {
             global: VarMap::new(),
@@ -46,6 +50,7 @@ impl<T: ContentType> Context<T> {
             local_varmap_handle: None,
             current_object_index: None,
             extraction_requests_stack: Vec::with_capacity(16),
+            findings: Vec::with_capacity(16),
         }
     }
     pub(crate) fn clear(&mut self) {
@@ -56,6 +61,7 @@ impl<T: ContentType> Context<T> {
         self.local_varmap_handle = None;
         self.current_object_index = None;
         self.extraction_requests_stack.clear();
+        self.findings.clear();
     }
 
     /// Returns the [`VarMap`] shared across the entire scan.
@@ -89,7 +95,7 @@ impl<T: ContentType> Context<T> {
     /// emitted from one analyzer; they run in emission order. The
     /// queue is cleared at the start of every object's scan, including
     /// nested children.
-    pub fn request_extract(&mut self, content_type: T) -> ExtractRequestBuilder<'_, T> {
+    pub fn request_extract(&mut self, content_type: T) -> ExtractRequestBuilder<'_, T, M> {
         ExtractRequestBuilder::new(self, content_type)
     }
 
@@ -126,6 +132,8 @@ impl<T: ContentType> Context<T> {
     pub fn objects_scanned(&self) -> u32 {
         self.objects.len() as u32
     }
+
+    pub fn add_finding(&mut self, finding: &str, source: Option<&str>, metadata: Option<M>) {}
 }
 
 /// Opaque handle to a content object inside a [`ScanResult`].
@@ -160,12 +168,12 @@ pub struct ScanContentHandle {
 ///
 /// The result borrows immutably from the scanner. Copy anything you
 /// need to keep out of the result before starting another scan.
-pub struct ScanResult<'a, T: ContentType> {
-    pub(crate) context: &'a Context<T>,
-    _extra: PhantomData<T>,
+pub struct ScanResult<'a, T: ContentType, M: FindingMetadata = NoMetadata> {
+    pub(crate) context: &'a Context<T, M>,
+    _extra: PhantomData<(T, M)>,
 }
-impl<'a, T: ContentType> ScanResult<'a, T> {
-    pub(crate) fn new(context: &'a Context<T>) -> Self {
+impl<'a, T: ContentType, M: FindingMetadata> ScanResult<'a, T, M> {
+    pub(crate) fn new(context: &'a Context<T, M>) -> Self {
         Self {
             context,
             _extra: PhantomData,

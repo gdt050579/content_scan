@@ -1,6 +1,6 @@
 use varmap::VarMap;
 
-use crate::{ContentType, Context};
+use crate::{ContentType, Context, FindingMetadata};
 
 /// Region of a parent [`Content`](crate::Content) that a
 /// [`ContentExtractor`](crate::ContentExtractor) should look at, plus
@@ -66,13 +66,13 @@ pub(crate) struct ExtractionRequest<T: ContentType> {
 ///     .emit();
 /// ```
 #[must_use = "an extraction request does nothing until `.emit()` is called"]
-pub struct ExtractRequestBuilder<'c, T: ContentType> {
-    ctx: &'c mut Context<T>,
+pub struct ExtractRequestBuilder<'c, T: ContentType, M: FindingMetadata> {
+    ctx: &'c mut Context<T, M>,
     request: ExtractionRequest<T>,
 }
 
-impl<'c, T: ContentType> ExtractRequestBuilder<'c, T> {
-    pub(crate) fn new(ctx: &'c mut Context<T>, content_type: T) -> Self {
+impl<'c, T: ContentType, M: FindingMetadata> ExtractRequestBuilder<'c, T, M> {
+    pub(crate) fn new(ctx: &'c mut Context<T, M>, content_type: T) -> Self {
         Self {
             ctx,
             request: ExtractionRequest {
@@ -141,7 +141,7 @@ impl<'c, T: ContentType> ExtractRequestBuilder<'c, T> {
     }
 }
 
-impl<'c, T: ContentType> Drop for ExtractRequestBuilder<'c, T> {
+impl<'c, T: ContentType, M: FindingMetadata> Drop for ExtractRequestBuilder<'c, T, M> {
     fn drop(&mut self) {
         // If we reserved a param map but never emitted, give it back.
         if let Some(handle) = self.request.params_handle {

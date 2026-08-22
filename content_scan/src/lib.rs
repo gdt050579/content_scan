@@ -97,6 +97,7 @@ mod analyzer_list;
 mod buffer_arena;
 mod content;
 mod content_path;
+mod findings;
 mod context;
 mod extraction_context;
 mod extractor_list;
@@ -112,6 +113,7 @@ mod tests;
 mod utils;
 
 pub use content::*;
+pub use findings::*;
 pub use filter::*;
 pub use interfaces::*;
 

@@ -9,7 +9,10 @@ use crate::IdentifierSet;
 use crate::Object;
 use crate::OwnedContentPtr;
 use crate::{ContentPtr, Context, ScanResult};
+use crate::FindingMetadata;
+use crate::NoMetadata;
 use std::collections::HashSet;
+use std::marker::PhantomData;
 
 /// The engine that drives a scan.
 ///
@@ -23,15 +26,15 @@ use std::collections::HashSet;
 /// Scanners are reusable: the internal [`Context`] is cleared at the
 /// start of every [`scan`](Self::scan) call, so a single instance can
 /// process many independent inputs sequentially.
-pub struct Scanner<T: ContentType> {
+pub struct Scanner<T: ContentType, M: FindingMetadata> {
     filter: Option<Filter>,
     identifiers: IdentifierSet<T>,
-    analyzers: AnalyzerList<Box<dyn ContentAnalyzer<T>>>,
+    analyzers: AnalyzerList<Box<dyn ContentAnalyzer<T, M>>>,
     extractors: ExtractorList<Box<dyn ContentExtractor<T>>, T>,
-    context: Context<T>,
+    context: Context<T, M>,
     max_depth: u32,
 }
-impl<T: ContentType> Scanner<T> {
+impl<T: ContentType, M: FindingMetadata> Scanner<T, M> {
     /// Scans a single top-level [`Content`] and returns the results.
     ///
     /// The scanner:
@@ -56,7 +59,7 @@ impl<T: ContentType> Scanner<T> {
     /// The returned [`ScanResult`] borrows from `self` and stays
     /// valid until the next call on this scanner. Copy anything you
     /// need to keep out before starting another scan.
-    pub fn scan<'a>(&'a mut self, content: &mut dyn Content<T>, filter_root: bool) -> ScanResult<'a, T> {
+    pub fn scan<'a>(&'a mut self, content: &mut dyn Content<T>, filter_root: bool) -> ScanResult<'a, T, M> {
         self.context.clear();
         if filter_root {
             if let Some(filter) = self.filter.as_mut() {
@@ -364,25 +367,23 @@ impl<T: ContentType> Scanner<T> {
 /// - `add_generic_analyzer` registers an analyzer that runs for every
 ///   content object, regardless of type (including unidentified
 ///   content). Generic analyzers run after the type-specific ones.
-pub struct ScannerBuilder<T: ContentType> {
+pub struct ScannerBuilder<T: ContentType, M: FindingMetadata = NoMetadata> {
     filter: Option<Filter>,
-    analyzers: Vec<(u32, Box<dyn ContentAnalyzer<T>>)>,
+    analyzers: Vec<(u32, Box<dyn ContentAnalyzer<T, M>>)>,
     extractors: Vec<(T, Box<dyn ContentExtractor<T>>)>,
     identifiers: Vec<(T, Box<dyn ContentIdentifier<T>>)>,
     max_depth: u32,
+    _metadata: PhantomData<M>,
 }
-impl<T: ContentType> ScannerBuilder<T> {
-    /// Creates a new, empty builder with sensible defaults.
-    ///
-    /// The default maximum recursion depth is `8`. Change it with
-    /// [`max_depth`](Self::max_depth).
-    pub fn new() -> Self {
+impl<T: ContentType, M: FindingMetadata> ScannerBuilder<T, M> {
+    fn empty() -> Self {
         Self {
             filter: None,
             analyzers: Vec::with_capacity(16),
             extractors: Vec::with_capacity(4),
             identifiers: Vec::with_capacity(4),
             max_depth: 8,
+            _metadata: PhantomData,
         }
     }
 
@@ -411,7 +412,7 @@ impl<T: ContentType> ScannerBuilder<T> {
     /// builds check this in [`build`](Self::build).
     pub fn add_analyzer<A>(mut self, content_type: T, priority: u8, analyzer: A) -> Self
     where
-        A: ContentAnalyzer<T> + 'static,
+        A: ContentAnalyzer<T, M> + 'static,
     {
         let hash = (content_type.as_u16() as u32) << 16 | priority as u32;
         self.analyzers.push((hash, Box::new(analyzer)));
@@ -429,7 +430,7 @@ impl<T: ContentType> ScannerBuilder<T> {
     /// generic). Debug builds check this in [`build`](Self::build).
     pub fn add_generic_analyzer<A>(mut self, priority: u8, analyzer: A) -> Self
     where
-        A: ContentAnalyzer<T> + 'static,
+        A: ContentAnalyzer<T, M> + 'static,
     {
         let hash = 0xFFFF0000 | priority as u32;
         self.analyzers.push((hash, Box::new(analyzer)));
@@ -529,7 +530,7 @@ impl<T: ContentType> ScannerBuilder<T> {
     /// [`Dependencies`](crate::Dependencies) `requires` a name that is
     /// not registered, or if a required analyzer does not have a
     /// strictly smaller `priority`.
-    pub fn build(self) -> Scanner<T> {
+    pub fn build(self) -> Scanner<T, M> {
         self.check_unique_identifiers();
         #[cfg(debug_assertions)]
         self.check_dependencies();
@@ -546,8 +547,27 @@ impl<T: ContentType> ScannerBuilder<T> {
         }
     }
 }
-impl<T: ContentType> Default for ScannerBuilder<T> {
+impl<T: ContentType> ScannerBuilder<T, NoMetadata> {
+    /// Creates a new, empty builder with sensible defaults.
+    ///
+    /// The default maximum recursion depth is `8`. Change it with
+    /// [`max_depth`](Self::max_depth).
+    ///
+    /// Defined only for [`NoMetadata`] so `ScannerBuilder::new()` can
+    /// infer `M`. For a custom metadata type, use
+    /// [`with_metadata`](Self::with_metadata).
+    pub fn new() -> Self {
+        Self::empty()
+    }
+
+    /// Creates an empty builder that records findings with metadata type `M`.
+    pub fn with_metadata<M: FindingMetadata>() -> ScannerBuilder<T, M> {
+        ScannerBuilder::empty()
+    }
+}
+
+impl<T: ContentType, M: FindingMetadata> Default for ScannerBuilder<T, M> {
     fn default() -> Self {
-        Self::new()
+        Self::empty()
     }
 }

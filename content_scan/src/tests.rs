@@ -578,7 +578,7 @@ mod identify {
         }
     }
 
-    fn identified_type(scanner: &mut Scanner<Ty>, buf: &[u8], path: &str) -> Option<Ty> {
+    fn identified_type(scanner: &mut Scanner<Ty, NoMetadata>, buf: &[u8], path: &str) -> Option<Ty> {
         let mut content = BufferContent::<Ty>::new(buf, path);
         let res = scanner.scan(&mut content, true);
         res.root().and_then(|h| res.content_type(h))

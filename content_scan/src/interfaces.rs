@@ -2,6 +2,8 @@ use super::{Content, ContentType, Context};
 use crate::ContentPath;
 use crate::ExtractionContext;
 use crate::OwnedContentPtr;
+use crate::FindingMetadata;
+use crate::NoMetadata;
 
 /// Return value used by analyzers to steer the scan.
 ///
@@ -82,7 +84,7 @@ pub struct Entry {
 /// [`ScannerBuilder::build`](crate::ScannerBuilder::build) uses that
 /// name (and any `requires`) to check that required analyzers are
 /// registered with a strictly lower priority.
-pub trait ContentAnalyzer<T: ContentType>: Dependencies {
+pub trait ContentAnalyzer<T: ContentType, M: FindingMetadata = NoMetadata>: Dependencies {
     /// Analyzes `content` and reports findings through `context`.
     ///
     /// Use [`Context::local`] / [`Context::global`] to record results,
@@ -90,7 +92,7 @@ pub trait ContentAnalyzer<T: ContentType>: Dependencies {
     /// type on a region of `content`. The returned [`NextAction`]
     /// controls whether further analyzers (and extractors) run for
     /// this object.
-    fn analyze(&mut self, content: &mut dyn Content<T>, context: &mut Context<T>) -> NextAction;
+    fn analyze(&mut self, content: &mut dyn Content<T>, context: &mut Context<T, M>) -> NextAction;
 }
 
 /// A plugin that turns a container into a stream of child [`Content`]
