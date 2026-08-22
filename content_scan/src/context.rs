@@ -4,6 +4,7 @@ use crate::BufferArena;
 use crate::ContentType;
 use crate::ExtractRequestBuilder;
 use crate::ExtractionRequest;
+use crate::FindigsIterator;
 use crate::Object;
 use crate::FindingMetadata;
 use crate::InternalFinding;
@@ -311,5 +312,9 @@ impl<'a, T: ContentType, M: FindingMetadata> ScanResult<'a, T, M> {
     pub fn content_type(&self, handle: ScanContentHandle) -> Option<T> {
         let object = self.context.objects.get(handle.index as usize)?;
         T::from_u16(object.type_id)
+    }
+
+    pub fn findings(&self) -> FindigsIterator<'a, T, M> {
+        FindigsIterator::new(self.context)
     }
 }
