@@ -30,6 +30,10 @@ name = "md5"
 path = "md5/main.rs"
 
 [[example]]
+name = "entropy"
+path = "entropy/main.rs"
+
+[[example]]
 name = "find_zip"
 path = "find_zip/main.rs"
 

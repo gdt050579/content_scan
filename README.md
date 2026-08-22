@@ -29,6 +29,7 @@ Typical use cases:
     - [Reading PNG / BMP / JPEG dimensions](#reading-png--bmp--jpeg-dimensions)
     - [Finding and decoding Base64](#finding-and-decoding-base64)
     - [Computing MD5 hashes](#computing-md5-hashes)
+    - [Measuring Shannon entropy](#measuring-shannon-entropy)
     - [Listing ZIP files](#listing-zip-files)
     - [Reading PNG dimensions inside a ZIP](#reading-png-dimensions-inside-a-zip)
   - [API overview](#api-overview)
@@ -66,7 +67,7 @@ This repository is a Cargo workspace with three members:
 | ------------------------- | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
 | `content_scan`            | [`content_scan/`](content_scan)                       | The main library: scanner, traits, matchers, filters.                                          |
 | `content_scan_proc_macro` | [`content-scan-proc-macro/`](content-scan-proc-macro) | Companion proc-macro crate exposing `#[derive(ContentType)]` and `#[derive(Dependencies)]`. Re-exported from `content_scan`. |
-| `examples`                | [`examples/`](examples)                               | Runnable examples (`sum`, `vowals`, `image_size`, `base64_find`, `md5`, `find_zip`, `zip_png_size`). |
+| `examples`                | [`examples/`](examples)                               | Runnable examples (`sum`, `vowals`, `image_size`, `base64_find`, `md5`, `entropy`, `find_zip`, `zip_png_size`). |
 
 You normally only depend on `content_scan` — the proc-macro is re-exported for you.
 
@@ -147,6 +148,7 @@ cargo run --example image_size -- path/to/folder
 cargo run --example base64_find
 cargo run --example base64_find -- path/to/file_or_folder
 cargo run --example md5 -- path/to/file_or_folder
+cargo run --example entropy -- path/to/file_or_folder
 cargo run --example find_zip -- path/to/folder
 cargo run --example zip_png_size -- path/to/archive.zip
 ```
@@ -395,6 +397,49 @@ fn main() {
     let res = scanner.scan(&mut content, true);
     for f in res.findings() {
         println!("{}  {}", f.finding(), f.path().unwrap_or_default());
+    }
+}
+```
+
+### Measuring Shannon entropy
+
+[`entropy`](examples/entropy/main.rs) is the same generic-analyzer + findings pattern as [`md5`](#computing-md5-hashes), but each finding carries typed [`FindingMetadata`](#findings): a newtype `Entropy(f64)` with the Shannon entropy (bits per byte) of that file. The scanner is built with `ScannerBuilder::with_metadata::<Entropy>()`, and the analyzer implements `ContentAnalyzer<MyTypes, Entropy>`. The finding text is a coarse classification — `packed` if entropy is greater than 7.8, `encrypted` if it is greater than 7.0, otherwise `normal` — while the exact value lives in the metadata.
+
+```bash
+cargo run --example entropy -- README.md
+cargo run --example entropy -- ./content_scan/src
+```
+
+```rust
+#[derive(Copy, Clone, Debug)]
+struct Entropy(f64);
+impl FindingMetadata for Entropy {}
+
+#[derive(Dependencies)]
+#[Dependencies(name = "EntropyAnalyzer")]
+struct EntropyAnalyzer;
+impl ContentAnalyzer<MyTypes, Entropy> for EntropyAnalyzer {
+    fn analyze(&mut self, content: &mut dyn Content<MyTypes>, context: &mut Context<MyTypes, Entropy>) -> NextAction {
+        if content.content_type() == Some(MyTypes::Folder) {
+            return NextAction::Continue;
+        }
+        // count byte frequencies, compute Shannon entropy...
+        let label = if entropy > 7.8 { "packed" } else if entropy > 7.0 { "encrypted" } else { "normal" };
+        context.add_finding(label, None, Some(Entropy(entropy)));
+        NextAction::Continue
+    }
+}
+
+fn main() {
+    let mut scanner = ScannerBuilder::<MyTypes>::with_metadata::<Entropy>()
+        .add_generic_analyzer(0, EntropyAnalyzer {})
+        .add_extractor(MyTypes::Folder, FolderExtractor::<MyTypes>::new(true, false))
+        .build();
+    // FileContent for a file, FolderContent + Folder extractor for a directory
+    let res = scanner.scan(&mut content, true);
+    for f in res.findings() {
+        let entropy = f.metadata().map(|m| m.0).unwrap_or(0.0);
+        println!("{}  {:.4}  {}", f.finding(), entropy, f.path().unwrap_or_default());
     }
 }
 ```
@@ -1008,7 +1053,7 @@ let mut scanner = ScannerBuilder::<MyTypes>::with_metadata::<Severity>()
     .build();
 ```
 
-The same `M` flows through `Scanner<T, M>`, `Context<T, M>`, `ScanResult<T, M>`, and `ContentAnalyzer<T, M>`. See [Computing MD5 hashes](#computing-md5-hashes) for a complete example that records findings without custom metadata.
+The same `M` flows through `Scanner<T, M>`, `Context<T, M>`, `ScanResult<T, M>`, and `ContentAnalyzer<T, M>`. See [Computing MD5 hashes](#computing-md5-hashes) for findings without custom metadata, and [Measuring Shannon entropy](#measuring-shannon-entropy) for a complete example that attaches a `f64` via `FindingMetadata`.
 
 ### Navigating the scan result tree
 
