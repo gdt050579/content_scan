@@ -14,6 +14,9 @@
     - [Analyzer](chapter-2/analyzer.md)
         - [Dependencies](chapter-2/dependencies.md)
     - [Extractor](chapter-2/extractor.md)
+        - [Extraction Context](chapter-2/extraction_context.md)
+        - [Requesting extraction](chapter-2/requesting_extraction.md)
+        - [Extractions vs Context](chapter-2/extractions_vs_context.md)
 
 - [Scanner](chapter-3/scanner.md)
     - [Builder](chapter-3/builder.md)
@@ -23,7 +26,6 @@
 - [Context and results](chapter-4/context.md)
     - [Global vs local VarMaps](chapter-4/global_vs_local.md)
     - [Findings and metadata](chapter-4/findings.md)
-    - [Requesting extraction](chapter-4/requesting_extraction.md)
     - [Navigating ScanResult](chapter-4/scan_result.md)
 
 - [The scanning pipeline](chapter-5/pipeline.md)

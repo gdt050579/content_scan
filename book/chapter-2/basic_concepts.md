@@ -27,5 +27,8 @@ The architecture page is the map: one object through the pipeline, many plugins 
 - [Identifier](identifier.md) — magic, name, extension, and `validate`.
 - [Analyzer](analyzer.md) — `NextAction`, priority, generic vs typed, [dependencies](dependencies.md).
 - [Extractor](extractor.md) — sessions, `Entry`, nested containers.
+    - [Extraction Context](extraction_context.md) — the window `create_session` receives.
+    - [Requesting extraction](requesting_extraction.md) — analyzers queue extractors of another type.
+    - [Extractions vs Context](extractions_vs_context.md) — small structs on the parent vs child `Content`.
 
 [Chapter 5](../chapter-5/pipeline.md) walks the same pipeline with the exact control-flow rules (`Skip` / `Exit`, requested extraction, `filter_root`). This chapter stays at the model.

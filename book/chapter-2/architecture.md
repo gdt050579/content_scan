@@ -51,7 +51,7 @@ This is the rule that shapes every scanner you will build:
 | --- | --- | --- |
 | Identifier | **Exactly one** (or none). A second registration for the same type panics in `build()`. | Not sequenced against each other: they compete as candidates during type resolution. |
 | Analyzer | **Any number**, including several for the same type. Plus a separate **generic** bucket that runs on every object. | Ascending `priority` (lower first). Typed analyzers for the resolved type, then generics. |
-| Extractor | **Any number**, including several for the same type. There is no generic extractor. | Registration order, for the resolved type, then for each type an analyzer [requested](../chapter-4/requesting_extraction.md). |
+| Extractor | **Any number**, including several for the same type. There is no generic extractor. | Registration order, for the resolved type, then for each type an analyzer [requested](requesting_extraction.md). |
 
 Identifiers are one-per-type because type resolution must produce a **single** `ContentType` (or none). Analyzers and extractors are lists because a PNG might need a dimension reader *and* a checksum, and a ZIP might unpack members *and* look for an embedded extra stream.
 
@@ -158,7 +158,7 @@ In words:
 
 Extractors and sessions do not return `NextAction`. They yield `Option`. Only analyzers steer the scan.
 
-The same object never runs “some other type’s” typed analyzers. A file identified as `Png` runs `Png` analyzers (and generics), not `Zip` analyzers. It *can* still run `Zip` **extractors** if an analyzer requested `Zip` on a byte range — that is how embedded archives are opened without re-typing the parent. [Requesting extraction](../chapter-4/requesting_extraction.md) covers that mechanism.
+The same object never runs “some other type’s” typed analyzers. A file identified as `Png` runs `Png` analyzers (and generics), not `Zip` analyzers. It *can* still run `Zip` **extractors** if an analyzer requested `Zip` on a byte range — that is how embedded archives are opened without re-typing the parent. [Requesting extraction](requesting_extraction.md) covers that mechanism.
 
 ## Where data is stored
 

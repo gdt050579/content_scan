@@ -181,7 +181,7 @@ A PE header analyzer is **typed**: it only makes sense on `MyTypes::Pe`. A signa
 
 ## Requesting extraction
 
-An analyzer that finds nested content of **another** type — an embedded ZIP inside a PE — does not unpack it itself. It calls `context.request_extract(MyTypes::Zip).at(offset).len(len).emit()`. After this object’s analyzers finish, extractors registered for `Zip` run on that window. That mechanism is [Requesting extraction](../chapter-4/requesting_extraction.md).
+An analyzer that finds nested content of **another** type — an embedded ZIP inside a PE — does not unpack it itself. It calls `context.request_extract(MyTypes::Zip).at(offset).len(len).emit()`. After this object’s analyzers finish, extractors registered for `Zip` run on that window. That mechanism is [Requesting extraction](requesting_extraction.md). Small structs for the next analyzer stay in the scan context instead — [Extractions vs Context](extractions_vs_context.md).
 
 ## What this page leaves out
 
