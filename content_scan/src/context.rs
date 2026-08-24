@@ -1,15 +1,16 @@
 use std::marker::PhantomData;
 
+use crate::object::ArenaIndex;
 use crate::BufferArena;
 use crate::ContentType;
 use crate::ExtractRequestBuilder;
 use crate::ExtractionRequest;
 use crate::FindigsIterator;
-use crate::Object;
 use crate::FindingMetadata;
 use crate::InternalFinding;
 use crate::NoMetadata;
-use crate::object::ArenaIndex;
+use crate::Object;
+use crate::ScanObserver;
 use varmap::{VarMap, VarMapPool};
 
 /// Mutable state shared with plugins during a scan.
@@ -48,9 +49,10 @@ pub struct Context<T: ContentType, M: FindingMetadata = NoMetadata> {
     pub(crate) current_object_index: Option<u32>,
     pub(crate) extraction_requests_stack: Vec<ExtractionRequest<T>>,
     pub(crate) findings: Vec<InternalFinding<M>>,
+    pub(crate) observer: Option<Box<dyn ScanObserver<T, M>>>,
 }
 impl<T: ContentType, M: FindingMetadata> Context<T, M> {
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(observer: Option<Box<dyn ScanObserver<T, M>>>) -> Self {
         Self {
             global: VarMap::new(),
             objects: Vec::with_capacity(16),
@@ -60,6 +62,7 @@ impl<T: ContentType, M: FindingMetadata> Context<T, M> {
             current_object_index: None,
             extraction_requests_stack: Vec::with_capacity(16),
             findings: Vec::with_capacity(16),
+            observer,
         }
     }
     pub(crate) fn clear(&mut self) {
@@ -165,21 +168,25 @@ impl<T: ContentType, M: FindingMetadata> Context<T, M> {
     /// ```
     pub fn add_finding(&mut self, finding: &str, source: Option<&str>, metadata: Option<M>) {
         if let Some(objindex) = self.current_object_index {
-            let source = if let Some(source) = source {
+            let source_index = if let Some(source) = source {
                 self.path_arena.alloc(source.as_bytes())
             } else {
                 ArenaIndex::INVALID
             };
-            
-            let finding = InternalFinding {
+
+            if let Some(observer) = self.observer.as_mut() {
+                let path = unsafe { std::str::from_utf8_unchecked(self.path_arena.get(self.objects[objindex as usize].path).unwrap_or_default()) };
+                observer.on_finding(path, finding, source, metadata.as_ref());
+            }
+            let finding_object = InternalFinding {
                 objindex,
                 finding: self.path_arena.alloc(finding.as_bytes()),
-                source,
+                source: source_index,
                 metadata,
             };
-            self.findings.push(finding);
+            self.findings.push(finding_object);
         }
-    } 
+    }
 }
 
 /// Opaque handle to a content object inside a [`ScanResult`].

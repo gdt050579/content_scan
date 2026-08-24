@@ -40,8 +40,7 @@ pub struct Scanner<T: ContentType, M: FindingMetadata> {
     analyzers: AnalyzerList<Box<dyn ContentAnalyzer<T, M>>>,
     extractors: ExtractorList<Box<dyn ContentExtractor<T>>, T>,
     context: Context<T, M>,
-    stop_condition: Option<Box<dyn StopCondition>>,
-    observer: Option<Box<dyn ScanObserver<T, M>>>,
+    stop_condition: Option<Box<dyn StopCondition>>,    
     max_depth: u32,
 }
 impl<T: ContentType, M: FindingMetadata> Scanner<T, M> {
@@ -73,23 +72,41 @@ impl<T: ContentType, M: FindingMetadata> Scanner<T, M> {
     /// [`Context::add_finding`]. Copy anything you need to keep out
     /// before starting another scan.
     pub fn scan<'a>(&'a mut self, content: &mut dyn Content<T>, filter_root: bool) -> ScanResult<'a, T, M> {
-        self.context.clear();
+        self.context.clear();        
+        if let Some(observer) = self.context.observer.as_mut() {
+            observer.on_begin(content.path().as_printable_string());
+        }
         if filter_root {
             if let Some(filter) = self.filter.as_mut() {
                 if !filter.should_process(content.path(), content.size()) {
+                    if let Some(observer) = self.context.observer.as_mut() {
+                        observer.on_filtered(content.path().as_printable_string());
+                        observer.on_end();
+                    }
                     return ScanResult::new(&self.context);
                 }
             }
         }
         let cptr = ContentPtr::new(content);
         self.inner_scan(cptr, 1, Object::INVALID_INDEX);
+        if let Some(observer) = self.context.observer.as_mut() {
+            observer.on_end();
+        }
         ScanResult::new(&self.context)
     }
     fn inner_scan(&mut self, content: ContentPtr<T>, depth: u32, parent_index: u32) -> NextAction {
         self.context.local_varmap_handle = None; // so that next time someone ask for a local varmap, it will get one from the context varmap_pool
         self.context.current_object_index = None;
         let start_req_count = self.context.extraction_requests_stack.len();
+        if let Some(stop_condition) = self.stop_condition.as_mut() {
+            if stop_condition.should_stop() {
+                return NextAction::Exit;
+            }
+        }
         let (ty, my_index) = self.create_object(content, parent_index);
+        if let Some(observer) = self.context.observer.as_mut() {
+            observer.on_scan_object(content.as_ref().path().as_printable_string(), ty);
+        }
 
         let mut response = self.run_analyzers(content, ty);
         if response == NextAction::Continue {
@@ -282,11 +299,16 @@ impl<T: ContentType, M: FindingMetadata> Scanner<T, M> {
                 if !entry.skip_from_filtering {
                     if let Some(filter) = self.filter.as_mut() {
                         if !filter.should_process(&entry.path, entry.size) {
-                            // println!("Skip: {:?}", &entry.path);
+                            if let Some(observer) = self.context.observer.as_mut() {
+                                observer.on_filtered(entry.path.as_printable_string());
+                            }
                             continue;
                         }
                     }
                 }
+                if let Some(observer) = self.context.observer.as_mut() {
+                    observer.on_extraction(content.as_ref().path().as_printable_string(), entry);
+                }                
                 if let Some(mut extracted_content) = session.extract() {
                     let c_ptr = ContentPtr::new(extracted_content.as_mut());
                     let result = self.inner_scan(c_ptr, depth + 1, parent_index);
@@ -577,10 +599,9 @@ impl<T: ContentType, M: FindingMetadata> ScannerBuilder<T, M> {
             identifiers,
             analyzers,
             extractors,
-            context: Context::new(),
+            context: Context::new(self.observer),
             max_depth: self.max_depth,
-            stop_condition: self.stop_condition,
-            observer: self.observer,
+            stop_condition: self.stop_condition,            
         }
     }
 }
