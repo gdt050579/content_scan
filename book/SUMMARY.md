@@ -12,6 +12,7 @@
         - [ContentPath](chapter-2/content_path.md)
     - [Identifier](chapter-2/identifier.md)
     - [Analyzer](chapter-2/analyzer.md)
+        - [Dependencies](chapter-2/dependencies.md)
     - [Extractor](chapter-2/extractor.md)
 
 - [Scanner](chapter-3/scanner.md)
