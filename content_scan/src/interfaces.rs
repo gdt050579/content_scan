@@ -1,9 +1,9 @@
 use super::{Content, ContentType, Context};
 use crate::ContentPath;
 use crate::ExtractionContext;
-use crate::OwnedContentPtr;
 use crate::FindingMetadata;
 use crate::NoMetadata;
+use crate::OwnedContentPtr;
 
 /// Return value used by analyzers to steer the scan.
 ///
@@ -330,4 +330,16 @@ pub trait Dependencies {
     /// strictly smaller `priority` than this one.
     #[cfg(debug_assertions)]
     fn dependencies(&self) -> &'static [&'static str];
+}
+
+pub trait ScanObserver<T: ContentType, M: FindingMetadata = NoMetadata> {
+    fn on_begin(&mut self, root: &ContentPath) {}
+    fn on_scan_object(&mut self, path: &ContentPath, ty: Option<T>) {}
+    fn on_filtered(&mut self, path: &ContentPath, ty: Option<T>) {}
+    fn on_finding(&mut self, path: &ContentPath, finding: &str, source: Option<&str>, metadata: Option<&M>) {}
+    fn on_extraction(&mut self, parent: &ContentPath, entry: &Entry) {}
+    fn on_end(&mut self) {}
+}
+pub trait StopCondition {
+    fn should_stop(&mut self) -> bool { false }
 }

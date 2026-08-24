@@ -2,6 +2,8 @@ use super::{
     analyzer_list::AnalyzerList, extractor_list::ExtractorList, Content, ContentAnalyzer, ContentExtractor, ContentIdentifier, ContentType, Filter,
     NextAction,
 };
+use crate::ScanObserver;
+use crate::StopCondition;
 use crate::utils;
 use crate::ExtractionContext;
 use crate::ExtractionRequestMetadata;
@@ -38,6 +40,8 @@ pub struct Scanner<T: ContentType, M: FindingMetadata> {
     analyzers: AnalyzerList<Box<dyn ContentAnalyzer<T, M>>>,
     extractors: ExtractorList<Box<dyn ContentExtractor<T>>, T>,
     context: Context<T, M>,
+    stop_condition: Option<Box<dyn StopCondition>>,
+    observer: Option<Box<dyn ScanObserver<T, M>>>,
     max_depth: u32,
 }
 impl<T: ContentType, M: FindingMetadata> Scanner<T, M> {
@@ -389,6 +393,8 @@ pub struct ScannerBuilder<T: ContentType, M: FindingMetadata = NoMetadata> {
     analyzers: Vec<(u32, Box<dyn ContentAnalyzer<T, M>>)>,
     extractors: Vec<(T, Box<dyn ContentExtractor<T>>)>,
     identifiers: Vec<(T, Box<dyn ContentIdentifier<T>>)>,
+    stop_condition: Option<Box<dyn StopCondition>>,
+    observer: Option<Box<dyn ScanObserver<T, M>>>,
     max_depth: u32,
     _metadata: PhantomData<M>,
 }
@@ -399,6 +405,8 @@ impl<T: ContentType, M: FindingMetadata> ScannerBuilder<T, M> {
             analyzers: Vec::with_capacity(16),
             extractors: Vec::with_capacity(4),
             identifiers: Vec::with_capacity(4),
+            stop_condition: None,
+            observer: None,
             max_depth: 8,
             _metadata: PhantomData,
         }
@@ -496,6 +504,16 @@ impl<T: ContentType, M: FindingMetadata> ScannerBuilder<T, M> {
         self
     }
 
+    pub fn observer(mut self, observer: impl ScanObserver<T, M> + 'static) -> Self {
+        self.observer = Some(Box::new(observer));
+        self
+    }
+
+    pub fn stop_condition(mut self, stop_condition: impl StopCondition + 'static) -> Self {
+        self.stop_condition = Some(Box::new(stop_condition));
+        self
+    }
+
     fn check_unique_identifiers(&self) {
         let mut m = HashSet::new();
         for (content_type, _) in &self.identifiers {
@@ -561,6 +579,8 @@ impl<T: ContentType, M: FindingMetadata> ScannerBuilder<T, M> {
             extractors,
             context: Context::new(),
             max_depth: self.max_depth,
+            stop_condition: self.stop_condition,
+            observer: self.observer,
         }
     }
 }
