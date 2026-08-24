@@ -31,4 +31,4 @@ The architecture page is the map: one object through the pipeline, many plugins 
     - [Requesting extraction](requesting_extraction.md) — analyzers queue extractors of another type.
     - [Extractions vs Context](extractions_vs_context.md) — small structs on the parent vs child `Content`.
 
-[Chapter 5](../chapter-5/pipeline.md) walks the same pipeline with the exact control-flow rules (`Skip` / `Exit`, requested extraction, `filter_root`). This chapter stays at the model.
+[How one scan runs](../chapter-3/how_one_scan_runs.md) is the same pipeline with the exact control-flow rules (`Skip` / `Exit`, requested extraction, `filter_root`). This chapter stays at the model.

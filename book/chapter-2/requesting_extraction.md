@@ -83,7 +83,7 @@ fn create_session(
 }
 ```
 
-That is the shape of the [base64 example](../chapter-7/base64.md): a `Text` analyzer locates runs and `request_extract(Base64).at(start).len(len).emit()`; the `Base64` extractor decodes that slice into a child pinned as `Base64Decoded`. The parent file is never identified as `Base64`.
+That is the shape of the [base64 example](../chapter-6/base64.md): a `Text` analyzer locates runs and `request_extract(Base64).at(start).len(len).emit()`; the `Base64` extractor decodes that slice into a child pinned as `Base64Decoded`. The parent file is never identified as `Base64`.
 
 ## What a request is not
 

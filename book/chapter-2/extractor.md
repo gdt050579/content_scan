@@ -174,7 +174,7 @@ The children are **pinned** as `Number`, so identifiers do not run on them. Pin 
 
 ## Built-ins
 
-The crate ships two extractors. Their full behaviour is [Chapter 6](../chapter-6/builtins.md).
+The crate ships two extractors. Their full behaviour is [Chapter 5](../chapter-5/builtins.md).
 
 **`FolderExtractor`** — register it for your `Folder` variant, pair it with `FolderContent`. Files become `FileContent`; subfolders become `FolderContent` of the same type (that is what makes the walk recurse). Directory symlinks are skipped so cycles cannot loop. Subfolder entries set `skip_from_filtering`.
 
@@ -184,4 +184,4 @@ The crate ships two extractors. Their full behaviour is [Chapter 6](../chapter-6
 
 Each extracted child is a new object at `depth + 1`. Extraction stops when that next child would exceed `max_depth` (default 8; the root is depth 1). The filter, if any, is applied to each `Entry` unless `skip_from_filtering` is set. The root is filtered only when `scan(..., filter_root)` is `true` — [Recursion and filter_root](../chapter-3/recursion.md).
 
-That is the last of the three plugin kinds. [Extraction Context](extraction_context.md), [Requesting extraction](requesting_extraction.md), and [Extractions vs Context](extractions_vs_context.md) complete the picture. [Architecture](architecture.md) is the map; [Chapter 5](../chapter-5/pipeline.md) is the same loop with every `Skip` / `Exit` / requested-extraction edge.
+That is the last of the three plugin kinds. [Extraction Context](extraction_context.md), [Requesting extraction](requesting_extraction.md), and [Extractions vs Context](extractions_vs_context.md) complete the picture. [Architecture](architecture.md) is the map; [How one scan runs](../chapter-3/how_one_scan_runs.md) is the same loop with every `Skip` / `Exit` / requested-extraction edge.

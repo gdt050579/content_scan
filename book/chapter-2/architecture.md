@@ -2,7 +2,7 @@
 
 The scanner is a dispatcher. It does not know what a PNG is, or how to unpack a ZIP. It knows *when* to call your plugins, *in what order*, and *where those plugins are allowed to leave results*.
 
-This page is the map. [Chapter 5](../chapter-5/pipeline.md) is the same loop with every control-flow edge spelled out.
+This page is the map. [How one scan runs](../chapter-3/how_one_scan_runs.md) is that loop as `inner_scan` and `extract_content` implement it — `Skip` versus nested sessions, `Exit`, requested extractors, `max_depth`.
 
 ## The assembled scanner
 
@@ -191,4 +191,4 @@ The architecture is complete enough to read the rest of the book against:
 - **Typed analyzers then generic analyzers; typed extractors then requested extractors.**
 - **Results live in the context (maps + object tree) and in findings.** Chapter 4 is where those structures are defined.
 
-Not yet: `IdentifyMethod` variants and the 16-byte magic window ([Identifier](identifier.md)), analyzer `Dependencies` and `NextAction` ([Analyzer](analyzer.md)), sessions / `OwnedContentPtr` / `Entry` ([Extractor](extractor.md)), builder panics and `with_metadata` ([Builder](../chapter-3/builder.md)), or the exact `Skip`/`Exit` interaction with nested sessions ([Pipeline](../chapter-5/pipeline.md)).
+Not yet: `IdentifyMethod` variants and the 16-byte magic window ([Identifier](identifier.md)), analyzer `Dependencies` and `NextAction` ([Analyzer](analyzer.md)), sessions / `OwnedContentPtr` / `Entry` ([Extractor](extractor.md)), builder panics and `with_metadata` ([Builder](../chapter-3/builder.md)), or the exact `Skip`/`Exit` interaction with nested sessions ([How one scan runs](../chapter-3/how_one_scan_runs.md)).

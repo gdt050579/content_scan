@@ -45,7 +45,7 @@ Around those plugins sit:
 - **`Scanner` / `ScannerBuilder`** — registration, `max_depth`, and `scan()`.
 - **`ScanResult`** — after the scan, a tree of visited objects, per-object and scan-wide maps, and a flat list of findings.
 
-Chapter 2 defines these pieces. Chapter 5 walks one object through the full pipeline. For now, the important picture is: **you write plugins; the scanner calls them in a fixed order and builds a result tree.**
+Chapter 2 defines these pieces. [How one scan runs](../chapter-3/how_one_scan_runs.md) walks one object through the pipeline as the scanner implements it. For now, the important picture is: **you write plugins; the scanner calls them in a fixed order and builds a result tree.**
 
 ## What you write versus what the scanner does
 

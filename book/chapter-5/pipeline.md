@@ -1,1 +1,0 @@
-# The scanning pipeline

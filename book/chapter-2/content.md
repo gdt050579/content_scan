@@ -86,7 +86,7 @@ let mut root = FolderContent::<MyType>::with_content_type("./src", MyType::Folde
 let result = scanner.scan(&mut root, false);
 ```
 
-The scanner sees `content_type() == Some(Folder)` and dispatches straight to the extractor registered for that variant. Pass `filter_root = false` when the filter is written for files (extensions, names) and would reject the directory itself. Details are in [Folder](../chapter-6/folder.md) and [Recursion and filter_root](../chapter-3/recursion.md).
+The scanner sees `content_type() == Some(Folder)` and dispatches straight to the extractor registered for that variant. Pass `filter_root = false` when the filter is written for files (extensions, names) and would reject the directory itself. Details are in [Folder](../chapter-5/folder.md) and [Recursion and filter_root](../chapter-3/recursion.md).
 
 ## Choosing a root
 

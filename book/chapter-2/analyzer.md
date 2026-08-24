@@ -186,5 +186,5 @@ An analyzer that finds nested content of **another** type — an embedded ZIP in
 ## What this page leaves out
 
 - Full `var!` / `VarMap` / result-tree APIs — [Chapter 4](../chapter-4/context.md).
-- `Skip` / `Exit` versus nested extraction sessions — [Pipeline](../chapter-5/pipeline.md).
+- `Skip` / `Exit` versus nested extraction sessions — [How one scan runs](../chapter-3/how_one_scan_runs.md).
 - The `#[Dependencies]` attribute, debug checks, and the global name space — [Dependencies](dependencies.md).

@@ -55,7 +55,7 @@ If you are reading the source alongside the book, the repo has three members:
 | ------------------------- | -------------------------- | --------------------------------------------------------------------- |
 | `content_scan`            | `content_scan/`            | Library: scanner, traits, matchers, filters, built-ins.               |
 | `content_scan_proc_macro` | `content-scan-proc-macro/` | `#[derive(ContentType)]` and `#[derive(Dependencies)]`.               |
-| `examples`                | `examples/`                | Runnable programs used again in [Examples](../chapter-7/examples.md). |
+| `examples`                | `examples/`                | Runnable programs used again in [Examples](../chapter-6/examples.md). |
 
 From the workspace root you can check that everything compiles:
 
