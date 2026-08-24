@@ -213,7 +213,8 @@ pub trait ExtractionSession<T: ContentType> {
 ///
 /// Magic patterns ([`Magic`](Self::Magic),
 /// [`MultipleMagic`](Self::MultipleMagic)) must be at most 16 bytes.
-/// The scanner only feeds the matcher the first 16 bytes of content;
+/// The scanner only feeds the matcher the first 16 bytes of content,
+/// and only when at least one identifier registered such a pattern;
 /// [`ScannerBuilder::build`](crate::ScannerBuilder::build) panics if a
 /// registered magic is longer. To match bytes past that window, return
 /// `None` from `identify_method` and call [`Content::read`] in
@@ -224,6 +225,9 @@ pub enum IdentifyMethod {
     /// The sequence must be at most 16 bytes. Longer patterns can never
     /// match (the scanner reads only `content.read(0, 16)`) and cause
     /// [`ScannerBuilder::build`](crate::ScannerBuilder::build) to panic.
+    /// That 16-byte read is performed only when at least one identifier
+    /// registered a [`Magic`](Self::Magic) or
+    /// [`MultipleMagic`](Self::MultipleMagic) pattern.
     Magic(&'static [u8]),
     /// Content whose first bytes match any of these magic sequences.
     ///

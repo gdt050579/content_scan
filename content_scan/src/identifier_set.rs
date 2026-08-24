@@ -87,6 +87,15 @@ impl<T: ContentType> IdentifierSet<T> {
         };
         self.extensions.matches_exactly(b)
     }
+    /// `true` when at least one identifier registered a
+    /// [`IdentifyMethod::Magic`] / [`IdentifyMethod::MultipleMagic`]
+    /// pattern. The scanner reads the first 16 bytes of content only
+    /// in that case.
+    #[inline(always)]
+    pub(crate) fn has_magic(&self) -> bool {
+        !matches!(self.magics, Matcher::None)
+    }
+
     #[inline(always)]
     pub(crate) fn type_from_magic(&self, buffer: &[u8]) -> Option<T> {
         self.magics.starts_with(buffer)

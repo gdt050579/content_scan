@@ -301,18 +301,18 @@ impl<T: ContentType, M: FindingMetadata> Scanner<T, M> {
             return Some(ty);
         }
         let p = content.as_ref().path().as_bytes();
-        // type from file name
         let file_name = utils::get_file_name(p);
         let type_from_file_name = self.identifiers.type_from_file_name(file_name);
         let extension = utils::get_extension(file_name);
         let type_from_extension = self.identifiers.type_from_extension(extension);
-        // type from magic
-        let type_from_magic = {
+        let type_from_magic = if self.identifiers.has_magic() {
             if let Some(buf) = content.as_mut().read(0, 16) {
                 self.identifiers.type_from_magic(buf)
             } else {
                 None
             }
+        } else {
+            None
         };
         if let Some(ty) = type_from_magic {
             if self.validate_content_type(content, ty) {
