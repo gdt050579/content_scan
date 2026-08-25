@@ -28,7 +28,7 @@ Use an extractor (type-specific or [requested](requesting_extraction.md)) when t
 
 - An **entire file** (ZIP member, directory entry, overlay, decoded Base64 payload)
 - Something you may **filter** by path or size (`*.png`, skip huge blobs)
-- Something you may **drop** as out of scope (`advance` advertised it; `extract` returned `None`, or the filter rejected the `Entry`)
+- Something you may **drop** as out of scope (`advance` advertised it; `extract` returned `None`, or the filter rejected the `Entry` — `on_filtered` if an [observer](../chapter-3/observer.md) is attached)
 - A **view** over a region of the parent — including one that caches a window in memory — that later plugins should see as a normal `Content` (identify, analyze, extract again)
 
 Children get a [`ContentPath`](content_path.md), a size, a depth, and the full pipeline. That cost is the point: you want the rest of the scanner (filters, identifiers, typed analyzers, nested extractors, the result tree) to treat them as objects.

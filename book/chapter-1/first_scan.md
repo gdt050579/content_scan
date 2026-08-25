@@ -188,7 +188,7 @@ fn main() {
 
 ## Where to go next
 
-This example never extracted children, never walked a directory, and never emitted a [`Finding`](../chapter-4/findings.md). Those show up as soon as you need containers or a flat list of hits.
+This example never extracted children, never walked a directory, and never emitted a [`Finding`](../chapter-4/findings.md). Those show up as soon as you need containers or a flat list of hits. Live progress and early abort are the [observer](../chapter-3/observer.md) and [stop condition](../chapter-3/stop_condition.md).
 
 - [Basic concepts](../chapter-2/basic_concepts.md) — `Content`, identifiers, analyzers, and extractors in detail.
 - [How one scan runs](../chapter-3/how_one_scan_runs.md) — the exact order of filter → identify → analyze → extract → recurse.

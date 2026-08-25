@@ -43,6 +43,8 @@ Only analyzers return this. Extractors yield `Option`.
 
 `Skip` is “I am done with this file.” `Exit` is “stop everything.” Default to `Continue`.
 
+Aborting from **outside** the analyzer (timeout, cancel button) is a [`StopCondition`](../chapter-3/stop_condition.md), not `NextAction`. That check runs before the object is identified; `Exit` from `analyze` runs after it is already in the tree.
+
 ## Writing the context for another analyzer
 
 The `Context` is shared across all analyzers on the current object. A plugin that has already parsed something should **store it**, so a later plugin can use it instead of walking the file again.
@@ -123,9 +125,9 @@ context.add_finding("packed", Some("entropy"), None);
 context.add_finding(hash.as_str(), None, None);
 ```
 
-The three arguments are the text, an optional source label (plugin or rule name), and optional typed [metadata](../chapter-4/findings.md). After `scan()`, iterate `res.findings()`. Maps are for structured fields you will query on a node (`pe_headers`, `icon_count`). Findings are for the list you print or ship as detections. An analyzer often does both: store headers locally, and `add_finding` when an icon or a signature hits.
+The three arguments are the text, an optional source label (plugin or rule name), and optional typed [metadata](../chapter-4/findings.md). After `scan()`, iterate `res.findings()` — unless you built the scanner with [`store_findings(false)`](../chapter-3/observer.md#findings-without-storing-them), in which case the list is empty and an [observer](../chapter-3/observer.md) is how you see the hits. Maps are for structured fields you will query on a node (`pe_headers`, `icon_count`). Findings are for the list you print or ship as detections. An analyzer often does both: store headers locally, and `add_finding` when an icon or a signature hits.
 
-The md5 example in the repo is a generic analyzer whose only output is findings. The PE icon analyzer above could `add_finding` for each extracted icon as well as storing `icon_count`.
+The md5 example in the repo is a generic analyzer whose only output is findings, iterated after the scan. The `sha1` example is the same hash pattern with an observer and `store_findings(false)`. The PE icon analyzer above could `add_finding` for each extracted icon as well as storing `icon_count`.
 
 Treat the storage shape as a general notion for now. Chapter 4 covers metadata types (`ScannerBuilder::with_metadata::<M>()`), source strings, and walking findings next to the result tree.
 

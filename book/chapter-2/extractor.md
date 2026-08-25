@@ -63,8 +63,9 @@ The scanner drives each session as:
      │  Some  → filter on path / size  │
      │          (unless skip_from_     │
      │           filtering)            │
+     │          reject → on_filtered   │
      └────────────┬────────────────────┘
-                  │ keep
+                  │ keep → on_extraction
                   ▼
      extract() → Option<Box<dyn Content>>
             │
@@ -82,7 +83,7 @@ The scanner drives each session as:
 
 The window the session looks at is an [`ExtractionContext`](extraction_context.md) — whole object, or a slice an analyzer [requested](requesting_extraction.md). When a value should stay on the parent instead of becoming a child, use the scan [`Context`](extractions_vs_context.md), not an extractor.
 
-A child’s `Skip` does not end the session. A child’s `Exit` drops it as the scan unwinds.
+A child’s `Skip` does not end the session. A child’s `Exit` drops it as the scan unwinds. An [observer](../chapter-3/observer.md) sees a filter reject as `on_filtered` and a kept entry as `on_extraction`, just before `extract()`.
 
 ## `Entry`
 

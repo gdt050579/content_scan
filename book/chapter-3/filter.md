@@ -1,6 +1,6 @@
 # Filter
 
-A `Filter` decides whether a `(ContentPath, size)` pair should be scanned at all. It runs **before** identifiers, analyzers, and extractors. A reject means the object is not recorded and no plugins run on it.
+A `Filter` decides whether a `(ContentPath, size)` pair should be scanned at all. It runs **before** identifiers, analyzers, and extractors. A reject means the object is not recorded and no plugins run on it. If an [observer](observer.md) is attached, that reject is `on_filtered` — the object never appears as `on_scan_object`.
 
 Build one with `FilterBuilder`, then hand it to the scanner:
 
@@ -60,4 +60,4 @@ Callbacks that return `false` are not a decision; later rules still run. Only `t
 
 Extension and file-name lists become the same kind of matcher identifiers use (one pattern, packed table, or trie). Evaluating a filter on every ZIP member is meant to be cheap. Custom `include` / `exclude` closures are `fn` pointers, not capturing closures — they cannot borrow local state.
 
-A scanner without `.filter(...)` accepts everything. Adding a filter and then passing `filter_root = false` on a folder still filters the files inside.
+A scanner without `.filter(...)` accepts everything. Adding a filter and then passing `filter_root = false` on a folder still filters the files inside. Rejected children are visible to an observer as `on_filtered`; they are not nodes in `ScanResult`.

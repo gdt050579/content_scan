@@ -1,10 +1,13 @@
 # Builder
 
-`ScannerBuilder<T>` (optionally `ScannerBuilder<T, M>`) is how a [`Scanner`](scanner.md) comes into existence. Register plugins, optionally attach a filter and a depth limit, then `build()`.
+`ScannerBuilder<T>` (optionally `ScannerBuilder<T, M>`) is how a [`Scanner`](scanner.md) comes into existence. Register plugins, optionally attach a filter, an [observer](observer.md), a [stop condition](stop_condition.md), and a depth limit, then `build()`.
 
 ```rust
 let mut scanner = ScannerBuilder::<MyTypes>::new()
     .filter(filter)                          // optional
+    .observer(Log)                           // optional
+    .stop_condition(Deadline(deadline))      // optional
+    .store_findings(true)                    // default: true
     .max_depth(8)                            // default: 8
     .add_identifier(MyTypes::Pe, PeIdentifier {})
     .add_analyzer(MyTypes::Pe, 0, PeHeaderAnalyzer {})
@@ -33,6 +36,9 @@ After `build()` the builder is gone. There is no `add_analyzer` on `Scanner`. Ch
 | `add_generic_analyzer(priority, a)` | Runs on every object, after typed analyzers.                                     |
 | `add_extractor(ty, e)`              | Typed only. Several per type, **registration order** (no priority).              |
 | `filter(f)`                         | Replaces any previous filter.                                                    |
+| `observer(o)`                       | Replaces any previous [observer](observer.md).                                   |
+| `stop_condition(s)`                 | Replaces any previous [stop condition](stop_condition.md).                       |
+| `store_findings(bool)`              | Keep findings for `ScanResult::findings()`. Default `true`.                      |
 | `max_depth(n)`                      | Clamped to `1..=u32::MAX - 2`. Default `8`.                                      |
 
 The value you pass in is **moved** into the builder: signature tables and open configs live on those instances for the lifetime of the scanner. See [Loading data at builder time](../chapter-2/analyzer.md#loading-data-at-builder-time).
@@ -53,4 +59,4 @@ There is no fallible `try_build`. Illegal registrations are programming errors a
 
 ## Defaults
 
-An empty builder is legal: no identifiers, no analyzers, no extractors, no filter, `max_depth` 8. `scan()` then records objects (and runs nothing on them) unless the root is filtered out. Useful for tests; production scanners register at least the plugins they need.
+An empty builder is legal: no identifiers, no analyzers, no extractors, no filter, no observer, no stop condition, `store_findings` true, `max_depth` 8. `scan()` then records objects (and runs nothing on them) unless the root is filtered out. Useful for tests; production scanners register at least the plugins they need.

@@ -16,7 +16,7 @@ This chapter names those pieces. The rest of the book is the details.
 
 **[`Extractor`](extractor.md)** turns a container into child `Content` items. You may register **many extractors**, including several for the same type. They run in registration order. Each child is scanned recursively, up to `max_depth`.
 
-Around those sit a **`Filter`** (optional include/exclude rules), the **`Scanner`** that owns the plugins, and the **`ScanResult`** you read when `scan()` returns.
+Around those sit a **`Filter`** (optional include/exclude rules), an optional **[`ScanObserver`](../chapter-3/observer.md)** and **[`StopCondition`](../chapter-3/stop_condition.md)**, the **`Scanner`** that owns the plugins, and the **`ScanResult`** you read when `scan()` returns.
 
 ## How they fit
 
@@ -31,4 +31,4 @@ The architecture page is the map: one object through the pipeline, many plugins 
     - [Requesting extraction](requesting_extraction.md) — analyzers queue extractors of another type.
     - [Extractions vs Context](extractions_vs_context.md) — small structs on the parent vs child `Content`.
 
-[How one scan runs](../chapter-3/how_one_scan_runs.md) is the same pipeline with the exact control-flow rules (`Skip` / `Exit`, requested extraction, `filter_root`). This chapter stays at the model.
+[How one scan runs](../chapter-3/how_one_scan_runs.md) is the same pipeline with the exact control-flow rules (`Skip` / `Exit`, requested extraction, `filter_root`, observer, stop condition). This chapter stays at the model.

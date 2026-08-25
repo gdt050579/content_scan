@@ -2,7 +2,7 @@
 
 The scanner is a dispatcher. It does not know what a PNG is, or how to unpack a ZIP. It knows *when* to call your plugins, *in what order*, and *where those plugins are allowed to leave results*.
 
-This page is the map. [How one scan runs](../chapter-3/how_one_scan_runs.md) is that loop as `inner_scan` and `extract_content` implement it — `Skip` versus nested sessions, `Exit`, requested extractors, `max_depth`.
+This page is the map. [How one scan runs](../chapter-3/how_one_scan_runs.md) is that loop as `inner_scan` and `extract_content` implement it — `Skip` versus nested sessions, `Exit`, requested extractors, `max_depth`, observer callbacks, and the stop-condition check.
 
 ## The assembled scanner
 
@@ -13,6 +13,7 @@ A `Scanner` is built once, then reused for many `scan()` calls. It holds:
 - the analyzer list (typed and generic)
 - the extractor list (typed only)
 - a `max_depth`
+- an optional [`ScanObserver`](../chapter-3/observer.md) and [`StopCondition`](../chapter-3/stop_condition.md)
 - a [`Context`](../chapter-4/context.md) that is **cleared at the start of every scan** and filled as plugins run
 
 You never construct a `Context` yourself. Analyzers receive `&mut Context` during the scan. After `scan()` returns, the same data is exposed as a `ScanResult` that borrows from the scanner until the next scan.
@@ -26,6 +27,7 @@ You never construct a `Context` yourself. Analyzers receive `&mut Context` durin
                          │  Analyzers    (N, typed+generic)  │
                          │  Extractors   (N, per type)       │
                          │  max_depth                        │
+                         │  Observer?  StopCondition?        │
                          │                                   │
                          │          ┌──────────────┐         │
                          │          │   Context    │         │
@@ -41,7 +43,7 @@ You never construct a `Context` yourself. Analyzers receive `&mut Context` durin
                                   (borrows the Context)
 ```
 
-Plugins **read** `Content`. They **write** the `Context`. The only results of a scan are whatever those plugins stored there — variable maps, findings, and the tree of objects the scanner recorded while it walked.
+Plugins **read** `Content`. They **write** the `Context`. The only results of a scan that outlive the call as `ScanResult` are whatever those plugins stored there — variable maps, findings, and the tree of objects the scanner recorded while it walked. An [observer](../chapter-3/observer.md) can watch the same events live without being part of that result.
 
 ## Plugin cardinality
 
@@ -150,11 +152,12 @@ Every object — the root you passed to `scan()`, or a child an extractor just p
 
 In words:
 
-1. **Filter.** If a filter is configured and this object is subject to it, a reject means the object is not scanned at all. The root is tested only when `scan(..., filter_root)` is `true`. Extracted children are tested unless their `Entry` sets `skip_from_filtering`. See [Recursion and filter_root](../chapter-3/recursion.md).
-2. **Type.** If `Content::content_type()` already returns `Some(ty)`, identifiers are skipped. Otherwise the identifier table proposes candidates — magic (first 16 bytes), then file name, then extension, then identifiers with no `IdentifyMethod` — and each candidate’s `validate` must accept. At most one identifier exists for each variant, so a match names a type unambiguously.
-3. **Record.** The scanner appends the object to the context’s tree (path, resolved type, parent/child/sibling links) *before* analyzers run.
-4. **Analyze.** All analyzers registered for that type run, lowest priority first. Then all generic analyzers run, again by priority. Unidentified objects still get the generic bucket. Each analyzer returns a `NextAction`: `Continue`, `Skip` (no further analyzers or extractors on **this** object), or `Exit` (unwind the whole scan).
-5. **Extract.** If analysis continued, extractors registered for the object’s own type run, then extractors for any type an analyzer requested with `request_extract`. Each extractor opens a session and yields children; each child goes back to step 1 at the next depth, until `max_depth`.
+1. **Filter.** If a filter is configured and this object is subject to it, a reject means the object is not scanned at all (`on_filtered` if an observer is attached). The root is tested only when `scan(..., filter_root)` is `true`. Extracted children are tested unless their `Entry` sets `skip_from_filtering`. See [Recursion and filter_root](../chapter-3/recursion.md).
+2. **Stop condition.** At the start of `inner_scan`, before identification, an optional [`StopCondition`](../chapter-3/stop_condition.md) can abort the whole scan. That object is not recorded.
+3. **Type.** If `Content::content_type()` already returns `Some(ty)`, identifiers are skipped. Otherwise the identifier table proposes candidates — magic (first 16 bytes), then file name, then extension, then identifiers with no `IdentifyMethod` — and each candidate’s `validate` must accept. At most one identifier exists for each variant, so a match names a type unambiguously.
+4. **Record.** The scanner appends the object to the context’s tree (path, resolved type, parent/child/sibling links) *before* analyzers run, then `on_scan_object`.
+5. **Analyze.** All analyzers registered for that type run, lowest priority first. Then all generic analyzers run, again by priority. Unidentified objects still get the generic bucket. Each analyzer returns a `NextAction`: `Continue`, `Skip` (no further analyzers or extractors on **this** object), or `Exit` (unwind the whole scan). Findings notify `on_finding`.
+6. **Extract.** If analysis continued, extractors registered for the object’s own type run, then extractors for any type an analyzer requested with `request_extract`. Each extractor opens a session and yields children (`on_extraction` after the filter); each child goes back to step 1 at the next depth, until `max_depth`.
 
 Extractors and sessions do not return `NextAction`. They yield `Option`. Only analyzers steer the scan.
 
@@ -168,7 +171,7 @@ There are two places plugins put information, on purpose:
 
 **The context maps.** A **global** `VarMap` lives for the whole `scan()` call: totals, flags, anything that should accumulate across objects. A **local** `VarMap` is attached to the current object: width and height of *this* PNG, the value of *this* extracted number. After the scan you look up the global map on the result, and each object’s local map through the result tree.
 
-**Findings.** A flat list of hits recorded with `context.add_finding(...)`. Each finding belongs to the object that was current when it was emitted. Findings are the “something was detected here” channel — a hash, an entropy label, a YARA-like match — as opposed to structured fields you intend to query on a specific node.
+**Findings.** A flat list of hits recorded with `context.add_finding(...)`. Each finding belongs to the object that was current when it was emitted. Findings are the “something was detected here” channel — a hash, an entropy label, a YARA-like match — as opposed to structured fields you intend to query on a specific node. An [observer](../chapter-3/observer.md) is notified on each `add_finding` even when the scanner is told not to keep the list (`store_findings(false)`).
 
 ```text
   Analyzer::analyze(content, context)
@@ -176,7 +179,7 @@ There are two places plugins put information, on purpose:
         ├── context.global().set(...)     ─┐
         ├── context.local().set(...)      ─┼── Context
         ├── context.add_finding(...)      ─┤     └── findings[]
-        └── context.request_extract(...)  ─┘         (queue for step 5)
+        └── context.request_extract(...)  ─┘         (queue for step 6)
 ```
 
 Treat both as a **general notion** for now: maps are how you stash typed values; findings are how you emit a list of detections. The APIs (`var!`, `VarMapValue`, finding metadata, walking `ScanContentHandle`s, the lifetime of `ScanResult`) are [Chapter 4](../chapter-4/context.md).
@@ -191,4 +194,4 @@ The architecture is complete enough to read the rest of the book against:
 - **Typed analyzers then generic analyzers; typed extractors then requested extractors.**
 - **Results live in the context (maps + object tree) and in findings.** Chapter 4 is where those structures are defined.
 
-Not yet: `IdentifyMethod` variants and the 16-byte magic window ([Identifier](identifier.md)), analyzer `Dependencies` and `NextAction` ([Analyzer](analyzer.md)), sessions / `OwnedContentPtr` / `Entry` ([Extractor](extractor.md)), builder panics and `with_metadata` ([Builder](../chapter-3/builder.md)), or the exact `Skip`/`Exit` interaction with nested sessions ([How one scan runs](../chapter-3/how_one_scan_runs.md)).
+Not yet: `IdentifyMethod` variants and the 16-byte magic window ([Identifier](identifier.md)), analyzer `Dependencies` and `NextAction` ([Analyzer](analyzer.md)), sessions / `OwnedContentPtr` / `Entry` ([Extractor](extractor.md)), builder panics and `with_metadata` ([Builder](../chapter-3/builder.md)), [observer](../chapter-3/observer.md) and [stop condition](../chapter-3/stop_condition.md), or the exact `Skip`/`Exit` interaction with nested sessions ([How one scan runs](../chapter-3/how_one_scan_runs.md)).

@@ -43,7 +43,7 @@ Bring the public surface into scope:
 use content_scan::*;
 ```
 
-That import includes the traits (`Content`, `ContentIdentifier`, `ContentAnalyzer`, `ContentExtractor`, …), the ready-made content types (`BufferContent`, `FileContent`, `FolderContent`), the built-in folder and ZIP plugins, `ScannerBuilder`, `FilterBuilder`, the derive macros, and `var!` / `VarMap` from the re-exported [`varmap`](https://crates.io/crates/varmap) crate.
+That import includes the traits (`Content`, `ContentIdentifier`, `ContentAnalyzer`, `ContentExtractor`, `ScanObserver`, `StopCondition`, …), the ready-made content types (`BufferContent`, `FileContent`, `FolderContent`), the built-in folder and ZIP plugins, `ScannerBuilder`, `FilterBuilder`, the derive macros, and `var!` / `VarMap` from the re-exported [`varmap`](https://crates.io/crates/varmap) crate.
 
 You do not add `content_scan_proc_macro` or `varmap` to your `Cargo.toml` unless you want them as direct dependencies for some other reason.
 

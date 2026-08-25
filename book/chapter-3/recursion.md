@@ -27,7 +27,7 @@ scanner.scan(&mut folder, false);  // do not test the root
 
 The flag is **only about the root**. Extracted children are filtered either way, except when `Entry::skip_from_filtering` is set.
 
-Pass **`true`** for a normal file: if the filter rejects it, `scan()` returns immediately with an empty result (no objects).
+Pass **`true`** for a normal file: if the filter rejects it, `scan()` returns immediately with an empty result (no objects). An [observer](observer.md) still sees `on_begin`, `on_filtered`, and `on_end`.
 
 Pass **`false`** when the root is a **container the filter was never written to accept**:
 

@@ -42,7 +42,9 @@ Around those plugins sit:
 
 - **`Content` / `ContentPath`** — the byte source and its name (a real OS path or a synthetic address such as `archive.zip://inner.txt`).
 - **`Filter`** — optional include/exclude rules applied before plugins run.
-- **`Scanner` / `ScannerBuilder`** — registration, `max_depth`, and `scan()`.
+- **`ScanObserver`** — optional live callbacks as the scan progresses.
+- **`StopCondition`** — optional predicate that aborts before the next object is identified.
+- **`Scanner` / `ScannerBuilder`** — registration, `max_depth`, `store_findings`, and `scan()`.
 - **`ScanResult`** — after the scan, a tree of visited objects, per-object and scan-wide maps, and a flat list of findings.
 
 Chapter 2 defines these pieces. [How one scan runs](../chapter-3/how_one_scan_runs.md) walks one object through the pipeline as the scanner implements it. For now, the important picture is: **you write plugins; the scanner calls them in a fixed order and builds a result tree.**
@@ -57,14 +59,15 @@ You write:
 
 The scanner:
 
-- Applies the filter (when configured).
+- Applies the filter (when configured) and notifies an [observer](../chapter-3/observer.md) if one is attached.
+- Checks a [stop condition](../chapter-3/stop_condition.md) before identifying the next object.
 - Resolves the type, unless the content already reports one.
 - Runs type-specific analyzers, then generic analyzers.
 - Runs extractors for the resolved type, then any extra extractions analyzers requested.
 - Recurses into children up to `max_depth`.
 - Records each object in a parent/child/sibling tree you can walk afterwards.
 
-Analyzers steer that process with `NextAction`: continue this object, skip the rest of it, or abort the entire scan.
+Analyzers steer that process with `NextAction`: continue this object, skip the rest of it, or abort the entire scan. A [`StopCondition`](../chapter-3/stop_condition.md) can abort as well, before the next object is even identified.
 
 ## Who this book is for
 
