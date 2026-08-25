@@ -332,21 +332,97 @@ pub trait Dependencies {
     fn dependencies(&self) -> &'static [&'static str];
 }
 
+/// Callbacks for watching a scan as it runs.
+///
+/// Attach an observer with
+/// [`ScannerBuilder::observer`](crate::ScannerBuilder::observer).
+/// Every method has an empty default, so an implementation only
+/// needs to override the events it cares about. The observer is
+/// owned by the [`Scanner`](crate::Scanner) and persists across
+/// [`scan`](crate::Scanner::scan) calls.
+///
+/// Paths are the printable form from
+/// [`ContentPath::as_printable_string`](crate::ContentPath::as_printable_string).
+/// Callbacks are invoked synchronously on the scan thread; keep
+/// them cheap, or copy what you need out.
+///
+/// The `M` type parameter is the
+/// [`FindingMetadata`](crate::FindingMetadata) passed to
+/// [`on_finding`](Self::on_finding). It matches the scanner's
+/// metadata type ([`NoMetadata`](crate::NoMetadata) by default).
 pub trait ScanObserver<T: ContentType, M: FindingMetadata = NoMetadata> {
+    /// Called once at the start of [`Scanner::scan`](crate::Scanner::scan),
+    /// before filtering or recursion.
+    ///
+    /// `root` is the path of the top-level content. This runs even
+    /// when that content is later rejected by the filter.
     #[allow(unused_variables)]
     fn on_begin(&mut self, root: &str) {}
+
+    /// Called after a content object has been identified and added
+    /// to the result tree, just before its analyzers run.
+    ///
+    /// `ty` is `None` when no identifier accepted the object.
+    /// Filtered-out content never reaches this callback — see
+    /// [`on_filtered`](Self::on_filtered).
     #[allow(unused_variables)]
     fn on_scan_object(&mut self, path: &str, ty: Option<T>) {}
+
+    /// Called when the [`Filter`](crate::Filter) rejects a piece of
+    /// content.
+    ///
+    /// That includes the top-level object when `filter_root` is
+    /// `true`, and extracted children that fail the filter (unless
+    /// their [`Entry`] sets `skip_from_filtering`). The object is
+    /// not scanned.
     #[allow(unused_variables)]
     fn on_filtered(&mut self, path: &str) {}
+
+    /// Called from [`Context::add_finding`](crate::Context::add_finding)
+    /// for each finding an analyzer records.
+    ///
+    /// Arguments match `add_finding`: `finding` text, optional
+    /// `source` label, and optional metadata. This fires even when
+    /// [`ScannerBuilder::store_findings`](crate::ScannerBuilder::store_findings)
+    /// is `false` (the finding is then not kept for
+    /// [`ScanResult::findings`](crate::ScanResult::findings)).
     #[allow(unused_variables)]
     fn on_finding(&mut self, path: &str, finding: &str, source: Option<&str>, metadata: Option<&M>) {}
+
+    /// Called after an extracted child has passed the filter, just
+    /// before the session materializes it.
+    ///
+    /// `parent` is the path of the object being extracted from;
+    /// `entry` is the [`Entry`] advertised by
+    /// [`ExtractionSession::advance`]. Filtered-out children go to
+    /// [`on_filtered`](Self::on_filtered) instead.
     #[allow(unused_variables)]
     fn on_extraction(&mut self, parent: &str, entry: &Entry) {}
+
+    /// Called once when [`Scanner::scan`](crate::Scanner::scan)
+    /// returns, including when the root was filtered out.
     #[allow(unused_variables)]
     fn on_end(&mut self) {}
 }
+
+/// Predicate that can abort a scan early.
+///
+/// Attach one with
+/// [`ScannerBuilder::stop_condition`](crate::ScannerBuilder::stop_condition).
+/// [`should_stop`](Self::should_stop) is checked at the start of
+/// every content object, before identification and analysis. When
+/// it returns `true`, the scanner unwinds with
+/// [`NextAction::Exit`] and
+/// [`Scanner::scan`](crate::Scanner::scan) returns the
+/// [`ScanResult`](crate::ScanResult) accumulated so far.
+///
+/// The default implementation never stops. Typical uses are a
+/// timeout, a finding-count cap, or an external cancellation flag.
 pub trait StopCondition {
+    /// Returns `true` to abort the scan immediately.
+    ///
+    /// The current object is not identified, analyzed, or extracted.
+    /// Objects already recorded remain in the result.
     fn should_stop(&mut self) -> bool {
         false
     }

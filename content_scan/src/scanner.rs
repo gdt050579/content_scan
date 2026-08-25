@@ -528,16 +528,45 @@ impl<T: ContentType, M: FindingMetadata> ScannerBuilder<T, M> {
         self
     }
 
+    /// Attaches a [`ScanObserver`](crate::ScanObserver) that receives
+    /// callbacks as the scan progresses.
+    ///
+    /// The observer is notified when a scan begins and ends, when an
+    /// object is scanned, when content is filtered out, when a
+    /// finding is recorded, and when a child is extracted. All
+    /// methods have empty defaults, so an implementation only needs
+    /// to override the events it cares about.
+    ///
+    /// If an observer was previously set, it is replaced. The
+    /// observer is owned by the scanner and persists across
+    /// [`scan`](Scanner::scan) calls.
     pub fn observer(mut self, observer: impl ScanObserver<T, M> + 'static) -> Self {
         self.observer = Some(Box::new(observer));
         self
     }
 
+    /// Attaches a [`StopCondition`](crate::StopCondition) that can
+    /// abort the scan early.
+    ///
+    /// `should_stop` is checked at the start of every content object,
+    /// before identification and analysis. When it returns `true`,
+    /// the scanner stops recursing and returns the
+    /// [`ScanResult`](crate::ScanResult) accumulated so far.
+    ///
+    /// If a stop condition was previously set, it is replaced.
     pub fn stop_condition(mut self, stop_condition: impl StopCondition + 'static) -> Self {
         self.stop_condition = Some(Box::new(stop_condition));
         self
     }
 
+    /// Controls whether findings are retained for
+    /// [`ScanResult::findings`](crate::ScanResult::findings).
+    ///
+    /// Defaults to `true`. Set to `false` to skip storing findings
+    /// in the result — useful when an [`observer`](Self::observer)
+    /// already consumes them and you want to avoid the extra
+    /// memory. [`Context::add_finding`](crate::Context::add_finding)
+    /// still notifies the observer either way.
     pub fn store_findings(mut self, store_findings: bool) -> Self {
         self.store_findings = store_findings;
         self
