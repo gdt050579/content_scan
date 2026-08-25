@@ -35,6 +35,10 @@ name = "sha1"
 path = "sha1/main.rs"
 
 [[example]]
+name = "finder"
+path = "finder/main.rs"
+
+[[example]]
 name = "entropy"
 path = "entropy/main.rs"
 
