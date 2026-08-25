@@ -175,11 +175,11 @@ The children are **pinned** as `Number`, so identifiers do not run on them. Pin 
 
 ## Built-ins
 
-The crate ships two extractors. Their full behaviour is [Chapter 5](../chapter-5/builtins.md).
+The crate ships two extractors. Full behaviour is [Chapter 5](../chapter-5/builtins.md): [Folder](../chapter-5/folder.md) and [ZIP](../chapter-5/zip.md).
 
 **`FolderExtractor`** — register it for your `Folder` variant, pair it with `FolderContent`. Files become `FileContent`; subfolders become `FolderContent` of the same type (that is what makes the walk recurse). Directory symlinks are skipped so cycles cannot loop. Subfolder entries set `skip_from_filtering`.
 
-**`ZipExtractor`** — pair with `ZipIdentifier`. Members become `BufferContent` if they are under 1 MiB, otherwise a temp `FileContent`. The session reads the parent through `ContentReader`, so the archive can be a file, a buffer, or any other `Content`. Directory entries inside the ZIP are skipped.
+**`ZipExtractor`** — pair with `ZipIdentifier`. Members become `BufferContent` if they are under 1 MiB, otherwise a temp `FileContent`. The session reads the parent through `ContentReader`. Directory entries inside the ZIP are skipped. The built-in ignores `ExtractionContext` (whole parent from offset 0).
 
 ## Recursion and filters
 

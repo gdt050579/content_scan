@@ -21,10 +21,10 @@ Typical uses:
 - File-type detection from magic bytes, extensions, or file names.
 - Static analysis pipelines (metrics, heuristics, feature extraction).
 - Recursive scanning of containers (archives, bundles, embedded blobs).
-- Walking a directory tree (`FolderContent` + `FolderExtractor`).
+- Walking a directory tree ([`FolderContent` + `FolderExtractor`](../chapter-5/folder.md)).
 - Building custom scanners (indexers, linters, forensics tools, antivirus-like pipelines) on a common core.
 
-It is **not** a ready-made virus scanner, MIME database, or file-format catalog. Those would be plugins you register. The crate ships a few built-ins (folder walk, ZIP identify/extract) so real scans can start without writing every adapter yourself.
+It is **not** a ready-made virus scanner, MIME database, or file-format catalog. Those would be plugins you register. The crate ships a few [built-ins](../chapter-5/builtins.md) (folder walk, ZIP identify/extract) so real scans can start without writing every adapter yourself.
 
 ## Identify, analyze, extract
 
