@@ -333,13 +333,21 @@ pub trait Dependencies {
 }
 
 pub trait ScanObserver<T: ContentType, M: FindingMetadata = NoMetadata> {
+    #[allow(unused_variables)]
     fn on_begin(&mut self, root: &str) {}
+    #[allow(unused_variables)]
     fn on_scan_object(&mut self, path: &str, ty: Option<T>) {}
+    #[allow(unused_variables)]
     fn on_filtered(&mut self, path: &str) {}
+    #[allow(unused_variables)]
     fn on_finding(&mut self, path: &str, finding: &str, source: Option<&str>, metadata: Option<&M>) {}
+    #[allow(unused_variables)]
     fn on_extraction(&mut self, parent: &str, entry: &Entry) {}
+    #[allow(unused_variables)]
     fn on_end(&mut self) {}
 }
 pub trait StopCondition {
-    fn should_stop(&mut self) -> bool { false }
+    fn should_stop(&mut self) -> bool {
+        false
+    }
 }

@@ -50,9 +50,10 @@ pub struct Context<T: ContentType, M: FindingMetadata = NoMetadata> {
     pub(crate) extraction_requests_stack: Vec<ExtractionRequest<T>>,
     pub(crate) findings: Vec<InternalFinding<M>>,
     pub(crate) observer: Option<Box<dyn ScanObserver<T, M>>>,
+    pub(crate) store_findings: bool,
 }
 impl<T: ContentType, M: FindingMetadata> Context<T, M> {
-    pub(crate) fn new(observer: Option<Box<dyn ScanObserver<T, M>>>) -> Self {
+    pub(crate) fn new(observer: Option<Box<dyn ScanObserver<T, M>>>, store_findings: bool) -> Self {
         Self {
             global: VarMap::new(),
             objects: Vec::with_capacity(16),
@@ -63,6 +64,7 @@ impl<T: ContentType, M: FindingMetadata> Context<T, M> {
             extraction_requests_stack: Vec::with_capacity(16),
             findings: Vec::with_capacity(16),
             observer,
+            store_findings,
         }
     }
     pub(crate) fn clear(&mut self) {
@@ -178,13 +180,14 @@ impl<T: ContentType, M: FindingMetadata> Context<T, M> {
                 let path = unsafe { std::str::from_utf8_unchecked(self.path_arena.get(self.objects[objindex as usize].path).unwrap_or_default()) };
                 observer.on_finding(path, finding, source, metadata.as_ref());
             }
-            let finding_object = InternalFinding {
-                objindex,
-                finding: self.path_arena.alloc(finding.as_bytes()),
-                source: source_index,
-                metadata,
-            };
-            self.findings.push(finding_object);
+            if self.store_findings {
+                self.findings.push(InternalFinding {
+                    objindex,
+                    finding: self.path_arena.alloc(finding.as_bytes()),
+                    source: source_index,
+                    metadata,
+                });
+            }
         }
     }
 }

@@ -418,6 +418,7 @@ pub struct ScannerBuilder<T: ContentType, M: FindingMetadata = NoMetadata> {
     stop_condition: Option<Box<dyn StopCondition>>,
     observer: Option<Box<dyn ScanObserver<T, M>>>,
     max_depth: u32,
+    store_findings: bool,
     _metadata: PhantomData<M>,
 }
 impl<T: ContentType, M: FindingMetadata> ScannerBuilder<T, M> {
@@ -430,6 +431,7 @@ impl<T: ContentType, M: FindingMetadata> ScannerBuilder<T, M> {
             stop_condition: None,
             observer: None,
             max_depth: 8,
+            store_findings: true,
             _metadata: PhantomData,
         }
     }
@@ -536,6 +538,11 @@ impl<T: ContentType, M: FindingMetadata> ScannerBuilder<T, M> {
         self
     }
 
+    pub fn store_findings(mut self, store_findings: bool) -> Self {
+        self.store_findings = store_findings;
+        self
+    }
+
     fn check_unique_identifiers(&self) {
         let mut m = HashSet::new();
         for (content_type, _) in &self.identifiers {
@@ -599,7 +606,7 @@ impl<T: ContentType, M: FindingMetadata> ScannerBuilder<T, M> {
             identifiers,
             analyzers,
             extractors,
-            context: Context::new(self.observer),
+            context: Context::new(self.observer, self.store_findings),
             max_depth: self.max_depth,
             stop_condition: self.stop_condition,            
         }
