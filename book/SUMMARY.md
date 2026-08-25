@@ -21,6 +21,8 @@
 - [Scanner](chapter-3/scanner.md)
     - [Builder](chapter-3/builder.md)
     - [Filter](chapter-3/filter.md)
+    - [Observer](chapter-3/observer.md)
+    - [Stop condition](chapter-3/stop_condition.md)
     - [Recursion and filter_root](chapter-3/recursion.md)
     - [How one scan runs](chapter-3/how_one_scan_runs.md)
 
