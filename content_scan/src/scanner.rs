@@ -370,7 +370,12 @@ impl<T: ContentType, M: FindingMetadata> Scanner<T, M> {
 /// Register identifiers, analyzers, extractors, and (optionally) a
 /// [`Filter`] with the `add_*` / [`filter`](Self::filter) methods,
 /// then call [`build`](Self::build) to obtain a ready-to-use
-/// [`Scanner`].
+/// [`Scanner`]. Attach a [`ScanObserver`](crate::ScanObserver) or
+/// [`StopCondition`](crate::StopCondition) with
+/// [`observer`](Self::observer) /
+/// [`stop_condition`](Self::stop_condition). Findings are stored for
+/// [`ScanResult::findings`](crate::ScanResult::findings) by default;
+/// turn that off with [`store_findings`](Self::store_findings).
 ///
 /// The `M` type parameter is the [`FindingMetadata`](crate::FindingMetadata)
 /// stored on each [`Finding`](crate::Finding). [`new`](Self::new)
