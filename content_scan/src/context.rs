@@ -170,17 +170,17 @@ impl<T: ContentType, M: FindingMetadata> Context<T, M> {
     /// ```
     pub fn add_finding(&mut self, finding: &str, source: Option<&str>, metadata: Option<M>) {
         if let Some(objindex) = self.current_object_index {
-            let source_index = if let Some(source) = source {
-                self.path_arena.alloc(source.as_bytes())
-            } else {
-                ArenaIndex::INVALID
-            };
-
             if let Some(observer) = self.observer.as_mut() {
                 let path = unsafe { std::str::from_utf8_unchecked(self.path_arena.get(self.objects[objindex as usize].path).unwrap_or_default()) };
                 observer.on_finding(path, finding, source, metadata.as_ref());
             }
             if self.store_findings {
+                let source_index = if let Some(source) = source {
+                    self.path_arena.alloc(source.as_bytes())
+                } else {
+                    ArenaIndex::INVALID
+                };
+
                 self.findings.push(InternalFinding {
                     objindex,
                     finding: self.path_arena.alloc(finding.as_bytes()),

@@ -129,7 +129,7 @@ The three arguments are the text, an optional source label (plugin or rule name)
 
 The md5 example in the repo is a generic analyzer whose only output is findings, iterated after the scan. The `sha1` example is the same hash pattern with an observer and `store_findings(false)`. The PE icon analyzer above could `add_finding` for each extracted icon as well as storing `icon_count`.
 
-Treat the storage shape as a general notion for now. Chapter 4 covers metadata types (`ScannerBuilder::with_metadata::<M>()`), source strings, and walking findings next to the result tree.
+Treat the storage shape as a general notion here. [Chapter 4](../chapter-4/context.md) is the full API: [maps](../chapter-4/global_vs_local.md), [findings and metadata](../chapter-4/findings.md), and [walking the result tree](../chapter-4/scan_result.md).
 
 ## Loading data at builder time
 

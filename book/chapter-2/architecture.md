@@ -182,7 +182,7 @@ There are two places plugins put information, on purpose:
         └── context.request_extract(...)  ─┘         (queue for step 6)
 ```
 
-Treat both as a **general notion** for now: maps are how you stash typed values; findings are how you emit a list of detections. The APIs (`var!`, `VarMapValue`, finding metadata, walking `ScanContentHandle`s, the lifetime of `ScanResult`) are [Chapter 4](../chapter-4/context.md).
+Treat both as a **general notion** here: maps are how you stash typed values; findings are how you emit a list of detections. The APIs (`var!`, `VarMapValue`, finding metadata, walking `ScanContentHandle`s, the lifetime of `ScanResult`) are [Chapter 4](../chapter-4/context.md) — [global vs local](../chapter-4/global_vs_local.md), [findings](../chapter-4/findings.md), [the result tree](../chapter-4/scan_result.md).
 
 The scanner itself also writes the context: every visited object is a node in the tree, even if no analyzer stored anything on it. That is why `objects_scanned()` and parent/child navigation exist independently of your plugins.
 
