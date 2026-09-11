@@ -19,18 +19,14 @@ pub struct JpegAnalyzer;
 impl ContentAnalyzer<ImageType> for JpegAnalyzer {
     fn analyze(&mut self, content: &mut dyn Content<ImageType>, context: &mut Context<ImageType>) -> NextAction {
         let size = content.size();
-        if size < 2 {
-            return NextAction::Continue;
-        }
-
-        let Some(soi) = content.read(0, 2) else {
+        let Some(soi) = content.read_exact(0, 2) else {
             return NextAction::Continue;
         };
         if soi.len() < 2 || soi[0] != 0xFF || soi[1] != 0xD8 {
             return NextAction::Continue;
         }
 
-        let mut i = 2u64;
+        let mut i = 2u64;        
         while i + 9 < size {
             let Some(b) = content.read(i, 1) else {
                 break;

@@ -105,6 +105,45 @@ pub trait Content<T: ContentType> {
     fn read(&mut self, offset: u64, count: u32) -> Option<&[u8]>;
 }
 
+pub trait ContentReadExt<T: ContentType>: Content<T> {
+    /// Reads exactly `count` bytes at `offset`, but only if they land in a
+    /// single underlying read window. Returns `None` if the source can't
+    /// deliver them contiguously — which may mean the bytes span a page
+    /// boundary, NOT that they don't exist. Use `read_into` to cross boundaries.
+    fn read_exact(&mut self, offset: u64, count: u32) -> Option<&[u8]> {
+        if count == 0 {
+            return Some(&[]);
+        }
+        let slice = self.read(offset, count)?;
+        (slice.len() == count as usize).then_some(slice)
+    }
+
+    /// Fills `buf` completely, looping across read windows. Returns `None`
+    /// if the content ends (or errors) before `buf` is full.
+    fn read_into(&mut self, offset: u64, buf: &mut [u8]) -> Option<usize> {
+        let mut filled = 0;
+        while filled < buf.len() {
+            let want = (buf.len() - filled).min(u32::MAX as usize) as u32;
+            let src = self.read(offset + filled as u64, want)?;
+            if src.is_empty() {
+                return None; // hit EOF before buf was full
+            }
+            let n = src.len().min(buf.len() - filled);
+            buf[filled..filled + n].copy_from_slice(&src[..n]);
+            filled += n;
+        }
+        Some(filled)
+    }
+    /// Reads a single byte at `offset`. Returns `None` if the content ends
+    /// (or errors) before the byte is available.
+    fn read_byte(&mut self, offset: u64) -> Option<u8> {
+        self.read(offset, 1).map(|b| b[0])
+    }
+}
+
+impl<T: ContentType, C: Content<T> + ?Sized> ContentReadExt<T> for C {}
+
+
 /// Trivial [`ContentType`] implementation for `bool`.
 ///
 /// This is convenient when a scanner only needs to distinguish between
