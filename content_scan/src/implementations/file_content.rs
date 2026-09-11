@@ -134,4 +134,8 @@ impl<T: ContentType> Content<T> for FileContent<T> {
             FileContentStatus::NotOpened | FileContentStatus::Error => None,
         }
     }
+    #[inline(always)]
+    fn set_content_type(&mut self, ty: T) {
+        self.content_type = Some(ty);
+    }
 }

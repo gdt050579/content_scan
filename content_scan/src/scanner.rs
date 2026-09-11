@@ -1,18 +1,18 @@
 use super::{
-    analyzer_list::AnalyzerList, extractor_list::ExtractorList, Content, ContentAnalyzer, ContentExtractor, ContentIdentifier, ContentType, Filter,
-    AnalysisOutcome,
+    analyzer_list::AnalyzerList, extractor_list::ExtractorList, AnalysisOutcome, Content, ContentAnalyzer, ContentExtractor, ContentIdentifier,
+    ContentType, Filter,
 };
-use crate::ScanObserver;
-use crate::StopCondition;
 use crate::utils;
 use crate::ExtractionContext;
 use crate::ExtractionRequestMetadata;
+use crate::FindingMetadata;
 use crate::IdentifierSet;
+use crate::NoMetadata;
 use crate::Object;
 use crate::OwnedContentPtr;
+use crate::ScanObserver;
+use crate::StopCondition;
 use crate::{ContentPtr, Context, ScanResult};
-use crate::FindingMetadata;
-use crate::NoMetadata;
 use std::collections::HashSet;
 use std::marker::PhantomData;
 
@@ -40,7 +40,7 @@ pub struct Scanner<T: ContentType, M: FindingMetadata> {
     analyzers: AnalyzerList<Box<dyn ContentAnalyzer<T, M>>>,
     extractors: ExtractorList<Box<dyn ContentExtractor<T>>, T>,
     context: Context<T, M>,
-    stop_condition: Option<Box<dyn StopCondition>>,    
+    stop_condition: Option<Box<dyn StopCondition>>,
     max_depth: u32,
 }
 impl<T: ContentType, M: FindingMetadata> Scanner<T, M> {
@@ -72,7 +72,7 @@ impl<T: ContentType, M: FindingMetadata> Scanner<T, M> {
     /// [`Context::add_finding`]. Copy anything you need to keep out
     /// before starting another scan.
     pub fn scan<'a>(&'a mut self, content: &mut dyn Content<T>, filter_root: bool) -> ScanResult<'a, T, M> {
-        self.context.clear();        
+        self.context.clear();
         if let Some(observer) = self.context.observer.as_mut() {
             observer.on_begin(content.path().as_printable_string());
         }
@@ -94,7 +94,7 @@ impl<T: ContentType, M: FindingMetadata> Scanner<T, M> {
         }
         ScanResult::new(&self.context)
     }
-    fn inner_scan(&mut self, content: ContentPtr<T>, depth: u32, parent_index: u32) -> AnalysisOutcome {
+    fn inner_scan(&mut self, mut content: ContentPtr<T>, depth: u32, parent_index: u32) -> AnalysisOutcome<T> {
         self.context.local_varmap_handle = None; // so that next time someone ask for a local varmap, it will get one from the context varmap_pool
         self.context.current_object_index = None;
         let start_req_count = self.context.extraction_requests_stack.len();
@@ -108,7 +108,21 @@ impl<T: ContentType, M: FindingMetadata> Scanner<T, M> {
             observer.on_scan_object(content.as_ref().path().as_printable_string(), ty);
         }
 
-        let mut response = self.run_analyzers(content, ty);
+        let mut analyzer_type = ty;
+        let mut response;
+        loop {
+            response = self.run_analyzers(content, analyzer_type);
+            match response {
+                AnalysisOutcome::ReprocessAsType(ty) => { 
+                    analyzer_type = Some(ty);
+                    content.as_mut().set_content_type(ty);
+                    continue;
+                }
+                AnalysisOutcome::Continue | AnalysisOutcome::Skip | AnalysisOutcome::Exit => {
+                    break;
+                }
+            }
+        }
         if response == AnalysisOutcome::Continue {
             response = self.run_extractors(content, ty, depth, my_index, start_req_count);
         }
@@ -116,6 +130,7 @@ impl<T: ContentType, M: FindingMetadata> Scanner<T, M> {
         match response {
             AnalysisOutcome::Continue | AnalysisOutcome::Skip => AnalysisOutcome::Continue,
             AnalysisOutcome::Exit => AnalysisOutcome::Exit,
+            AnalysisOutcome::ReprocessAsType(_) => panic!("This should not happen, the analyzer should not return ReprocessAsType"),
         }
     }
     fn create_object(&mut self, content: ContentPtr<T>, parent_index: u32) -> (Option<T>, u32) {
@@ -154,11 +169,11 @@ impl<T: ContentType, M: FindingMetadata> Scanner<T, M> {
         }
         (ty, my_index)
     }
-    fn run_analyzers(&mut self, content: ContentPtr<T>, content_type: Option<T>) -> AnalysisOutcome {
+    fn run_analyzers(&mut self, content: ContentPtr<T>, content_type: Option<T>) -> AnalysisOutcome<T> {
         if let Some(ty) = content_type {
             if let Some((start, end)) = self.analyzers.range(ty) {
                 let res = self.scan_range(content, start, end);
-                if matches!(res, AnalysisOutcome::Skip | AnalysisOutcome::Exit) {
+                if matches!(res, AnalysisOutcome::Skip | AnalysisOutcome::Exit | AnalysisOutcome::ReprocessAsType(_)) {
                     return res;
                 }
             }
@@ -172,7 +187,14 @@ impl<T: ContentType, M: FindingMetadata> Scanner<T, M> {
         }
         AnalysisOutcome::Continue
     }
-    fn run_extractors(&mut self, content: ContentPtr<T>, content_type: Option<T>, depth: u32, my_index: u32, start_req_index: usize) -> AnalysisOutcome {
+    fn run_extractors(
+        &mut self,
+        content: ContentPtr<T>,
+        content_type: Option<T>,
+        depth: u32,
+        my_index: u32,
+        start_req_index: usize,
+    ) -> AnalysisOutcome<T> {
         // type-specific extractors
         if let Some(ty) = content_type {
             if let Some((start, end)) = self.extractors.range(ty) {
@@ -210,7 +232,7 @@ impl<T: ContentType, M: FindingMetadata> Scanner<T, M> {
         // restore the stack
         self.context.extraction_requests_stack.truncate(start_req_index);
     }
-    fn scan_range(&mut self, mut content: ContentPtr<T>, start: usize, end: usize) -> AnalysisOutcome {
+    fn scan_range(&mut self, mut content: ContentPtr<T>, start: usize, end: usize) -> AnalysisOutcome<T> {
         if (end <= start) || (end > self.analyzers.len()) {
             return AnalysisOutcome::Continue;
         }
@@ -220,6 +242,7 @@ impl<T: ContentType, M: FindingMetadata> Scanner<T, M> {
                 AnalysisOutcome::Continue => continue,
                 AnalysisOutcome::Exit => return AnalysisOutcome::Exit,
                 AnalysisOutcome::Skip => return AnalysisOutcome::Skip,
+                AnalysisOutcome::ReprocessAsType(ty) => return AnalysisOutcome::ReprocessAsType(ty),
             }
         }
         AnalysisOutcome::Continue
@@ -232,7 +255,7 @@ impl<T: ContentType, M: FindingMetadata> Scanner<T, M> {
         depth: u32,
         parent_index: u32,
         req_index: Option<u32>,
-    ) -> AnalysisOutcome {
+    ) -> AnalysisOutcome<T> {
         if (end <= start) || (end > self.extractors.len()) {
             return AnalysisOutcome::Continue;
         }
@@ -260,6 +283,7 @@ impl<T: ContentType, M: FindingMetadata> Scanner<T, M> {
                         next_action = result;
                         break;
                     }
+                    AnalysisOutcome::ReprocessAsType(ty) => panic!("This should not happen, the extractor should not return ReprocessAsType"),
                 }
             }
             next_action
@@ -279,7 +303,7 @@ impl<T: ContentType, M: FindingMetadata> Scanner<T, M> {
         depth: u32,
         parent_index: u32,
         ec_metadata: &ExtractionRequestMetadata,
-    ) -> AnalysisOutcome {
+    ) -> AnalysisOutcome<T> {
         if depth >= self.max_depth {
             return AnalysisOutcome::Continue;
         }
@@ -308,7 +332,7 @@ impl<T: ContentType, M: FindingMetadata> Scanner<T, M> {
                 }
                 if let Some(observer) = self.context.observer.as_mut() {
                     observer.on_extraction(content.as_ref().path().as_printable_string(), entry);
-                }                
+                }
                 if let Some(mut extracted_content) = session.extract() {
                     let c_ptr = ContentPtr::new(extracted_content.as_mut());
                     let result = self.inner_scan(c_ptr, depth + 1, parent_index);
@@ -316,6 +340,7 @@ impl<T: ContentType, M: FindingMetadata> Scanner<T, M> {
                         AnalysisOutcome::Continue => continue,
                         AnalysisOutcome::Exit => return AnalysisOutcome::Exit,
                         AnalysisOutcome::Skip => return AnalysisOutcome::Continue,
+                        AnalysisOutcome::ReprocessAsType(_) => panic!("This should not happen, the extractor should not return ReprocessAsType"),
                     }
                 }
             }
@@ -355,7 +380,11 @@ impl<T: ContentType, M: FindingMetadata> Scanner<T, M> {
                 return Some(ty);
             }
         }
-        self.identifiers.identifiers_without_prefilter().iter().find(|&&ty| self.validate_content_type(content, ty)).copied()
+        self.identifiers
+            .identifiers_without_prefilter()
+            .iter()
+            .find(|&&ty| self.validate_content_type(content, ty))
+            .copied()
     }
     #[inline(always)]
     fn validate_content_type(&self, mut content: ContentPtr<T>, content_type: T) -> bool {
@@ -642,7 +671,7 @@ impl<T: ContentType, M: FindingMetadata> ScannerBuilder<T, M> {
             extractors,
             context: Context::new(self.observer, self.store_findings),
             max_depth: self.max_depth,
-            stop_condition: self.stop_condition,            
+            stop_condition: self.stop_condition,
         }
     }
 }

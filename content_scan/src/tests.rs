@@ -349,6 +349,9 @@ mod content_read_ext {
             let end = (offset + count as u64).min(len).min(page_end);
             Some(&self.data[offset as usize..end as usize])
         }
+        fn set_content_type(&mut self, _: bool) {
+            // No-op
+        }
     }
 
     #[test]
@@ -1133,7 +1136,7 @@ mod local_varmap {
     #[Dependencies(name = "TagAnalyzer")]
     struct TagAnalyzer(u32);
     impl ContentAnalyzer<Ty> for TagAnalyzer {
-        fn analyze(&mut self, _: &mut dyn Content<Ty>, context: &mut Context<Ty>) -> AnalysisOutcome {
+        fn analyze(&mut self, _: &mut dyn Content<Ty>, context: &mut Context<Ty>) -> AnalysisOutcome<Ty> {
             context.local().set(var!("tag"), self.0);
             AnalysisOutcome::Continue
         }
@@ -1143,7 +1146,7 @@ mod local_varmap {
     #[Dependencies(name = "SkipAfterLocal")]
     struct SkipAfterLocal;
     impl ContentAnalyzer<Ty> for SkipAfterLocal {
-        fn analyze(&mut self, _: &mut dyn Content<Ty>, context: &mut Context<Ty>) -> AnalysisOutcome {
+        fn analyze(&mut self, _: &mut dyn Content<Ty>, context: &mut Context<Ty>) -> AnalysisOutcome<Ty> {
             context.local().set(var!("tag"), 99u32);
             AnalysisOutcome::Skip
         }
@@ -1255,7 +1258,7 @@ mod request_extract {
     #[Dependencies(name = "Request")]
     struct Request(Ty);
     impl ContentAnalyzer<Ty> for Request {
-        fn analyze(&mut self, _: &mut dyn Content<Ty>, context: &mut Context<Ty>) -> AnalysisOutcome {
+        fn analyze(&mut self, _: &mut dyn Content<Ty>, context: &mut Context<Ty>) -> AnalysisOutcome<Ty> {
             context.request_extract(self.0).emit();
             AnalysisOutcome::Continue
         }
@@ -1266,7 +1269,7 @@ mod request_extract {
     #[Dependencies(name = "RequestTwo")]
     struct RequestTwo(Ty, Ty);
     impl ContentAnalyzer<Ty> for RequestTwo {
-        fn analyze(&mut self, _: &mut dyn Content<Ty>, context: &mut Context<Ty>) -> AnalysisOutcome {
+        fn analyze(&mut self, _: &mut dyn Content<Ty>, context: &mut Context<Ty>) -> AnalysisOutcome<Ty> {
             context.request_extract(self.0).emit();
             context.request_extract(self.1).emit();
             AnalysisOutcome::Continue
@@ -1278,7 +1281,7 @@ mod request_extract {
     #[Dependencies(name = "RequestSlice")]
     struct RequestSlice;
     impl ContentAnalyzer<Ty> for RequestSlice {
-        fn analyze(&mut self, _: &mut dyn Content<Ty>, context: &mut Context<Ty>) -> AnalysisOutcome {
+        fn analyze(&mut self, _: &mut dyn Content<Ty>, context: &mut Context<Ty>) -> AnalysisOutcome<Ty> {
             context.request_extract(Ty::Slice).at(2).len(3).param(var!("tag"), 9u32).emit();
             AnalysisOutcome::Continue
         }
@@ -1288,7 +1291,7 @@ mod request_extract {
     #[Dependencies(name = "DropWithoutEmit")]
     struct DropWithoutEmit;
     impl ContentAnalyzer<Ty> for DropWithoutEmit {
-        fn analyze(&mut self, _: &mut dyn Content<Ty>, context: &mut Context<Ty>) -> AnalysisOutcome {
+        fn analyze(&mut self, _: &mut dyn Content<Ty>, context: &mut Context<Ty>) -> AnalysisOutcome<Ty> {
             let _ = context.request_extract(Ty::Slice).at(0).param(var!("tag"), 1u32);
             AnalysisOutcome::Continue
         }
@@ -1298,7 +1301,7 @@ mod request_extract {
     #[Dependencies(name = "RequestMissing")]
     struct RequestMissing;
     impl ContentAnalyzer<Ty> for RequestMissing {
-        fn analyze(&mut self, _: &mut dyn Content<Ty>, context: &mut Context<Ty>) -> AnalysisOutcome {
+        fn analyze(&mut self, _: &mut dyn Content<Ty>, context: &mut Context<Ty>) -> AnalysisOutcome<Ty> {
             context.request_extract(Ty::Missing).param(var!("tag"), 1u32).emit();
             AnalysisOutcome::Continue
         }
@@ -1308,7 +1311,7 @@ mod request_extract {
     #[Dependencies(name = "Tag")]
     struct Tag(u32);
     impl ContentAnalyzer<Ty> for Tag {
-        fn analyze(&mut self, content: &mut dyn Content<Ty>, context: &mut Context<Ty>) -> AnalysisOutcome {
+        fn analyze(&mut self, content: &mut dyn Content<Ty>, context: &mut Context<Ty>) -> AnalysisOutcome<Ty> {
             context.local().set(var!("tag"), self.0);
             if let Some(b) = content.read(0, 1).and_then(|s| s.first().copied()) {
                 context.local().set(var!("first"), b as u32);
@@ -1707,7 +1710,7 @@ mod dependencies {
     #[Dependencies(name = "base")]
     struct Base;
     impl ContentAnalyzer<Ty> for Base {
-        fn analyze(&mut self, _: &mut dyn Content<Ty>, _: &mut Context<Ty>) -> AnalysisOutcome {
+        fn analyze(&mut self, _: &mut dyn Content<Ty>, _: &mut Context<Ty>) -> AnalysisOutcome<Ty> {
             AnalysisOutcome::Continue
         }
     }
@@ -1716,7 +1719,7 @@ mod dependencies {
     #[Dependencies(name = "needs_base", requires = "base")]
     struct NeedsBase;
     impl ContentAnalyzer<Ty> for NeedsBase {
-        fn analyze(&mut self, _: &mut dyn Content<Ty>, _: &mut Context<Ty>) -> AnalysisOutcome {
+        fn analyze(&mut self, _: &mut dyn Content<Ty>, _: &mut Context<Ty>) -> AnalysisOutcome<Ty> {
             AnalysisOutcome::Continue
         }
     }
@@ -1725,7 +1728,7 @@ mod dependencies {
     #[Dependencies(name = "needs_two", requires = ["base", "solo_analyzer"])]
     struct NeedsTwo;
     impl ContentAnalyzer<Ty> for NeedsTwo {
-        fn analyze(&mut self, _: &mut dyn Content<Ty>, _: &mut Context<Ty>) -> AnalysisOutcome {
+        fn analyze(&mut self, _: &mut dyn Content<Ty>, _: &mut Context<Ty>) -> AnalysisOutcome<Ty> {
             AnalysisOutcome::Continue
         }
     }
@@ -1734,7 +1737,7 @@ mod dependencies {
     #[Dependencies(name = "solo_analyzer")]
     struct SoloAnalyzer;
     impl ContentAnalyzer<Ty> for SoloAnalyzer {
-        fn analyze(&mut self, _: &mut dyn Content<Ty>, _: &mut Context<Ty>) -> AnalysisOutcome {
+        fn analyze(&mut self, _: &mut dyn Content<Ty>, _: &mut Context<Ty>) -> AnalysisOutcome<Ty> {
             AnalysisOutcome::Continue
         }
     }
@@ -1743,7 +1746,7 @@ mod dependencies {
     #[Dependencies(name = "missing_dep", requires = "does_not_exist")]
     struct MissingDep;
     impl ContentAnalyzer<Ty> for MissingDep {
-        fn analyze(&mut self, _: &mut dyn Content<Ty>, _: &mut Context<Ty>) -> AnalysisOutcome {
+        fn analyze(&mut self, _: &mut dyn Content<Ty>, _: &mut Context<Ty>) -> AnalysisOutcome<Ty> {
             AnalysisOutcome::Continue
         }
     }

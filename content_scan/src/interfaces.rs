@@ -13,7 +13,7 @@ use crate::OwnedContentPtr;
 /// [`ExtractionSession`] methods do not return this type: they yield
 /// [`Option`] at each session step.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AnalysisOutcome {
+pub enum AnalysisOutcome<T: ContentType> {
     /// Continue with the next analyzer for this object, then extractors.
     ///
     /// This is the normal / neutral outcome.
@@ -30,6 +30,10 @@ pub enum AnalysisOutcome {
     /// [`Scanner::scan`](crate::Scanner::scan) as soon as the current
     /// call stack unwinds.
     Exit,
+    /// Reprocess the current content object as the given type.
+    ///
+    /// The scanner will change the type of the current content and re-run the identifiers associated with the new type.
+    ReprocessAsType(T),
 }
 
 /// Metadata for a single entry produced by a [`ContentExtractor`].
@@ -99,10 +103,10 @@ pub trait ContentAnalyzer<T: ContentType, M: FindingMetadata = NoMetadata>: Depe
     /// [`Context::add_finding`] to emit a
     /// [`Finding`](crate::Finding), and
     /// [`Context::request_extract`] to queue extractors of another
-    /// type on a region of `content`. The returned [`AnalysisOutcome`]
+    /// type on a region of `content`. The returned [`AnalysisOutcome<T>`]
     /// controls whether further analyzers (and extractors) run for
     /// this object.
-    fn analyze(&mut self, content: &mut dyn Content<T>, context: &mut Context<T, M>) -> AnalysisOutcome;
+    fn analyze(&mut self, content: &mut dyn Content<T>, context: &mut Context<T, M>) -> AnalysisOutcome<T>;
 }
 
 /// A plugin that turns a container into a stream of child [`Content`]
@@ -114,7 +118,7 @@ pub trait ContentAnalyzer<T: ContentType, M: FindingMetadata = NoMetadata>: Depe
 /// with [`advance`](ExtractionSession::advance) /
 /// [`extract`](ExtractionSession::extract). Methods return [`Option`]
 /// (or nothing, when the session is dropped) — they do **not** return
-/// [`AnalysisOutcome`] and cannot Skip or Exit on their own.
+/// [`AnalysisOutcome<T>`] and cannot Skip or Exit on their own.
 ///
 /// An extractor registered for type `T` runs in two situations:
 ///

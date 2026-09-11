@@ -98,4 +98,8 @@ impl<T: ContentType> Content<T> for BufferContent<T> {
         let len = (self.buffer.len() as u64 - offset).min(count as u64) as usize;
         Some(&self.buffer.as_slice()[offset as usize..offset as usize + len])
     }
+    #[inline(always)]
+    fn set_content_type(&mut self, ty: T) {
+        self.content_type = Some(ty);
+    }
 }

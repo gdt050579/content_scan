@@ -73,6 +73,8 @@ pub trait Content<T: ContentType> {
     fn content_type(&self) -> Option<T> {
         None
     }
+    /// Sets the content type of the content.
+    fn set_content_type(&mut self, ty: T);
 
     /// Returns the path associated with this content.
     ///

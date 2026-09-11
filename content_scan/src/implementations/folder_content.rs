@@ -48,4 +48,8 @@ impl<T: ContentType> Content<T> for FolderContent<T> {
     fn content_type(&self) -> Option<T> {
         Some(self.content_type)
     }
+
+    fn set_content_type(&mut self, ty: T) {
+        self.content_type = ty;
+    }
 }
