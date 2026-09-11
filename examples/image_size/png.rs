@@ -17,13 +17,13 @@ impl ContentIdentifier<ImageType> for PngIdentifier {
 #[Dependencies(name = "PngAnalyzer")]
 pub struct PngAnalyzer;
 impl ContentAnalyzer<ImageType> for PngAnalyzer {
-    fn analyze(&mut self, content: &mut dyn Content<ImageType>, context: &mut Context<ImageType>) -> NextAction {
+    fn analyze(&mut self, content: &mut dyn Content<ImageType>, context: &mut Context<ImageType>) -> AnalysisOutcome {
         let Some(d) = content.read_exact(0, 24) else {
-            return NextAction::Continue;
+            return AnalysisOutcome::Continue;
         };
         let w = u32::from_be_bytes(d[16..20].try_into().unwrap());
         let h = u32::from_be_bytes(d[20..24].try_into().unwrap());
         context.local().set(var!("size"), Size { width: w, height: h });
-        NextAction::Continue
+        AnalysisOutcome::Continue
     }
 }

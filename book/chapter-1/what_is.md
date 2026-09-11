@@ -67,7 +67,7 @@ The scanner:
 - Recurses into children up to `max_depth`.
 - Records each object in a parent/child/sibling tree you can walk afterwards.
 
-Analyzers steer that process with `NextAction`: continue this object, skip the rest of it, or abort the entire scan. A [`StopCondition`](../chapter-3/stop_condition.md) can abort as well, before the next object is even identified.
+Analyzers steer that process with `AnalysisOutcome`: continue this object, skip the rest of it, or abort the entire scan. A [`StopCondition`](../chapter-3/stop_condition.md) can abort as well, before the next object is even identified.
 
 ## Who this book is for
 

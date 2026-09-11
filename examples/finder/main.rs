@@ -50,12 +50,12 @@ impl FindTextAnalyzer {
 }
 
 impl ContentAnalyzer<MyTypes> for FindTextAnalyzer {
-    fn analyze(&mut self, content: &mut dyn Content<MyTypes>, context: &mut Context<MyTypes>) -> NextAction {
+    fn analyze(&mut self, content: &mut dyn Content<MyTypes>, context: &mut Context<MyTypes>) -> AnalysisOutcome {
         if content.content_type() == Some(MyTypes::Folder) {
-            return NextAction::Continue;
+            return AnalysisOutcome::Continue;
         }
         self.search(content, context);
-        NextAction::Continue
+        AnalysisOutcome::Continue
     }
 }
 

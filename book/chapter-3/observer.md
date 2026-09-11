@@ -60,4 +60,4 @@ Streaming does not change analyzers: they still call `add_finding`. They do not 
 
 ## What an observer is not
 
-It cannot `Skip` or `Exit`. Steering stays with analyzers (`NextAction`) and with [`StopCondition`](stop_condition.md). It cannot rewrite the filter. It does not see bytes, only paths and the finding strings analyzers already produced.
+It cannot `Skip` or `Exit`. Steering stays with analyzers (`AnalysisOutcome`) and with [`StopCondition`](stop_condition.md). It cannot rewrite the filter. It does not see bytes, only paths and the finding strings analyzers already produced.

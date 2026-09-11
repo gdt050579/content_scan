@@ -17,13 +17,13 @@ impl ContentIdentifier<ImageType> for JpegIdentifier {
 #[Dependencies(name = "JpegAnalyzer")]
 pub struct JpegAnalyzer;
 impl ContentAnalyzer<ImageType> for JpegAnalyzer {
-    fn analyze(&mut self, content: &mut dyn Content<ImageType>, context: &mut Context<ImageType>) -> NextAction {
+    fn analyze(&mut self, content: &mut dyn Content<ImageType>, context: &mut Context<ImageType>) -> AnalysisOutcome {
         let size = content.size();
         let Some(soi) = content.read_be_u16(0) else {
-            return NextAction::Continue;
+            return AnalysisOutcome::Continue;
         };
         if soi != 0xFFD8 {
-            return NextAction::Continue;
+            return AnalysisOutcome::Continue;
         }
 
         let mut i = 2u64;
@@ -58,7 +58,7 @@ impl ContentAnalyzer<ImageType> for JpegAnalyzer {
                         height: h as u32,
                     },
                 );
-                return NextAction::Continue;
+                return AnalysisOutcome::Continue;
             }
 
             // standalone markers (RSTn, SOI, EOI, TEM) have no length payload
@@ -73,6 +73,6 @@ impl ContentAnalyzer<ImageType> for JpegAnalyzer {
             i += 2 + lb as u64;
         }
 
-        NextAction::Continue
+        AnalysisOutcome::Continue
     }
 }

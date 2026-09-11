@@ -7,13 +7,13 @@ use crate::OwnedContentPtr;
 
 /// Return value used by analyzers to steer the scan.
 ///
-/// [`ContentAnalyzer::analyze`] returns a `NextAction` that tells the
+/// [`ContentAnalyzer::analyze`] returns a `AnalysisOutcome` that tells the
 /// scanner whether to continue this object, skip the rest of it, or
 /// abort the entire scan. [`ContentExtractor`] and
 /// [`ExtractionSession`] methods do not return this type: they yield
 /// [`Option`] at each session step.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum NextAction {
+pub enum AnalysisOutcome {
     /// Continue with the next analyzer for this object, then extractors.
     ///
     /// This is the normal / neutral outcome.
@@ -99,10 +99,10 @@ pub trait ContentAnalyzer<T: ContentType, M: FindingMetadata = NoMetadata>: Depe
     /// [`Context::add_finding`] to emit a
     /// [`Finding`](crate::Finding), and
     /// [`Context::request_extract`] to queue extractors of another
-    /// type on a region of `content`. The returned [`NextAction`]
+    /// type on a region of `content`. The returned [`AnalysisOutcome`]
     /// controls whether further analyzers (and extractors) run for
     /// this object.
-    fn analyze(&mut self, content: &mut dyn Content<T>, context: &mut Context<T, M>) -> NextAction;
+    fn analyze(&mut self, content: &mut dyn Content<T>, context: &mut Context<T, M>) -> AnalysisOutcome;
 }
 
 /// A plugin that turns a container into a stream of child [`Content`]
@@ -114,7 +114,7 @@ pub trait ContentAnalyzer<T: ContentType, M: FindingMetadata = NoMetadata>: Depe
 /// with [`advance`](ExtractionSession::advance) /
 /// [`extract`](ExtractionSession::extract). Methods return [`Option`]
 /// (or nothing, when the session is dropped) — they do **not** return
-/// [`NextAction`] and cannot Skip or Exit on their own.
+/// [`AnalysisOutcome`] and cannot Skip or Exit on their own.
 ///
 /// An extractor registered for type `T` runs in two situations:
 ///
@@ -152,7 +152,7 @@ pub trait ContentExtractor<T: ContentType> {
     /// to skip this extractor (the scanner moves on to the next one
     /// registered for the same type). The session is dropped when
     /// enumeration ends, when a nested child's analyzer returns
-    /// [`NextAction::Exit`], or when the scanner moves on — implement
+    /// [`AnalysisOutcome::Exit`], or when the scanner moves on — implement
     /// [`Drop`] on the session if you need to close files or free
     /// buffers.
     fn create_session(&mut self, content: OwnedContentPtr<T>, extract_context: &ExtractionContext) -> Option<Box<dyn ExtractionSession<T>>>;
@@ -171,9 +171,9 @@ pub trait ContentExtractor<T: ContentType> {
 ///    `max_depth`). `None` skips just this entry; enumeration
 ///    continues with the next `advance`.
 ///
-/// A child's [`NextAction::Skip`] does not end this session — the
+/// A child's [`AnalysisOutcome::Skip`] does not end this session — the
 /// scanner continues with the next `advance`. A child's
-/// [`NextAction::Exit`] drops the session immediately as the scan
+/// [`AnalysisOutcome::Exit`] drops the session immediately as the scan
 /// unwinds.
 ///
 /// Keep one [`Entry`] as a field and overwrite `entry.path` in place
@@ -412,7 +412,7 @@ pub trait ScanObserver<T: ContentType, M: FindingMetadata = NoMetadata> {
 /// [`should_stop`](Self::should_stop) is checked at the start of
 /// every content object, before identification and analysis. When
 /// it returns `true`, the scanner unwinds with
-/// [`NextAction::Exit`] and
+/// [`AnalysisOutcome::Exit`] and
 /// [`Scanner::scan`](crate::Scanner::scan) returns the
 /// [`ScanResult`](crate::ScanResult) accumulated so far.
 ///

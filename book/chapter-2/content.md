@@ -77,13 +77,13 @@ These all go through `read_exact`, so they inherit the single-window rule: `None
 
 ```rust
 let Some(soi) = content.read_be_u16(0) else {
-    return NextAction::Continue;
+    return AnalysisOutcome::Continue;
 };
 if soi != 0xFFD8 {
-    return NextAction::Continue;
+    return AnalysisOutcome::Continue;
 }
 let Some(height) = content.read_be_u16(offset + 5) else {
-    return NextAction::Continue;
+    return AnalysisOutcome::Continue;
 };
 ```
 
@@ -107,7 +107,7 @@ struct CoffHeader {
 }
 
 let Some(hdr) = unsafe { content.read_struct::<CoffHeader>(offset) } else {
-    return NextAction::Continue;
+    return AnalysisOutcome::Continue;
 };
 ```
 

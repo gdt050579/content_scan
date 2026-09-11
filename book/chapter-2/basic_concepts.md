@@ -25,7 +25,7 @@ The architecture page is the map: one object through the pipeline, many plugins 
 - [Architecture](architecture.md) — pipeline schema, plugin cardinality, context and findings as a general notion.
 - [Content](content.md) — the byte source, then `ContentType` and `ContentPath`.
 - [Identifier](identifier.md) — magic, name, extension, and `validate`.
-- [Analyzer](analyzer.md) — `NextAction`, priority, generic vs typed, [dependencies](dependencies.md).
+- [Analyzer](analyzer.md) — `AnalysisOutcome`, priority, generic vs typed, [dependencies](dependencies.md).
 - [Extractor](extractor.md) — sessions, `Entry`, nested containers.
     - [Extraction Context](extraction_context.md) — the window `create_session` receives.
     - [Requesting extraction](requesting_extraction.md) — analyzers queue extractors of another type.

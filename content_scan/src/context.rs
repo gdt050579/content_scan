@@ -140,7 +140,7 @@ impl<T: ContentType, M: FindingMetadata> Context<T, M> {
     /// This is useful for progress reporting or for imposing custom
     /// budgets from within a [`ContentAnalyzer`](crate::ContentAnalyzer)
     /// (e.g. return
-    /// [`NextAction::Exit`](crate::NextAction::Exit) once a limit is
+    /// [`AnalysisOutcome::Exit`](crate::AnalysisOutcome::Exit) once a limit is
     /// exceeded).
     #[inline(always)]
     pub fn objects_scanned(&self) -> u32 {

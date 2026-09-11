@@ -54,7 +54,7 @@ impl ContentAnalyzer<MyType> for VowelAnalyzer {
         &mut self,
         content: &mut dyn Content<MyType>,
         context: &mut Context<MyType>,
-    ) -> NextAction {
+    ) -> AnalysisOutcome {
         let mut count = 0u32;
         // Skip the four-byte magic prefix.
         for i in 4..content.size() {
@@ -66,7 +66,7 @@ impl ContentAnalyzer<MyType> for VowelAnalyzer {
             }
         }
         context.global().set(var!("count_vowels"), count);
-        NextAction::Continue
+        AnalysisOutcome::Continue
     }
 }
 ```
@@ -75,7 +75,7 @@ A few things to notice:
 
 - `content.read(offset, count)` returns a borrowed slice, or `None` if that window cannot be read.
 - `context.global()` is a scan-wide [`VarMap`](../chapter-4/global_vs_local.md). `var!("count_vowels")` is a compile-time typed key.
-- `NextAction::Continue` means “keep going on this object” (remaining analyzers, then extractors). `Skip` stops this object; `Exit` aborts the whole scan.
+- `AnalysisOutcome::Continue` means “keep going on this object” (remaining analyzers, then extractors). `Skip` stops this object; `Exit` aborts the whole scan.
 
 ## 4. Build the scanner and run it
 
@@ -157,7 +157,7 @@ impl ContentAnalyzer<MyType> for VowelAnalyzer {
         &mut self,
         content: &mut dyn Content<MyType>,
         context: &mut Context<MyType>,
-    ) -> NextAction {
+    ) -> AnalysisOutcome {
         let mut count = 0u32;
         for i in 4..content.size() {
             if let Some(b) = content.read(i, 1) {
@@ -168,7 +168,7 @@ impl ContentAnalyzer<MyType> for VowelAnalyzer {
             }
         }
         context.global().set(var!("count_vowels"), count);
-        NextAction::Continue
+        AnalysisOutcome::Continue
     }
 }
 

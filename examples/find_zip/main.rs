@@ -12,9 +12,9 @@ enum MyTypes {
 #[Dependencies(name = "ZipPrinter")]
 struct ZipPrinter;
 impl ContentAnalyzer<MyTypes> for ZipPrinter {
-    fn analyze(&mut self, content: &mut dyn Content<MyTypes>, _: &mut Context<MyTypes>) -> NextAction {
+    fn analyze(&mut self, content: &mut dyn Content<MyTypes>, _: &mut Context<MyTypes>) -> AnalysisOutcome {
         println!("{}", content.path().as_printable_string());
-        NextAction::Continue
+        AnalysisOutcome::Continue
     }
 }
  

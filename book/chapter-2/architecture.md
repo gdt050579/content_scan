@@ -127,7 +127,7 @@ Every object — the root you passed to `scan()`, or a child an extractor just p
                               └─────────────┬─────────────┘                     │
                                             │                                   │
                                             ▼                                   │
-                                       NextAction                               │
+                                       AnalysisOutcome                               │
                                   ┌─────────┼─────────┐                         │
                                Skip       Exit     Continue                     │
                                   │         │         │                         │
@@ -156,10 +156,10 @@ In words:
 2. **Stop condition.** At the start of `inner_scan`, before identification, an optional [`StopCondition`](../chapter-3/stop_condition.md) can abort the whole scan. That object is not recorded.
 3. **Type.** If `Content::content_type()` already returns `Some(ty)`, identifiers are skipped. Otherwise the identifier table proposes candidates — magic (first 16 bytes), then file name, then extension, then identifiers with no `IdentifyMethod` — and each candidate’s `validate` must accept. At most one identifier exists for each variant, so a match names a type unambiguously.
 4. **Record.** The scanner appends the object to the context’s tree (path, resolved type, parent/child/sibling links) *before* analyzers run, then `on_scan_object`.
-5. **Analyze.** All analyzers registered for that type run, lowest priority first. Then all generic analyzers run, again by priority. Unidentified objects still get the generic bucket. Each analyzer returns a `NextAction`: `Continue`, `Skip` (no further analyzers or extractors on **this** object), or `Exit` (unwind the whole scan). Findings notify `on_finding`.
+5. **Analyze.** All analyzers registered for that type run, lowest priority first. Then all generic analyzers run, again by priority. Unidentified objects still get the generic bucket. Each analyzer returns a `AnalysisOutcome`: `Continue`, `Skip` (no further analyzers or extractors on **this** object), or `Exit` (unwind the whole scan). Findings notify `on_finding`.
 6. **Extract.** If analysis continued, extractors registered for the object’s own type run, then extractors for any type an analyzer requested with `request_extract`. Each extractor opens a session and yields children (`on_extraction` after the filter); each child goes back to step 1 at the next depth, until `max_depth`.
 
-Extractors and sessions do not return `NextAction`. They yield `Option`. Only analyzers steer the scan.
+Extractors and sessions do not return `AnalysisOutcome`. They yield `Option`. Only analyzers steer the scan.
 
 The same object never runs “some other type’s” typed analyzers. A file identified as `Png` runs `Png` analyzers (and generics), not `Zip` analyzers. It *can* still run `Zip` **extractors** if an analyzer requested `Zip` on a byte range — that is how embedded archives are opened without re-typing the parent. [Requesting extraction](requesting_extraction.md) covers that mechanism.
 
@@ -194,4 +194,4 @@ The architecture is complete enough to read the rest of the book against:
 - **Typed analyzers then generic analyzers; typed extractors then requested extractors.**
 - **Results live in the context (maps + object tree) and in findings.** Chapter 4 is where those structures are defined.
 
-Not yet: `IdentifyMethod` variants and the 16-byte magic window ([Identifier](identifier.md)), analyzer `Dependencies` and `NextAction` ([Analyzer](analyzer.md)), sessions / `OwnedContentPtr` / `Entry` ([Extractor](extractor.md)), builder panics and `with_metadata` ([Builder](../chapter-3/builder.md)), [observer](../chapter-3/observer.md) and [stop condition](../chapter-3/stop_condition.md), or the exact `Skip`/`Exit` interaction with nested sessions ([How one scan runs](../chapter-3/how_one_scan_runs.md)).
+Not yet: `IdentifyMethod` variants and the 16-byte magic window ([Identifier](identifier.md)), analyzer `Dependencies` and `AnalysisOutcome` ([Analyzer](analyzer.md)), sessions / `OwnedContentPtr` / `Entry` ([Extractor](extractor.md)), builder panics and `with_metadata` ([Builder](../chapter-3/builder.md)), [observer](../chapter-3/observer.md) and [stop condition](../chapter-3/stop_condition.md), or the exact `Skip`/`Exit` interaction with nested sessions ([How one scan runs](../chapter-3/how_one_scan_runs.md)).

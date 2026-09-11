@@ -31,9 +31,9 @@ fn shannon_entropy(counts: &[u64; 256], total: u64) -> f64 {
 #[Dependencies(name = "EntropyAnalyzer")]
 struct EntropyAnalyzer;
 impl ContentAnalyzer<MyTypes, Entropy> for EntropyAnalyzer {
-    fn analyze(&mut self, content: &mut dyn Content<MyTypes>, context: &mut Context<MyTypes, Entropy>) -> NextAction {
+    fn analyze(&mut self, content: &mut dyn Content<MyTypes>, context: &mut Context<MyTypes, Entropy>) -> AnalysisOutcome {
         if content.content_type() == Some(MyTypes::Folder) {
-            return NextAction::Continue;
+            return AnalysisOutcome::Continue;
         }
         let size = content.size();
         let mut counts = [0u64; 256];
@@ -61,7 +61,7 @@ impl ContentAnalyzer<MyTypes, Entropy> for EntropyAnalyzer {
             "normal"
         };
         context.add_finding(label, None, Some(Entropy(entropy)));
-        NextAction::Continue
+        AnalysisOutcome::Continue
     }
 }
 

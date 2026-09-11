@@ -29,18 +29,18 @@ impl ContentIdentifier<MyTypes> for PngIdentifier {
 #[Dependencies(name = "PngAnalyzer")]
 struct PngAnalyzer;
 impl ContentAnalyzer<MyTypes> for PngAnalyzer {
-    fn analyze(&mut self, content: &mut dyn Content<MyTypes>, context: &mut Context<MyTypes>) -> NextAction {
+    fn analyze(&mut self, content: &mut dyn Content<MyTypes>, context: &mut Context<MyTypes>) -> AnalysisOutcome {
         context.local().set(var!("file_size"), content.size());
         let Some(d) = content.read(0, 24) else {
-            return NextAction::Continue;
+            return AnalysisOutcome::Continue;
         };
         if d.len() < 24 {
-            return NextAction::Continue;
+            return AnalysisOutcome::Continue;
         }
         let width = u32::from_be_bytes(d[16..20].try_into().unwrap());
         let height = u32::from_be_bytes(d[20..24].try_into().unwrap());
         context.local().set(var!("size"), Size { width, height });
-        NextAction::Continue
+        AnalysisOutcome::Continue
     }
 }
 

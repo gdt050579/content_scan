@@ -9,11 +9,11 @@ fn analyze(
     &mut self,
     content: &mut dyn Content<MyTypes>,
     context: &mut Context<MyTypes>,
-) -> NextAction {
+) -> AnalysisOutcome {
     context.global().set(var!("files"), 1u32);
     context.local().set(var!("size"), content.size());
     context.add_finding("ok", None, None);
-    NextAction::Continue
+    AnalysisOutcome::Continue
 }
 ```
 
@@ -28,7 +28,7 @@ There are four places an analyzer can write, on purpose:
 
 Maps and findings are **storage**. Extraction requests are **work for later in this object’s pipeline**. Small structs for the next analyzer stay in the context; payloads that should be their own nodes are children — [Extractions vs Context](../chapter-2/extractions_vs_context.md).
 
-`context.objects_scanned()` is how many nodes are already in the tree (including the current one). Use it for progress or an analyzer-side budget (`NextAction::Exit` past a limit). A [stop condition](../chapter-3/stop_condition.md) is the same idea when the budget is not tied to `analyze`.
+`context.objects_scanned()` is how many nodes are already in the tree (including the current one). Use it for progress or an analyzer-side budget (`AnalysisOutcome::Exit` past a limit). A [stop condition](../chapter-3/stop_condition.md) is the same idea when the budget is not tied to `analyze`.
 
 ## `Context` versus `ScanResult`
 

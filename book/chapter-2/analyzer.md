@@ -1,6 +1,6 @@
 # Analyzer
 
-An analyzer **inspects** an object that has already been through identification (or, for generic analyzers, any object) and **records** what it learned. It does not return “the scan result.” It writes into the [`Context`](../chapter-4/context.md) — maps, findings, extraction requests — and returns a [`NextAction`](#nextaction) that steers the rest of *this* object.
+An analyzer **inspects** an object that has already been through identification (or, for generic analyzers, any object) and **records** what it learned. It does not return “the scan result.” It writes into the [`Context`](../chapter-4/context.md) — maps, findings, extraction requests — and returns a [`AnalysisOutcome`](#nextaction) that steers the rest of *this* object.
 
 You may register **many** analyzers, including several for the same type. That is how a PE scan can parse headers in one plugin and extract icons in another, without either pretending to be a monolith.
 
@@ -10,7 +10,7 @@ pub trait ContentAnalyzer<T: ContentType, M: FindingMetadata = NoMetadata>: Depe
         &mut self,
         content: &mut dyn Content<T>,
         context: &mut Context<T, M>,
-    ) -> NextAction;
+    ) -> AnalysisOutcome;
 }
 ```
 
@@ -31,7 +31,7 @@ Every analyzer must implement [`Dependencies`](dependencies.md) (almost always w
 
 The value you pass to `add_analyzer` is **your instance**. Construction happens at builder time, once; the scanner keeps that instance for every later `scan()`. That is where you load signatures, rule files, or other tables — see [Loading data at builder time](#loading-data-at-builder-time).
 
-## `NextAction`
+## `AnalysisOutcome`
 
 Only analyzers return this. Extractors yield `Option`.
 
@@ -43,7 +43,7 @@ Only analyzers return this. Extractors yield `Option`.
 
 `Skip` is “I am done with this file.” `Exit` is “stop everything.” Default to `Continue`.
 
-Aborting from **outside** the analyzer (timeout, cancel button) is a [`StopCondition`](../chapter-3/stop_condition.md), not `NextAction`. That check runs before the object is identified; `Exit` from `analyze` runs after it is already in the tree.
+Aborting from **outside** the analyzer (timeout, cancel button) is a [`StopCondition`](../chapter-3/stop_condition.md), not `AnalysisOutcome`. That check runs before the object is identified; `Exit` from `analyze` runs after it is already in the tree.
 
 ## Writing the context for another analyzer
 
@@ -71,12 +71,12 @@ impl ContentAnalyzer<MyTypes> for PeHeaderAnalyzer {
         &mut self,
         content: &mut dyn Content<MyTypes>,
         context: &mut Context<MyTypes>,
-    ) -> NextAction {
+    ) -> AnalysisOutcome {
         let Some(headers) = parse_pe_headers(content) else {
-            return NextAction::Continue;
+            return AnalysisOutcome::Continue;
         };
         context.local().set(var!("pe_headers"), headers);
-        NextAction::Continue
+        AnalysisOutcome::Continue
     }
 }
 
@@ -89,15 +89,15 @@ impl ContentAnalyzer<MyTypes> for PeIconAnalyzer {
         &mut self,
         content: &mut dyn Content<MyTypes>,
         context: &mut Context<MyTypes>,
-    ) -> NextAction {
+    ) -> AnalysisOutcome {
         let Some(headers) = context.local().get::<PeHeaders>(var!("pe_headers")).cloned() else {
-            return NextAction::Continue;
+            return AnalysisOutcome::Continue;
         };
         // Follow headers.resource_rva — do not parse the PE again.
         if let Some(count) = extract_icon_count(content, &headers) {
             context.local().set(var!("icon_count"), count);
         }
-        NextAction::Continue
+        AnalysisOutcome::Continue
     }
 }
 ```
@@ -155,13 +155,13 @@ impl ContentAnalyzer<MyTypes> for SignatureAnalyzer {
         &mut self,
         content: &mut dyn Content<MyTypes>,
         context: &mut Context<MyTypes>,
-    ) -> NextAction {
+    ) -> AnalysisOutcome {
         for rule in &self.rules {
             if rule.matches(content) {
                 context.add_finding(rule.name, Some("signatures"), None);
             }
         }
-        NextAction::Continue
+        AnalysisOutcome::Continue
     }
 }
 

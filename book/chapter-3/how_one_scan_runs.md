@@ -58,7 +58,7 @@ Each extractor `create_session`s, then `advance` / `extract` in a loop (`extract
 
 Objects already in the tree stay there. `Exit` does not roll back the context.
 
-Extractors do not return `NextAction`. They yield `Option`. Only analyzers steer the scan; the session loop only observes what `inner_scan` mapped `Skip` / `Exit` into.
+Extractors do not return `AnalysisOutcome`. They yield `Option`. Only analyzers steer the scan; the session loop only observes what `inner_scan` mapped `Skip` / `Exit` into.
 
 ## What `Skip` and `Exit` mean in practice
 

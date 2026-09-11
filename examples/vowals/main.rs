@@ -10,7 +10,7 @@ enum MyType {
 #[Dependencies(name = "VowelAnalyzer")]
 struct VowelAnalyzer;
 impl ContentAnalyzer<MyType> for VowelAnalyzer {
-    fn analyze(&mut self, content: &mut dyn Content<MyType>, context: &mut Context<MyType>) -> NextAction {
+    fn analyze(&mut self, content: &mut dyn Content<MyType>, context: &mut Context<MyType>) -> AnalysisOutcome {
         let sz = content.size();
         let mut count = 0u32;
         for i in 4..sz {
@@ -22,7 +22,7 @@ impl ContentAnalyzer<MyType> for VowelAnalyzer {
             }
         }
         context.global().set(var!("count_vowels"), count);
-        NextAction::Continue
+        AnalysisOutcome::Continue
     }
 }
 struct TextBufferItdentifier;

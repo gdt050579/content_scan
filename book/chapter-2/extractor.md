@@ -2,7 +2,7 @@
 
 An extractor **produces children**. Identifiers name the parent; analyzers inspect it; extractors open it and yield new [`Content`](content.md) objects, which the scanner then runs through the same pipeline (filter → identify → analyze → extract) until [`max_depth`](../chapter-3/recursion.md).
 
-Extractors do not write the [`Context`](../chapter-4/context.md) and they do not return [`NextAction`](analyzer.md#nextaction). They yield `Option`. Steering the scan is still the analyzers’ job.
+Extractors do not write the [`Context`](../chapter-4/context.md) and they do not return [`AnalysisOutcome`](analyzer.md#nextaction). They yield `Option`. Steering the scan is still the analyzers’ job.
 
 You may register **many** extractors, including several for the same type. There is no generic extractor: every one is keyed by a `ContentType`.
 

@@ -91,11 +91,11 @@ impl ContentAnalyzer<MyTypes, Entropy> for EntropyAnalyzer {
         &mut self,
         content: &mut dyn Content<MyTypes>,
         context: &mut Context<MyTypes, Entropy>,
-    ) -> NextAction {
+    ) -> AnalysisOutcome {
         let h = shannon(content);
         let label = if h > 7.8 { "packed" } else { "normal" };
         context.add_finding(label, None, Some(Entropy(h)));
-        NextAction::Continue
+        AnalysisOutcome::Continue
     }
 }
 

@@ -12,9 +12,9 @@ enum MyTypes {
 #[Dependencies(name = "ComputeHashAnalyzer")]
 struct ComputeHashAnalyzer;
 impl ContentAnalyzer<MyTypes> for ComputeHashAnalyzer {
-    fn analyze(&mut self, content: &mut dyn Content<MyTypes>, context: &mut Context<MyTypes>) -> NextAction {
+    fn analyze(&mut self, content: &mut dyn Content<MyTypes>, context: &mut Context<MyTypes>) -> AnalysisOutcome {
         if content.content_type() == Some(MyTypes::Folder) {
-            return NextAction::Continue;
+            return AnalysisOutcome::Continue;
         }
         let size = content.size();
         let mut hasher = Md5::new();
@@ -30,7 +30,7 @@ impl ContentAnalyzer<MyTypes> for ComputeHashAnalyzer {
             }
         }
         context.add_finding(format!("{:x}", hasher.finalize()).as_str(), None, None);
-        NextAction::Continue
+        AnalysisOutcome::Continue
     }
 }
 

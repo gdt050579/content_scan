@@ -170,7 +170,7 @@ enum MyType {
 #[Dependencies(name = "VowelAnalyzer")]
 struct VowelAnalyzer;
 impl ContentAnalyzer<MyType> for VowelAnalyzer {
-    fn analyze(&mut self, content: &mut dyn Content<MyType>, context: &mut Context) -> NextAction {
+    fn analyze(&mut self, content: &mut dyn Content<MyType>, context: &mut Context) -> AnalysisOutcome {
         let sz = content.size();
         let mut count = 0u32;
         for i in 4..sz {
@@ -182,7 +182,7 @@ impl ContentAnalyzer<MyType> for VowelAnalyzer {
             }
         }
         context.global().set(var!("count_vowels"), count);
-        NextAction::Continue
+        AnalysisOutcome::Continue
     }
 }
 
@@ -217,7 +217,7 @@ This example shows the full pipeline — a text container is *identified* by mag
 #[Dependencies(name = "NumericAnalyzer")]
 struct NumericAnalyzer;
 impl ContentAnalyzer<MyTypes> for NumericAnalyzer {
-    fn analyze(&mut self, content: &mut dyn Content<MyTypes>, context: &mut Context) -> NextAction {
+    fn analyze(&mut self, content: &mut dyn Content<MyTypes>, context: &mut Context) -> AnalysisOutcome {
         let value = u32::from_str_radix(
             std::str::from_utf8(content.read(0, content.size() as u32).unwrap()).unwrap(),
             10,
@@ -229,7 +229,7 @@ impl ContentAnalyzer<MyTypes> for NumericAnalyzer {
         }
         // ...and remember this object's own value in its local VarMap
         context.local().set(var!("value"), value);
-        NextAction::Continue
+        AnalysisOutcome::Continue
     }
 }
 
@@ -310,10 +310,10 @@ cargo run --example base64_find -- ./inbox
 #[Dependencies(name = "Base64Finder")]
 struct Base64Finder;
 impl ContentAnalyzer<MyTypes> for Base64Finder {
-    fn analyze(&mut self, content: &mut dyn Content<MyTypes>, context: &mut Context<MyTypes>) -> NextAction {
+    fn analyze(&mut self, content: &mut dyn Content<MyTypes>, context: &mut Context<MyTypes>) -> AnalysisOutcome {
         // ...locate a run at `start` of length `len`...
         context.request_extract(MyTypes::Base64).at(start).len(len).emit();
-        NextAction::Continue
+        AnalysisOutcome::Continue
     }
 }
 
@@ -354,10 +354,10 @@ impl ExtractionSession<MyTypes> for Base64Session {
 #[Dependencies(name = "Base64DecodedAnalyzer")]
 struct Base64DecodedAnalyzer;
 impl ContentAnalyzer<MyTypes> for Base64DecodedAnalyzer {
-    fn analyze(&mut self, content: &mut dyn Content<MyTypes>, _: &mut Context<MyTypes>) -> NextAction {
+    fn analyze(&mut self, content: &mut dyn Content<MyTypes>, _: &mut Context<MyTypes>) -> AnalysisOutcome {
         let buf = content.read(0, content.size() as u32).unwrap_or(&[]);
         println!("{}: {}", content.path().as_printable_string(), String::from_utf8_lossy(buf));
-        NextAction::Continue
+        AnalysisOutcome::Continue
     }
 }
 ```
@@ -378,13 +378,13 @@ cargo run --example md5 -- ./content_scan/src
 #[Dependencies(name = "ComputeHashAnalyzer")]
 struct ComputeHashAnalyzer;
 impl ContentAnalyzer<MyTypes> for ComputeHashAnalyzer {
-    fn analyze(&mut self, content: &mut dyn Content<MyTypes>, context: &mut Context<MyTypes>) -> NextAction {
+    fn analyze(&mut self, content: &mut dyn Content<MyTypes>, context: &mut Context<MyTypes>) -> AnalysisOutcome {
         if content.content_type() == Some(MyTypes::Folder) {
-            return NextAction::Continue;
+            return AnalysisOutcome::Continue;
         }
         // read the file in chunks, feed Md5...
         context.add_finding(format!("{:x}", hasher.finalize()).as_str(), None, None);
-        NextAction::Continue
+        AnalysisOutcome::Continue
     }
 }
 
@@ -419,14 +419,14 @@ impl FindingMetadata for Entropy {}
 #[Dependencies(name = "EntropyAnalyzer")]
 struct EntropyAnalyzer;
 impl ContentAnalyzer<MyTypes, Entropy> for EntropyAnalyzer {
-    fn analyze(&mut self, content: &mut dyn Content<MyTypes>, context: &mut Context<MyTypes, Entropy>) -> NextAction {
+    fn analyze(&mut self, content: &mut dyn Content<MyTypes>, context: &mut Context<MyTypes, Entropy>) -> AnalysisOutcome {
         if content.content_type() == Some(MyTypes::Folder) {
-            return NextAction::Continue;
+            return AnalysisOutcome::Continue;
         }
         // count byte frequencies, compute Shannon entropy...
         let label = if entropy > 7.8 { "packed" } else if entropy > 7.0 { "encrypted" } else { "normal" };
         context.add_finding(label, None, Some(Entropy(entropy)));
-        NextAction::Continue
+        AnalysisOutcome::Continue
     }
 }
 
@@ -659,15 +659,15 @@ Generics are not supported by the derive. Unit structs, tuple structs, named-fie
 
 ```rust
 pub trait ContentAnalyzer<T: ContentType, M: FindingMetadata = NoMetadata>: Dependencies {
-    fn analyze(&mut self, content: &mut dyn Content<T>, context: &mut Context<T, M>) -> NextAction;
+    fn analyze(&mut self, content: &mut dyn Content<T>, context: &mut Context<T, M>) -> AnalysisOutcome;
 }
 ```
 
-Analyzers inspect content and write results into the shared `Context`. Use `context.local()` for per-object `VarMap`s, `context.global()` for scan-wide aggregates, and `context.add_finding(...)` for a flat list of [`Finding`](#findings)s. To pull nested content out of the current object using extractors registered for a **different** type — for example an analyzer that locates an embedded ZIP and wants the Zip extractor to open it — call `context.request_extract(ty)` and [emit an extraction request](#requesting-extraction). Only analyzers return `NextAction`; that value controls the rest of **this** object:
+Analyzers inspect content and write results into the shared `Context`. Use `context.local()` for per-object `VarMap`s, `context.global()` for scan-wide aggregates, and `context.add_finding(...)` for a flat list of [`Finding`](#findings)s. To pull nested content out of the current object using extractors registered for a **different** type — for example an analyzer that locates an embedded ZIP and wants the Zip extractor to open it — call `context.request_extract(ty)` and [emit an extraction request](#requesting-extraction). Only analyzers return `AnalysisOutcome`; that value controls the rest of **this** object:
 
-- `NextAction::Continue` — run the next analyzer for this object; after the last analyzer, run extractors.
-- `NextAction::Skip` — stop this object: do not run remaining analyzers or any extractors on it. Siblings and later objects still scan.
-- `NextAction::Exit` — abort the entire scan.
+- `AnalysisOutcome::Continue` — run the next analyzer for this object; after the last analyzer, run extractors.
+- `AnalysisOutcome::Skip` — stop this object: do not run remaining analyzers or any extractors on it. Siblings and later objects still scan.
+- `AnalysisOutcome::Exit` — abort the entire scan.
 
 Register analyzers with:
 
@@ -694,14 +694,14 @@ pub struct Entry {
 }
 ```
 
-Extractors turn a container into a stream of children. The scanner calls `create_session` once per parent; the returned [`ExtractionSession`](#extractionsession) then enumerates children. Methods return `Option` — they do **not** return `NextAction` and cannot Skip or Exit on their own.
+Extractors turn a container into a stream of children. The scanner calls `create_session` once per parent; the returned [`ExtractionSession`](#extractionsession) then enumerates children. Methods return `Option` — they do **not** return `AnalysisOutcome` and cannot Skip or Exit on their own.
 
 `create_session` is called after that object's analyzers have run. It receives:
 
 - an [`OwnedContentPtr`](#ownedcontentptr) to the parent — store it on the session if `advance` / `extract` need to read the parent;
 - an [`ExtractionContext`](#extractioncontext) describing the region to look at (`offset`, optional `length`, optional `params`). Copy those fields into the session; the context is only valid for this call.
 
-Return `Some(session)` to start enumerating, or `None` to skip this extractor (the scanner moves on to the next one registered for the same type). The session is dropped when enumeration ends, when a nested child's analyzer returns `NextAction::Exit`, or when the scanner moves on. Implement `Drop` on the session if you need to close files or free buffers.
+Return `Some(session)` to start enumerating, or `None` to skip this extractor (the scanner moves on to the next one registered for the same type). The session is dropped when enumeration ends, when a nested child's analyzer returns `AnalysisOutcome::Exit`, or when the scanner moves on. Implement `Drop` on the session if you need to close files or free buffers.
 
 An extractor registered for type `T` runs in two situations:
 
@@ -828,14 +828,14 @@ Analyzers that find nested content of another type queue a pass with `context.re
 
 ```rust
 impl ContentAnalyzer<MyTypes> for PeAnalyzer {
-    fn analyze(&mut self, _: &mut dyn Content<MyTypes>, context: &mut Context<MyTypes>) -> NextAction {
+    fn analyze(&mut self, _: &mut dyn Content<MyTypes>, context: &mut Context<MyTypes>) -> AnalysisOutcome {
         // Found an embedded ZIP inside this PE; run Zip extractors on that slice.
         context.request_extract(MyTypes::Zip)
             .at(0x1000)                          // offset within the parent
             .len(4096)                           // optional; omit if unknown
             .param(var!("password"), "secret")   // optional; repeatable
             .emit();
-        NextAction::Continue
+        AnalysisOutcome::Continue
     }
 }
 ```
@@ -1042,9 +1042,9 @@ impl FindingMetadata for Severity {}
 #[Dependencies(name = "MyAnalyzer")]
 struct MyAnalyzer;
 impl ContentAnalyzer<MyTypes, Severity> for MyAnalyzer {
-    fn analyze(&mut self, _: &mut dyn Content<MyTypes>, context: &mut Context<MyTypes, Severity>) -> NextAction {
+    fn analyze(&mut self, _: &mut dyn Content<MyTypes>, context: &mut Context<MyTypes, Severity>) -> AnalysisOutcome {
         context.add_finding("suspicious overlay", Some("MyAnalyzer"), Some(Severity::Warn));
-        NextAction::Continue
+        AnalysisOutcome::Continue
     }
 }
 
@@ -1129,7 +1129,7 @@ For every scanned object, the scanner performs the following steps (see [`conten
 
 While this is happening, the scanner also **records the object** into `Context::objects` — interned from `ContentPath::as_printable_string()` into an internal arena, tagged with the resolved content type, and linked into its parent's child list. Findings emitted during the analyzer steps are appended to the same `Context` and later exposed through [`ScanResult::findings`](#findings). After `scan()` returns, the tree is available through [`ScanResult`](#navigating-the-scan-result-tree).
 
-Only **analyzers** return `NextAction`. Extractor and session methods return `Option` (`create_session` / `advance` / `extract`); they cannot short-circuit the scan themselves.
+Only **analyzers** return `AnalysisOutcome`. Extractor and session methods return `Option` (`create_session` / `advance` / `extract`); they cannot short-circuit the scan themselves.
 
 - Analyzer `Skip` on an object stops remaining analyzers and extractors **on that object**. The scanner maps that Skip to `Continue` for the parent, so the session that produced the object keeps enumerating siblings.
 - Analyzer `Exit` aborts the whole scan. The extraction session that produced the current object is dropped as the call stack unwinds; remaining extractors on ancestors do not run.

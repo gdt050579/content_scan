@@ -1,6 +1,6 @@
 use super::{
     analyzer_list::AnalyzerList, extractor_list::ExtractorList, Content, ContentAnalyzer, ContentExtractor, ContentIdentifier, ContentType, Filter,
-    NextAction,
+    AnalysisOutcome,
 };
 use crate::ScanObserver;
 use crate::StopCondition;
@@ -94,13 +94,13 @@ impl<T: ContentType, M: FindingMetadata> Scanner<T, M> {
         }
         ScanResult::new(&self.context)
     }
-    fn inner_scan(&mut self, content: ContentPtr<T>, depth: u32, parent_index: u32) -> NextAction {
+    fn inner_scan(&mut self, content: ContentPtr<T>, depth: u32, parent_index: u32) -> AnalysisOutcome {
         self.context.local_varmap_handle = None; // so that next time someone ask for a local varmap, it will get one from the context varmap_pool
         self.context.current_object_index = None;
         let start_req_count = self.context.extraction_requests_stack.len();
         if let Some(stop_condition) = self.stop_condition.as_mut() {
             if stop_condition.should_stop() {
-                return NextAction::Exit;
+                return AnalysisOutcome::Exit;
             }
         }
         let (ty, my_index) = self.create_object(content, parent_index);
@@ -109,13 +109,13 @@ impl<T: ContentType, M: FindingMetadata> Scanner<T, M> {
         }
 
         let mut response = self.run_analyzers(content, ty);
-        if response == NextAction::Continue {
+        if response == AnalysisOutcome::Continue {
             response = self.run_extractors(content, ty, depth, my_index, start_req_count);
         }
         self.restore_extraction_request_stack(start_req_count);
         match response {
-            NextAction::Continue | NextAction::Skip => NextAction::Continue,
-            NextAction::Exit => NextAction::Exit,
+            AnalysisOutcome::Continue | AnalysisOutcome::Skip => AnalysisOutcome::Continue,
+            AnalysisOutcome::Exit => AnalysisOutcome::Exit,
         }
     }
     fn create_object(&mut self, content: ContentPtr<T>, parent_index: u32) -> (Option<T>, u32) {
@@ -154,11 +154,11 @@ impl<T: ContentType, M: FindingMetadata> Scanner<T, M> {
         }
         (ty, my_index)
     }
-    fn run_analyzers(&mut self, content: ContentPtr<T>, content_type: Option<T>) -> NextAction {
+    fn run_analyzers(&mut self, content: ContentPtr<T>, content_type: Option<T>) -> AnalysisOutcome {
         if let Some(ty) = content_type {
             if let Some((start, end)) = self.analyzers.range(ty) {
                 let res = self.scan_range(content, start, end);
-                if matches!(res, NextAction::Skip | NextAction::Exit) {
+                if matches!(res, AnalysisOutcome::Skip | AnalysisOutcome::Exit) {
                     return res;
                 }
             }
@@ -166,18 +166,18 @@ impl<T: ContentType, M: FindingMetadata> Scanner<T, M> {
         // generic analyzers
         if let Some((start, end)) = self.analyzers.generic_range() {
             let res = self.scan_range(content, start, end);
-            if matches!(res, NextAction::Skip | NextAction::Exit) {
+            if matches!(res, AnalysisOutcome::Skip | AnalysisOutcome::Exit) {
                 return res;
             }
         }
-        NextAction::Continue
+        AnalysisOutcome::Continue
     }
-    fn run_extractors(&mut self, content: ContentPtr<T>, content_type: Option<T>, depth: u32, my_index: u32, start_req_index: usize) -> NextAction {
+    fn run_extractors(&mut self, content: ContentPtr<T>, content_type: Option<T>, depth: u32, my_index: u32, start_req_index: usize) -> AnalysisOutcome {
         // type-specific extractors
         if let Some(ty) = content_type {
             if let Some((start, end)) = self.extractors.range(ty) {
                 let res = self.extract_range(content, start, end, depth, my_index, None);
-                if matches!(res, NextAction::Skip | NextAction::Exit) {
+                if matches!(res, AnalysisOutcome::Skip | AnalysisOutcome::Exit) {
                     return res;
                 }
             }
@@ -188,7 +188,7 @@ impl<T: ContentType, M: FindingMetadata> Scanner<T, M> {
             let ty = self.context.extraction_requests_stack[i].content_type;
             if let Some((start, end)) = self.extractors.range(ty) {
                 let res = self.extract_range(content, start, end, depth, my_index, Some(i as u32));
-                if matches!(res, NextAction::Skip | NextAction::Exit) {
+                if matches!(res, AnalysisOutcome::Skip | AnalysisOutcome::Exit) {
                     return res;
                 }
             } else {
@@ -198,7 +198,7 @@ impl<T: ContentType, M: FindingMetadata> Scanner<T, M> {
                 }
             }
         }
-        NextAction::Continue
+        AnalysisOutcome::Continue
     }
     fn restore_extraction_request_stack(&mut self, start_req_index: usize) {
         // first release the params
@@ -210,19 +210,19 @@ impl<T: ContentType, M: FindingMetadata> Scanner<T, M> {
         // restore the stack
         self.context.extraction_requests_stack.truncate(start_req_index);
     }
-    fn scan_range(&mut self, mut content: ContentPtr<T>, start: usize, end: usize) -> NextAction {
+    fn scan_range(&mut self, mut content: ContentPtr<T>, start: usize, end: usize) -> AnalysisOutcome {
         if (end <= start) || (end > self.analyzers.len()) {
-            return NextAction::Continue;
+            return AnalysisOutcome::Continue;
         }
         for i in start..end {
             let result = unsafe { self.analyzers.get(i).analyze(content.as_mut(), &mut self.context) };
             match result {
-                NextAction::Continue => continue,
-                NextAction::Exit => return NextAction::Exit,
-                NextAction::Skip => return NextAction::Skip,
+                AnalysisOutcome::Continue => continue,
+                AnalysisOutcome::Exit => return AnalysisOutcome::Exit,
+                AnalysisOutcome::Skip => return AnalysisOutcome::Skip,
             }
         }
-        NextAction::Continue
+        AnalysisOutcome::Continue
     }
     fn extract_range(
         &mut self,
@@ -232,9 +232,9 @@ impl<T: ContentType, M: FindingMetadata> Scanner<T, M> {
         depth: u32,
         parent_index: u32,
         req_index: Option<u32>,
-    ) -> NextAction {
+    ) -> AnalysisOutcome {
         if (end <= start) || (end > self.extractors.len()) {
-            return NextAction::Continue;
+            return AnalysisOutcome::Continue;
         }
         let ec_metadata = if let Some(req_index) = req_index {
             let request = &self.context.extraction_requests_stack[req_index as usize];
@@ -251,12 +251,12 @@ impl<T: ContentType, M: FindingMetadata> Scanner<T, M> {
             }
         };
         let next_action = {
-            let mut next_action = NextAction::Continue;
+            let mut next_action = AnalysisOutcome::Continue;
             for i in start..end {
                 let result = self.extract_content(content, i, depth, parent_index, &ec_metadata);
                 match result {
-                    NextAction::Continue => continue,
-                    NextAction::Exit | NextAction::Skip => {
+                    AnalysisOutcome::Continue => continue,
+                    AnalysisOutcome::Exit | AnalysisOutcome::Skip => {
                         next_action = result;
                         break;
                     }
@@ -279,13 +279,13 @@ impl<T: ContentType, M: FindingMetadata> Scanner<T, M> {
         depth: u32,
         parent_index: u32,
         ec_metadata: &ExtractionRequestMetadata,
-    ) -> NextAction {
+    ) -> AnalysisOutcome {
         if depth >= self.max_depth {
-            return NextAction::Continue;
+            return AnalysisOutcome::Continue;
         }
         let len = self.extractors.len();
         if index >= len {
-            return NextAction::Continue;
+            return AnalysisOutcome::Continue;
         }
         let extractor = unsafe { self.extractors.get(index) };
         let ec = ExtractionContext {
@@ -313,14 +313,14 @@ impl<T: ContentType, M: FindingMetadata> Scanner<T, M> {
                     let c_ptr = ContentPtr::new(extracted_content.as_mut());
                     let result = self.inner_scan(c_ptr, depth + 1, parent_index);
                     match result {
-                        NextAction::Continue => continue,
-                        NextAction::Exit => return NextAction::Exit,
-                        NextAction::Skip => return NextAction::Continue,
+                        AnalysisOutcome::Continue => continue,
+                        AnalysisOutcome::Exit => return AnalysisOutcome::Exit,
+                        AnalysisOutcome::Skip => return AnalysisOutcome::Continue,
                     }
                 }
             }
         }
-        NextAction::Continue
+        AnalysisOutcome::Continue
     }
     fn retrieve_content_type(&mut self, mut content: ContentPtr<T>) -> Option<T> {
         if let Some(ty) = content.as_ref().content_type() {

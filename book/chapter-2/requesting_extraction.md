@@ -16,14 +16,14 @@ impl ContentAnalyzer<MyTypes> for PeAnalyzer {
         &mut self,
         _: &mut dyn Content<MyTypes>,
         context: &mut Context<MyTypes>,
-    ) -> NextAction {
+    ) -> AnalysisOutcome {
         context
             .request_extract(MyTypes::Zip)
             .at(0x1000)
             .len(4096)
             .param(var!("password"), "secret")
             .emit();
-        NextAction::Continue
+        AnalysisOutcome::Continue
     }
 }
 ```
