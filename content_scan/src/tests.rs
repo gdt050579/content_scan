@@ -538,6 +538,120 @@ mod content_read_ext {
         let mut dest = [0u8; 3];
         assert_eq!(c.read_into(3, 3, &mut dest), Some(3));
         assert_eq!(&dest, &[0x01, 0x02, 0x03]);
+        assert_eq!(unsafe { c.read_struct::<[u8; 3]>(3) }, Some([0x01, 0x02, 0x03]));
+    }
+
+    #[repr(C)]
+    #[derive(Copy, Clone, Debug, PartialEq, Eq)]
+    struct Pair {
+        lo: u32,
+        hi: u32,
+    }
+
+    #[repr(C)]
+    #[derive(Copy, Clone, Debug, PartialEq, Eq)]
+    struct Zst;
+
+    #[repr(C, packed)]
+    #[derive(Copy, Clone)]
+    struct PackedHdr {
+        kind: u8,
+        value: u32,
+    }
+
+    fn pair_bytes(lo: u32, hi: u32) -> [u8; 8] {
+        let mut out = [0u8; 8];
+        out[..4].copy_from_slice(&lo.to_ne_bytes());
+        out[4..].copy_from_slice(&hi.to_ne_bytes());
+        out
+    }
+
+    #[test]
+    fn read_struct_copies_repr_c_fields() {
+        let bytes = pair_bytes(0x1111_2222, 0x3333_4444);
+        let mut c = buf(&bytes);
+        assert_eq!(
+            unsafe { c.read_struct::<Pair>(0) },
+            Some(Pair {
+                lo: 0x1111_2222,
+                hi: 0x3333_4444,
+            })
+        );
+
+        let mut padded = vec![0xAAu8];
+        padded.extend_from_slice(&bytes);
+        let mut c = buf(&padded);
+        assert_eq!(
+            unsafe { c.read_struct::<Pair>(1) },
+            Some(Pair {
+                lo: 0x1111_2222,
+                hi: 0x3333_4444,
+            })
+        );
+        assert_eq!(unsafe { c.read_struct::<[u8; 2]>(0) }, Some([0xAA, bytes[0]]));
+    }
+
+    #[test]
+    fn read_struct_packed_fields_are_unaligned() {
+        let mut bytes = vec![0xAB];
+        bytes.extend_from_slice(&0x0102_0304u32.to_ne_bytes());
+        let mut c = buf(&bytes);
+        let hdr = unsafe { c.read_struct::<PackedHdr>(0) }.unwrap();
+        assert_eq!({ hdr.kind }, 0xAB);
+        assert_eq!({ hdr.value }, 0x0102_0304);
+    }
+
+    #[test]
+    fn read_struct_none_when_truncated_or_past_end() {
+        let bytes = pair_bytes(1, 2);
+        let mut c = buf(&bytes[..7]);
+        assert_eq!(unsafe { c.read_struct::<Pair>(0) }, None);
+
+        let mut c = buf(&bytes);
+        assert_eq!(unsafe { c.read_struct::<Pair>(1) }, None);
+        assert_eq!(unsafe { c.read_struct::<Pair>(8) }, None);
+        assert_eq!(unsafe { c.read_struct::<Pair>(9) }, None);
+        assert_eq!(unsafe { c.read_struct::<u8>(8) }, None);
+
+        let mut empty = buf(b"");
+        assert_eq!(unsafe { empty.read_struct::<u8>(0) }, None);
+        assert_eq!(unsafe { empty.read_struct::<Pair>(0) }, None);
+    }
+
+    #[test]
+    fn read_struct_zst_does_not_touch_content() {
+        let mut c = buf(b"xyz");
+        assert_eq!(unsafe { c.read_struct::<Zst>(0) }, Some(Zst));
+        assert_eq!(unsafe { c.read_struct::<Zst>(3) }, Some(Zst));
+        assert_eq!(unsafe { c.read_struct::<Zst>(99) }, Some(Zst));
+        assert_eq!(unsafe { c.read_struct::<()>(1) }, Some(()));
+        let mut empty = buf(b"");
+        assert_eq!(unsafe { empty.read_struct::<Zst>(0) }, Some(Zst));
+        assert_eq!(unsafe { empty.read_struct::<Zst>(1) }, Some(Zst));
+    }
+
+    #[test]
+    fn read_struct_crosses_page_boundaries() {
+        let bytes = pair_bytes(0xAABB_CCDD, 0x1122_3344);
+        let mut c = Windowed::new(&bytes, 3);
+        assert_eq!(
+            unsafe { c.read_struct::<Pair>(0) },
+            Some(Pair {
+                lo: 0xAABB_CCDD,
+                hi: 0x1122_3344,
+            })
+        );
+
+        let mut padded = vec![0xFF, 0xEE];
+        padded.extend_from_slice(&bytes);
+        let mut c = Windowed::new(&padded, 4);
+        assert_eq!(
+            unsafe { c.read_struct::<Pair>(2) },
+            Some(Pair {
+                lo: 0xAABB_CCDD,
+                hi: 0x1122_3344,
+            })
+        );
     }
 }
 

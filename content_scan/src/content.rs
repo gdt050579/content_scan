@@ -169,6 +169,48 @@ pub trait ContentReadExt<T: ContentType>: Content<T> {
         }
         Some(filled)
     }
+
+    /// Reads a `G` from `offset` by copying `size_of::<G>()` bytes out of the
+    /// content.
+    ///
+    /// Intended for mapping an on-disk or in-buffer structure onto its Rust
+    /// equivalent — for example a PE COFF header. The bytes are copied
+    /// unaligned, so `offset` has no alignment requirement, and short reads
+    /// from [`read`](Content::read) are looped internally.
+    ///
+    /// # Returns
+    /// - `Some(g)` if `size_of::<G>()` bytes are available starting at `offset`.
+    /// - `None` if the read would run past the end of the content, if the
+    ///   underlying [`read`](Content::read) fails, or if `size_of::<G>()`
+    ///   exceeds `u32::MAX`.
+    ///
+    /// A zero-sized `G` returns `Some` without touching the content.
+    ///
+    /// # Safety
+    /// The caller must guarantee that **every** bit pattern of length
+    /// `size_of::<G>()` is a valid value of `G`. This holds for `#[repr(C)]`
+    /// plain-data structs composed of integers, floats, and arrays of those.
+    /// It is undefined behavior to call this with a `G` that has validity
+    /// invariants — e.g. one containing a `bool`, `char`, reference, `NonZero*`,
+    /// or an enum with a restricted set of discriminants — because arbitrary
+    /// file bytes may not be a valid instance.
+    unsafe fn read_struct<S: Copy>(&mut self, offset: u64) -> Option<S> {
+        let size = std::mem::size_of::<S>();
+        if size == 0 {
+            return Some(unsafe { std::mem::zeroed() });
+        }
+        if size > u32::MAX as usize {
+            return None;
+        }
+
+        let mut buf = std::mem::MaybeUninit::<S>::uninit();
+        let output_bytes: &mut [u8] = unsafe { std::slice::from_raw_parts_mut(buf.as_mut_ptr() as *mut u8, size) };
+        match self.read_into(offset, size as u32, output_bytes) {
+            Some(n) if n == size => Some(unsafe { buf.assume_init() }),
+            _ => None,
+        }
+    }
+
     /// Reads a single byte at `offset`. Returns `None` if the content ends
     /// (or errors) before the byte is available.
     fn read_byte(&mut self, offset: u64) -> Option<u8> {
