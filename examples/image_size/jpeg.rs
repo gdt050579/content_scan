@@ -19,7 +19,7 @@ pub struct JpegAnalyzer;
 impl ContentAnalyzer<ImageType> for JpegAnalyzer {
     fn analyze(&mut self, content: &mut dyn Content<ImageType>, context: &mut Context<ImageType>) -> NextAction {
         let size = content.size();
-        let Some(soi) = content.read_u16(0) else {
+        let Some(soi) = content.read_be_u16(0) else {
             return NextAction::Continue;
         };
         if soi != 0xFFD8 {
@@ -45,10 +45,10 @@ impl ContentAnalyzer<ImageType> for JpegAnalyzer {
                 0xC0..=0xC3 | 0xC5..=0xC7 | 0xC9..=0xCB | 0xCD..=0xCF
             );
             if is_sof {
-                let Some(h) = content.read_u16(i + 5) else {
+                let Some(h) = content.read_be_u16(i + 5) else {
                     break;
                 };
-                let Some(w) = content.read_u16(i + 7) else {
+                let Some(w) = content.read_be_u16(i + 7) else {
                     break;
                 };
                 context.local().set(
@@ -67,7 +67,7 @@ impl ContentAnalyzer<ImageType> for JpegAnalyzer {
                 continue;
             }
 
-            let Some(lb) = content.read_u16(i + 2) else {
+            let Some(lb) = content.read_be_u16(i + 2) else {
                 break;
             };
             i += 2 + lb as u64;

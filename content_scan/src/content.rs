@@ -118,18 +118,53 @@ pub trait ContentReadExt<T: ContentType>: Content<T> {
         (slice.len() == count as usize).then_some(slice)
     }
 
-    /// Fills `buf` completely, looping across read windows. Returns `None`
-    /// if the content ends (or errors) before `buf` is full.
-    fn read_into(&mut self, offset: u64, buf: &mut [u8]) -> Option<usize> {
-        let mut filled = 0;
-        while filled < buf.len() {
-            let want = (buf.len() - filled).min(u32::MAX as usize) as u32;
+    /// Reads up to `count` bytes starting at `offset` into `output_buf`,
+    /// looping across short reads, and returns the number of bytes copied.
+    ///
+    /// The number of bytes read is the minimum of three limits: `count`,
+    /// the bytes remaining in the content (`size - offset`), and the length
+    /// of `output_buf`. Whichever is smallest wins, so the call never reads
+    /// past the end of the content and never writes past the end of the
+    /// buffer regardless of what the caller passes.
+    ///
+    /// Because [`read`](Content::read) may return a short slice at an
+    /// implementation boundary, this method calls it repeatedly, advancing
+    /// by the length of each slice, until the target count is reached or the
+    /// content ends.
+    ///
+    /// # Returns
+    ///
+    /// - `Some(n)` where `n` is the number of bytes copied into
+    ///   `output_buf[..n]`. `n` may be less than `count` when the content,
+    ///   the buffer, or a mid-stream end of content is the limiting factor.
+    /// - `Some(0)` if `offset` is exactly at the end of the content, if
+    ///   `count` is `0`, or if `output_buf` is empty. Note that `Some(0)`
+    ///   does not distinguish "at end of content" from "nothing was
+    ///   requested"; a caller needing that distinction can compare `offset`
+    ///   against [`size`](Content::size) itself.
+    /// - `None` if `offset` is past the end of the content, or if the
+    ///   underlying [`read`](Content::read) fails at any point — **even
+    ///   after some bytes have already been copied**. A returned `None`
+    ///   therefore discards any partial progress; only a `Some(n)` result
+    ///   reports bytes read.
+    fn read_into(&mut self, offset: u64, count: u32, output_buf: &mut [u8]) -> Option<usize> {
+        let size = self.size();
+        if offset > size {
+            return None;
+        }
+        if offset == size {
+            return Some(0);
+        }
+        let count = (size - offset).min(count as u64).min(output_buf.len() as u64) as usize;
+        let mut filled = 0usize;
+        while filled < count {
+            let want = ((count - filled).min(u32::MAX as usize)) as u32;
             let src = self.read(offset + filled as u64, want)?;
             if src.is_empty() {
-                return None; // hit EOF before buf was full
+                break;
             }
-            let n = src.len().min(buf.len() - filled);
-            buf[filled..filled + n].copy_from_slice(&src[..n]);
+            let n = src.len().min(count - filled);
+            output_buf[filled..filled + n].copy_from_slice(&src[..n]);
             filled += n;
         }
         Some(filled)
@@ -164,12 +199,14 @@ pub trait ContentReadExt<T: ContentType>: Content<T> {
     /// Reads a 64-bit unsigned integer at `offset`. Returns `None` if the content ends
     /// (or errors) before the integer is available. The integer is read in big-endian order.
     fn read_be_u64(&mut self, offset: u64) -> Option<u64> {
-        self.read_exact(offset, 8).map(|b| u64::from_be_bytes([b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]]))
+        self.read_exact(offset, 8)
+            .map(|b| u64::from_be_bytes([b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]]))
     }
     /// Reads a 64-bit unsigned integer at `offset`. Returns `None` if the content ends
     /// (or errors) before the integer is available. The integer is read in little-endian order.
     fn read_le_u64(&mut self, offset: u64) -> Option<u64> {
-        self.read_exact(offset, 8).map(|b| u64::from_le_bytes([b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]]))
+        self.read_exact(offset, 8)
+            .map(|b| u64::from_le_bytes([b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]]))
     }
     /// Reads a 16-bit signed integer at `offset`. Returns `None` if the content ends
     /// (or errors) before the integer is available. The integer is read in big-endian order.
@@ -194,17 +231,18 @@ pub trait ContentReadExt<T: ContentType>: Content<T> {
     /// Reads a 64-bit signed integer at `offset`. Returns `None` if the content ends
     /// (or errors) before the integer is available. The integer is read in big-endian order.
     fn read_be_i64(&mut self, offset: u64) -> Option<i64> {
-        self.read_exact(offset, 8).map(|b| i64::from_be_bytes([b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]]))
+        self.read_exact(offset, 8)
+            .map(|b| i64::from_be_bytes([b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]]))
     }
     /// Reads a 64-bit signed integer at `offset`. Returns `None` if the content ends
     /// (or errors) before the integer is available. The integer is read in little-endian order.
     fn read_le_i64(&mut self, offset: u64) -> Option<i64> {
-        self.read_exact(offset, 8).map(|b| i64::from_le_bytes([b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]]))
+        self.read_exact(offset, 8)
+            .map(|b| i64::from_le_bytes([b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]]))
     }
 }
 
 impl<T: ContentType, C: Content<T> + ?Sized> ContentReadExt<T> for C {}
-
 
 /// Trivial [`ContentType`] implementation for `bool`.
 ///

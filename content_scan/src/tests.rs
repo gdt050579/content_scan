@@ -306,6 +306,241 @@ mod content_path {
     }
 }
 
+mod content_read_ext {
+    use crate::{BufferContent, Content, ContentPath, ContentReadExt};
+
+    fn buf(bytes: &[u8]) -> BufferContent<bool> {
+        BufferContent::new(bytes, "test")
+    }
+
+    /// `Content` that serves at most one page per `read`, like a paged `FileContent`.
+    struct Windowed {
+        data: Vec<u8>,
+        path: ContentPath,
+        page: u64,
+    }
+
+    impl Windowed {
+        fn new(data: &[u8], page: u32) -> Self {
+            Self {
+                data: data.to_vec(),
+                path: ContentPath::from_str("windowed"),
+                page: page as u64,
+            }
+        }
+    }
+
+    impl Content<bool> for Windowed {
+        fn path(&self) -> &ContentPath {
+            &self.path
+        }
+        fn size(&self) -> u64 {
+            self.data.len() as u64
+        }
+        fn read(&mut self, offset: u64, count: u32) -> Option<&[u8]> {
+            let len = self.data.len() as u64;
+            if offset > len {
+                return None;
+            }
+            if offset == len {
+                return Some(&[]);
+            }
+            let page_end = (offset / self.page + 1) * self.page;
+            let end = (offset + count as u64).min(len).min(page_end);
+            Some(&self.data[offset as usize..end as usize])
+        }
+    }
+
+    #[test]
+    fn read_exact_returns_requested_bytes() {
+        let mut c = buf(b"abcdef");
+        assert_eq!(c.read_exact(0, 3), Some(&b"abc"[..]));
+        assert_eq!(c.read_exact(3, 3), Some(&b"def"[..]));
+        assert_eq!(c.read_exact(1, 4), Some(&b"bcde"[..]));
+    }
+
+    #[test]
+    fn read_exact_zero_count_is_empty_even_past_end() {
+        let mut c = buf(b"ab");
+        assert_eq!(c.read_exact(0, 0), Some(&b""[..]));
+        assert_eq!(c.read_exact(2, 0), Some(&b""[..]));
+        assert_eq!(c.read_exact(99, 0), Some(&b""[..]));
+        let mut empty = buf(b"");
+        assert_eq!(empty.read_exact(0, 0), Some(&b""[..]));
+    }
+
+    #[test]
+    fn read_exact_none_when_short_or_past_end() {
+        let mut c = buf(b"ab");
+        assert_eq!(c.read_exact(0, 3), None);
+        assert_eq!(c.read_exact(1, 2), None);
+        assert_eq!(c.read_exact(2, 1), None);
+        assert_eq!(c.read_exact(3, 1), None);
+        let mut empty = buf(b"");
+        assert_eq!(empty.read_exact(0, 1), None);
+    }
+
+    #[test]
+    fn read_exact_none_when_request_crosses_a_page() {
+        let mut c = Windowed::new(b"0123456789abcdef", 4);
+        assert_eq!(c.read_exact(0, 4), Some(&b"0123"[..]));
+        assert_eq!(c.read_exact(4, 4), Some(&b"4567"[..]));
+        assert_eq!(c.read_exact(2, 4), None);
+        assert_eq!(c.read_exact(3, 2), None);
+        assert_eq!(c.read_exact(2, 2), Some(&b"23"[..]));
+    }
+
+    #[test]
+    fn read_into_copies_requested_bytes() {
+        let mut c = buf(b"abcdefgh");
+        let mut dest = [0u8; 5];
+        assert_eq!(c.read_into(1, 5, &mut dest), Some(5));
+        assert_eq!(&dest, b"bcdef");
+    }
+
+    #[test]
+    fn read_into_is_limited_by_count_buffer_and_remaining() {
+        let mut c = buf(b"abcdefgh");
+
+        let mut dest = [0u8; 8];
+        assert_eq!(c.read_into(0, 3, &mut dest), Some(3));
+        assert_eq!(&dest[..3], b"abc");
+        assert_eq!(&dest[3..], &[0, 0, 0, 0, 0]);
+
+        let mut dest = [0u8; 2];
+        assert_eq!(c.read_into(0, 10, &mut dest), Some(2));
+        assert_eq!(&dest, b"ab");
+
+        let mut dest = [0u8; 8];
+        assert_eq!(c.read_into(6, 10, &mut dest), Some(2));
+        assert_eq!(&dest[..2], b"gh");
+        assert_eq!(&dest[2..], &[0, 0, 0, 0, 0, 0]);
+    }
+
+    #[test]
+    fn read_into_zero_when_nothing_is_requested_or_at_end() {
+        let mut c = buf(b"ab");
+        let mut dest = [0xFFu8; 2];
+        assert_eq!(c.read_into(0, 0, &mut dest), Some(0));
+        assert_eq!(dest, [0xFF, 0xFF]);
+        assert_eq!(c.read_into(0, 2, &mut []), Some(0));
+        assert_eq!(c.read_into(2, 1, &mut dest), Some(0));
+        let mut empty = buf(b"");
+        assert_eq!(empty.read_into(0, 4, &mut dest), Some(0));
+        assert_eq!(empty.read_into(0, 0, &mut []), Some(0));
+    }
+
+    #[test]
+    fn read_into_none_when_offset_is_past_end() {
+        let mut c = buf(b"ab");
+        let mut dest = [0u8; 3];
+        assert_eq!(c.read_into(3, 1, &mut dest), None);
+        assert_eq!(c.read_into(99, 0, &mut []), None);
+        let mut empty = buf(b"");
+        assert_eq!(empty.read_into(1, 1, &mut dest), None);
+    }
+
+    #[test]
+    fn read_into_crosses_page_boundaries() {
+        let mut c = Windowed::new(&(0u8..16).collect::<Vec<_>>(), 4);
+        let mut dest = [0u8; 6];
+        assert_eq!(c.read_into(2, 6, &mut dest), Some(6));
+        assert_eq!(dest, [2, 3, 4, 5, 6, 7]);
+        let mut whole = [0u8; 16];
+        assert_eq!(c.read_into(0, 32, &mut whole), Some(16));
+        assert_eq!(whole, (0u8..16).collect::<Vec<_>>()[..]);
+        let mut tail = [0u8; 8];
+        assert_eq!(c.read_into(14, 8, &mut tail), Some(2));
+        assert_eq!(&tail[..2], &[14, 15]);
+    }
+
+    #[test]
+    fn read_byte_returns_the_byte_or_none() {
+        let mut c = buf(b"xyz");
+        assert_eq!(c.read_byte(0), Some(b'x'));
+        assert_eq!(c.read_byte(2), Some(b'z'));
+        assert_eq!(c.read_byte(4), None);
+    }
+
+    #[test]
+    fn read_unsigned_integers() {
+        let mut c = buf(&[0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08]);
+        assert_eq!(c.read_be_u16(0), Some(0x0102));
+        assert_eq!(c.read_le_u16(0), Some(0x0201));
+        assert_eq!(c.read_be_u32(0), Some(0x0102_0304));
+        assert_eq!(c.read_le_u32(0), Some(0x0403_0201));
+        assert_eq!(c.read_be_u64(0), Some(0x0102_0304_0506_0708));
+        assert_eq!(c.read_le_u64(0), Some(0x0807_0605_0403_0201));
+        assert_eq!(c.read_be_u16(6), Some(0x0708));
+        assert_eq!(c.read_le_u32(4), Some(0x0807_0605));
+    }
+
+    #[test]
+    fn read_signed_integers() {
+        let mut be = buf(&[0xFF, 0xFE, 0xFF, 0xFF, 0xFF, 0xFE, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFE]);
+        assert_eq!(be.read_be_i16(0), Some(-2));
+        assert_eq!(be.read_be_i32(2), Some(-2));
+        assert_eq!(be.read_be_i64(6), Some(-2));
+
+        let mut le = buf(&[0xFE, 0xFF, 0xFE, 0xFF, 0xFF, 0xFF, 0xFE, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]);
+        assert_eq!(le.read_le_i16(0), Some(-2));
+        assert_eq!(le.read_le_i32(2), Some(-2));
+        assert_eq!(le.read_le_i64(6), Some(-2));
+
+        let mut limits = buf(&[0x80, 0x00, 0x7F, 0xFF, 0x00, 0x80, 0xFF, 0x7F]);
+        assert_eq!(limits.read_be_i16(0), Some(i16::MIN));
+        assert_eq!(limits.read_be_i16(2), Some(i16::MAX));
+        assert_eq!(limits.read_le_i16(4), Some(i16::MIN));
+        assert_eq!(limits.read_le_i16(6), Some(i16::MAX));
+    }
+
+    #[test]
+    fn integer_reads_none_when_not_enough_bytes() {
+        let mut c = buf(&[0x01, 0x02, 0x03]);
+        assert_eq!(c.read_be_u16(0), Some(0x0102));
+        assert_eq!(c.read_be_u16(2), None);
+        assert_eq!(c.read_le_u16(2), None);
+        assert_eq!(c.read_be_u32(0), None);
+        assert_eq!(c.read_le_u32(0), None);
+        assert_eq!(c.read_be_u64(0), None);
+        assert_eq!(c.read_le_u64(0), None);
+        assert_eq!(c.read_be_i16(2), None);
+        assert_eq!(c.read_le_i16(2), None);
+        assert_eq!(c.read_be_i32(0), None);
+        assert_eq!(c.read_le_i32(0), None);
+        assert_eq!(c.read_be_i64(0), None);
+        assert_eq!(c.read_le_i64(0), None);
+        let mut empty = buf(b"");
+        assert_eq!(empty.read_be_u16(0), None);
+        assert_eq!(empty.read_le_i64(0), None);
+    }
+
+    #[test]
+    fn integer_reads_none_when_value_spans_a_page() {
+        let mut c = Windowed::new(&[0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08], 4);
+        assert_eq!(c.read_be_u16(0), Some(0x0102));
+        assert_eq!(c.read_be_u32(0), Some(0x0102_0304));
+        assert_eq!(c.read_be_u16(3), None);
+        assert_eq!(c.read_le_u32(2), None);
+        assert_eq!(c.read_be_u64(0), None);
+        let mut dest = [0u8; 2];
+        assert_eq!(c.read_into(3, 2, &mut dest), Some(2));
+        assert_eq!(dest, [0x04, 0x05]);
+    }
+
+    #[test]
+    fn methods_are_available_on_dyn_content() {
+        let mut owned = buf(&[0x00, 0x2A, 0x00, 0x01, 0x02, 0x03]);
+        let c: &mut dyn Content<bool> = &mut owned;
+        assert_eq!(c.read_byte(1), Some(42));
+        assert_eq!(c.read_be_u16(2), Some(0x0001));
+        assert_eq!(c.read_le_u32(2), Some(0x0302_0100));
+        let mut dest = [0u8; 3];
+        assert_eq!(c.read_into(3, 3, &mut dest), Some(3));
+        assert_eq!(&dest, &[0x01, 0x02, 0x03]);
+    }
+}
+
 mod filter {
     use crate::{ContentPath, Filter, FilterBuilder, Precedence};
 
