@@ -214,7 +214,7 @@ pub trait ContentReadExt<T: ContentType>: Content<T> {
     /// Reads a single byte at `offset`. Returns `None` if the content ends
     /// (or errors) before the byte is available.
     fn read_byte(&mut self, offset: u64) -> Option<u8> {
-        self.read(offset, 1).map(|b| b[0])
+        self.read_exact(offset, 1).map(|b| b[0])
     }
 
     /// Reads a 16-bit unsigned integer at `offset`. Returns `None` if the content ends
