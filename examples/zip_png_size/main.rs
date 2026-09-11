@@ -29,7 +29,7 @@ impl ContentIdentifier<MyTypes> for PngIdentifier {
 #[Dependencies(name = "PngAnalyzer")]
 struct PngAnalyzer;
 impl ContentAnalyzer<MyTypes> for PngAnalyzer {
-    fn analyze(&mut self, content: &mut dyn Content<MyTypes>, context: &mut Context<MyTypes>) -> AnalysisOutcome {
+    fn analyze(&mut self, content: &mut dyn Content<MyTypes>, context: &mut Context<MyTypes>) -> AnalysisOutcome<MyTypes> {
         context.local().set(var!("file_size"), content.size());
         let Some(d) = content.read(0, 24) else {
             return AnalysisOutcome::Continue;

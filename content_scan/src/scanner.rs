@@ -283,7 +283,7 @@ impl<T: ContentType, M: FindingMetadata> Scanner<T, M> {
                         next_action = result;
                         break;
                     }
-                    AnalysisOutcome::ReprocessAsType(ty) => panic!("This should not happen, the extractor should not return ReprocessAsType"),
+                    AnalysisOutcome::ReprocessAsType(_) => panic!("This should not happen, the extractor should not return ReprocessAsType"),
                 }
             }
             next_action

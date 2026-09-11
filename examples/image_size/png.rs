@@ -17,7 +17,7 @@ impl ContentIdentifier<ImageType> for PngIdentifier {
 #[Dependencies(name = "PngAnalyzer")]
 pub struct PngAnalyzer;
 impl ContentAnalyzer<ImageType> for PngAnalyzer {
-    fn analyze(&mut self, content: &mut dyn Content<ImageType>, context: &mut Context<ImageType>) -> AnalysisOutcome {
+    fn analyze(&mut self, content: &mut dyn Content<ImageType>, context: &mut Context<ImageType>) -> AnalysisOutcome<ImageType> {
         let Some(d) = content.read_exact(0, 24) else {
             return AnalysisOutcome::Continue;
         };

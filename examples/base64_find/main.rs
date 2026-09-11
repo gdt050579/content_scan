@@ -93,7 +93,7 @@ impl ContentIdentifier<MyTypes> for TextIdentifier {
 #[Dependencies(name = "Base64Finder")]
 struct Base64Finder;
 impl ContentAnalyzer<MyTypes> for Base64Finder {
-    fn analyze(&mut self, content: &mut dyn Content<MyTypes>, context: &mut Context<MyTypes>) -> AnalysisOutcome {
+    fn analyze(&mut self, content: &mut dyn Content<MyTypes>, context: &mut Context<MyTypes>) -> AnalysisOutcome<MyTypes> {
         let size = content.size();
         let mut pos = 0u64;
         while pos < size {
@@ -189,7 +189,7 @@ impl ExtractionSession<MyTypes> for Base64Session {
 #[Dependencies(name = "Base64DecodedAnalyzer")]
 struct Base64DecodedAnalyzer;
 impl ContentAnalyzer<MyTypes> for Base64DecodedAnalyzer {
-    fn analyze(&mut self, content: &mut dyn Content<MyTypes>, _: &mut Context<MyTypes>) -> AnalysisOutcome {
+    fn analyze(&mut self, content: &mut dyn Content<MyTypes>, _: &mut Context<MyTypes>) -> AnalysisOutcome<MyTypes> {
         let path = content.path().as_printable_string().to_string();
         let n = content.size().min(u32::MAX as u64) as u32;
         let buf = content.read(0, n).unwrap_or(&[]);

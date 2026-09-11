@@ -10,7 +10,7 @@ enum MyType {
 #[Dependencies(name = "VowelAnalyzer")]
 struct VowelAnalyzer;
 impl ContentAnalyzer<MyType> for VowelAnalyzer {
-    fn analyze(&mut self, content: &mut dyn Content<MyType>, context: &mut Context<MyType>) -> AnalysisOutcome {
+    fn analyze(&mut self, content: &mut dyn Content<MyType>, context: &mut Context<MyType>) -> AnalysisOutcome<MyType> {
         let sz = content.size();
         let mut count = 0u32;
         for i in 4..sz {

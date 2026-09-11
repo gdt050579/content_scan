@@ -12,7 +12,7 @@ enum MyTypes {
 #[Dependencies(name = "ComputeHashAnalyzer")]
 struct ComputeHashAnalyzer;
 impl ContentAnalyzer<MyTypes> for ComputeHashAnalyzer {
-    fn analyze(&mut self, content: &mut dyn Content<MyTypes>, context: &mut Context<MyTypes>) -> AnalysisOutcome {
+    fn analyze(&mut self, content: &mut dyn Content<MyTypes>, context: &mut Context<MyTypes>) -> AnalysisOutcome<MyTypes> {
         if content.content_type() == Some(MyTypes::Folder) {
             return AnalysisOutcome::Continue;
         }

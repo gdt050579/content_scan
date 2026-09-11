@@ -17,7 +17,7 @@ impl ContentIdentifier<ImageType> for BmpIdentifier {
 #[Dependencies(name = "BmpAnalyzer")]
 pub struct BmpAnalyzer;
 impl ContentAnalyzer<ImageType> for BmpAnalyzer {
-    fn analyze(&mut self, content: &mut dyn Content<ImageType>, context: &mut Context<ImageType>) -> AnalysisOutcome {
+    fn analyze(&mut self, content: &mut dyn Content<ImageType>, context: &mut Context<ImageType>) -> AnalysisOutcome<ImageType> {
         let Some(d) = content.read_exact(0, 26) else {
             return AnalysisOutcome::Continue;
         };
