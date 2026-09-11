@@ -139,6 +139,39 @@ pub trait ContentReadExt<T: ContentType>: Content<T> {
     fn read_byte(&mut self, offset: u64) -> Option<u8> {
         self.read(offset, 1).map(|b| b[0])
     }
+
+    /// Reads a 16-bit unsigned integer at `offset`. Returns `None` if the content ends
+    /// (or errors) before the integer is available.
+    fn read_u16(&mut self, offset: u64) -> Option<u16> {
+        self.read_exact(offset, 2).map(|b| u16::from_be_bytes([b[0], b[1]]))
+    }
+
+    /// Reads a 32-bit unsigned integer at `offset`. Returns `None` if the content ends
+    /// (or errors) before the integer is available.
+    fn read_u32(&mut self, offset: u64) -> Option<u32> {
+        self.read_exact(offset, 4).map(|b| u32::from_be_bytes([b[0], b[1], b[2], b[3]]))
+    }
+    
+    /// Reads a 64-bit unsigned integer at `offset`. Returns `None` if the content ends
+    /// (or errors) before the integer is available.
+    fn read_u64(&mut self, offset: u64) -> Option<u64> {
+        self.read_exact(offset, 8).map(|b| u64::from_be_bytes([b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]]))
+    }
+    /// Reads a 16-bit signed integer at `offset`. Returns `None` if the content ends
+    /// (or errors) before the integer is available.
+    fn read_i16(&mut self, offset: u64) -> Option<i16> {
+        self.read_exact(offset, 2).map(|b| i16::from_be_bytes([b[0], b[1]]))
+    }
+    /// Reads a 32-bit signed integer at `offset`. Returns `None` if the content ends
+    /// (or errors) before the integer is available.
+    fn read_i32(&mut self, offset: u64) -> Option<i32> {
+        self.read_exact(offset, 4).map(|b| i32::from_be_bytes([b[0], b[1], b[2], b[3]]))
+    }
+    /// Reads a 64-bit signed integer at `offset`. Returns `None` if the content ends
+    /// (or errors) before the integer is available.
+    fn read_i64(&mut self, offset: u64) -> Option<i64> {
+        self.read_exact(offset, 8).map(|b| i64::from_be_bytes([b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]]))
+    }
 }
 
 impl<T: ContentType, C: Content<T> + ?Sized> ContentReadExt<T> for C {}

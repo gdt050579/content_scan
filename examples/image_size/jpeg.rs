@@ -19,53 +19,43 @@ pub struct JpegAnalyzer;
 impl ContentAnalyzer<ImageType> for JpegAnalyzer {
     fn analyze(&mut self, content: &mut dyn Content<ImageType>, context: &mut Context<ImageType>) -> NextAction {
         let size = content.size();
-        let Some(soi) = content.read_exact(0, 2) else {
+        let Some(soi) = content.read_u16(0) else {
             return NextAction::Continue;
         };
-        if soi.len() < 2 || soi[0] != 0xFF || soi[1] != 0xD8 {
+        if soi != 0xFFD8 {
             return NextAction::Continue;
         }
 
-        let mut i = 2u64;        
+        let mut i = 2u64;
         while i + 9 < size {
-            let Some(b) = content.read(i, 1) else {
+            let Some(b) = content.read_byte(i) else {
                 break;
             };
-            if b.is_empty() {
-                break;
-            }
-            if b[0] != 0xFF {
+            if b != 0xFF {
                 i += 1;
                 continue; // skip padding
             }
 
-            let Some(mb) = content.read(i + 1, 1) else {
+            let Some(marker) = content.read_byte(i + 1) else {
                 break;
             };
-            if mb.is_empty() {
-                break;
-            }
-            let marker = mb[0];
-
             // SOF markers carry the dimensions; exclude DHT/DAC/DRI etc.
             let is_sof = matches!(
                 marker,
                 0xC0..=0xC3 | 0xC5..=0xC7 | 0xC9..=0xCB | 0xCD..=0xCF
             );
             if is_sof {
-                let Some(dim) = content.read(i + 5, 4) else {
+                let Some(h) = content.read_u16(i + 5) else {
                     break;
                 };
-                if dim.len() < 4 {
+                let Some(w) = content.read_u16(i + 7) else {
                     break;
-                }
-                let h = u16::from_be_bytes([dim[0], dim[1]]) as u32;
-                let w = u16::from_be_bytes([dim[2], dim[3]]);
+                };
                 context.local().set(
                     var!("size"),
                     Size {
                         width: w as u32,
-                        height: h,
+                        height: h as u32,
                     },
                 );
                 return NextAction::Continue;
@@ -77,14 +67,10 @@ impl ContentAnalyzer<ImageType> for JpegAnalyzer {
                 continue;
             }
 
-            let Some(lb) = content.read(i + 2, 2) else {
+            let Some(lb) = content.read_u16(i + 2) else {
                 break;
             };
-            if lb.len() < 2 {
-                break;
-            }
-            let len = u16::from_be_bytes([lb[0], lb[1]]) as u64;
-            i += 2 + len;
+            i += 2 + lb as u64;
         }
 
         NextAction::Continue
