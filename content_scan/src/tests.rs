@@ -1264,7 +1264,6 @@ mod request_extract {
         }
     }
 
-
     #[derive(Dependencies)]
     #[Dependencies(name = "RequestTwo")]
     struct RequestTwo(Ty, Ty);
@@ -1275,7 +1274,6 @@ mod request_extract {
             AnalysisOutcome::Continue
         }
     }
-
 
     #[derive(Dependencies)]
     #[Dependencies(name = "RequestSlice")]
@@ -1816,12 +1814,18 @@ mod dependencies {
 
     #[test]
     fn build_succeeds_when_required_analyzer_has_lower_priority() {
-        let _ = ScannerBuilder::new().add_analyzer(Ty::A, 0, Base).add_analyzer(Ty::A, 1, NeedsBase).build();
+        let _ = ScannerBuilder::new()
+            .add_analyzer(Ty::A, 0, Base)
+            .add_analyzer(Ty::A, 1, NeedsBase)
+            .build();
     }
 
     #[test]
     fn build_succeeds_when_dependency_is_on_another_type() {
-        let _ = ScannerBuilder::new().add_analyzer(Ty::A, 0, Base).add_analyzer(Ty::B, 10, NeedsBase).build();
+        let _ = ScannerBuilder::new()
+            .add_analyzer(Ty::A, 0, Base)
+            .add_analyzer(Ty::B, 10, NeedsBase)
+            .build();
     }
 
     #[test]
@@ -1857,20 +1861,320 @@ mod dependencies {
     #[cfg(debug_assertions)]
     #[should_panic(expected = "priority smaller")]
     fn build_panics_when_dependency_has_higher_priority() {
-        let _ = ScannerBuilder::new().add_analyzer(Ty::A, 5, Base).add_analyzer(Ty::A, 1, NeedsBase).build();
+        let _ = ScannerBuilder::new()
+            .add_analyzer(Ty::A, 5, Base)
+            .add_analyzer(Ty::A, 1, NeedsBase)
+            .build();
     }
 
     #[test]
     #[cfg(debug_assertions)]
     #[should_panic(expected = "priority smaller")]
     fn build_panics_when_dependency_has_equal_priority() {
-        let _ = ScannerBuilder::new().add_analyzer(Ty::A, 3, Base).add_analyzer(Ty::A, 3, NeedsBase).build();
+        let _ = ScannerBuilder::new()
+            .add_analyzer(Ty::A, 3, Base)
+            .add_analyzer(Ty::A, 3, NeedsBase)
+            .build();
     }
 
     #[test]
     #[cfg(debug_assertions)]
     #[should_panic(expected = "Dependency solo_analyzer not found")]
     fn build_panics_when_one_of_several_requires_is_missing() {
-        let _ = ScannerBuilder::new().add_analyzer(Ty::A, 0, Base).add_analyzer(Ty::A, 2, NeedsTwo).build();
+        let _ = ScannerBuilder::new()
+            .add_analyzer(Ty::A, 0, Base)
+            .add_analyzer(Ty::A, 2, NeedsTwo)
+            .build();
+    }
+}
+
+mod reprocess {
+    use crate::*;
+
+    /// Synthetic PE / .NET layout (not a real PE):
+    /// `[0..2]=MZ`, `[2]=1 CLR / 0 native`, `[3]=N`, then N `[len:u8][bytes]` blobs.
+    #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, ContentType)]
+    #[repr(u16)]
+    enum MyTypes {
+        Pe,
+        DotNet,
+        Resource,
+    }
+
+    fn make_dotnet(resources: &[&[u8]]) -> Vec<u8> {
+        let mut buf = vec![b'M', b'Z', 1, resources.len() as u8];
+        for resource in resources {
+            buf.push(resource.len() as u8);
+            buf.extend_from_slice(resource);
+        }
+        buf
+    }
+
+    fn make_native() -> Vec<u8> {
+        vec![b'M', b'Z', 0, 0]
+    }
+
+    struct PeIdentifier;
+    impl ContentIdentifier<MyTypes> for PeIdentifier {
+        fn identify_method(&self) -> Option<IdentifyMethod> {
+            Some(IdentifyMethod::Magic(b"MZ"))
+        }
+        fn validate(&self, content: &mut dyn Content<MyTypes>) -> bool {
+            matches!(content.read(0, 2), Some(b) if b.starts_with(b"MZ"))
+        }
+    }
+
+    #[derive(Dependencies)]
+    #[Dependencies(name = "PeHeader")]
+    struct PeHeaderAnalyzer;
+    impl ContentAnalyzer<MyTypes> for PeHeaderAnalyzer {
+        fn analyze(&mut self, content: &mut dyn Content<MyTypes>, context: &mut Context<MyTypes>) -> AnalysisOutcome<MyTypes> {
+            let _header = content.read(0, 4);
+            context.add_finding("pe:machine=x64", Some("PeHeader"), None);
+            AnalysisOutcome::Continue
+        }
+    }
+
+    #[derive(Dependencies)]
+    #[Dependencies(name = "PeSignature")]
+    struct PeSignatureAnalyzer;
+    impl ContentAnalyzer<MyTypes> for PeSignatureAnalyzer {
+        fn analyze(&mut self, _: &mut dyn Content<MyTypes>, context: &mut Context<MyTypes>) -> AnalysisOutcome<MyTypes> {
+            context.request_extract(MyTypes::Resource).at(0).len(4).emit();
+            AnalysisOutcome::Continue
+        }
+    }
+
+    #[derive(Dependencies)]
+    #[Dependencies(name = "DotNetDetector")]
+    struct DotNetDetector;
+    impl ContentAnalyzer<MyTypes> for DotNetDetector {
+        fn analyze(&mut self, content: &mut dyn Content<MyTypes>, _: &mut Context<MyTypes>) -> AnalysisOutcome<MyTypes> {
+            match content.read_byte(2) {
+                Some(1) => AnalysisOutcome::ReprocessAsType(MyTypes::DotNet),
+                _ => AnalysisOutcome::Continue,
+            }
+        }
+    }
+
+    #[derive(Dependencies)]
+    #[Dependencies(name = "DotNetAnalyzer")]
+    struct DotNetAnalyzer;
+    impl ContentAnalyzer<MyTypes> for DotNetAnalyzer {
+        fn analyze(&mut self, _: &mut dyn Content<MyTypes>, context: &mut Context<MyTypes>) -> AnalysisOutcome<MyTypes> {
+            context.add_finding("clr:runtime=v4", Some("DotNetAnalyzer"), None);
+            AnalysisOutcome::Continue
+        }
+    }
+
+    struct ManagedResourceExtractor;
+
+    struct ManagedResourceSession {
+        content: OwnedContentPtr<MyTypes>,
+        remaining: u8,
+        index: usize,
+        offset: u64,
+        current_blob: Vec<u8>,
+        entry: Entry,
+    }
+
+    impl ContentExtractor<MyTypes> for ManagedResourceExtractor {
+        fn create_session(&mut self, mut content: OwnedContentPtr<MyTypes>, _: &ExtractionContext) -> Option<Box<dyn ExtractionSession<MyTypes>>> {
+            let remaining = content.read_byte(3)?;
+            Some(Box::new(ManagedResourceSession {
+                content,
+                remaining,
+                index: 0,
+                offset: 4,
+                current_blob: Vec::new(),
+                entry: Entry::default(),
+            }))
+        }
+    }
+
+    impl ExtractionSession<MyTypes> for ManagedResourceSession {
+        fn advance(&mut self) -> Option<&Entry> {
+            if self.remaining == 0 {
+                return None;
+            }
+            let len = self.content.read_byte(self.offset)? as u64;
+            self.offset += 1;
+            let mut blob = vec![0u8; len as usize];
+            let n = self.content.read_into(self.offset, len as u32, &mut blob)?;
+            if n as u64 != len {
+                return None;
+            }
+            self.offset += len;
+            self.remaining -= 1;
+            self.current_blob = blob;
+            let path = format!("res://{}", self.index);
+            self.entry.path.set_from_str(&path);
+            self.entry.size = self.current_blob.len() as u64;
+            self.entry.skip_from_filtering = false;
+            self.index += 1;
+            Some(&self.entry)
+        }
+        fn extract(&mut self) -> Option<Box<dyn Content<MyTypes>>> {
+            let path = self.entry.path.as_printable_string().to_string();
+            Some(Box::new(BufferContent::<MyTypes>::from_parts(
+                std::mem::take(&mut self.current_blob),
+                path,
+                Some(MyTypes::Resource),
+            )))
+        }
+    }
+
+    /// Yields the window an analyzer requested via `request_extract(Resource)`.
+    /// Own-type passes on an already-extracted `Resource` are skipped.
+    struct ResourceSliceExtractor;
+
+    struct ResourceSliceSession {
+        content: OwnedContentPtr<MyTypes>,
+        offset: u64,
+        length: u64,
+        done: bool,
+        entry: Entry,
+    }
+
+    impl ContentExtractor<MyTypes> for ResourceSliceExtractor {
+        fn create_session(
+            &mut self,
+            content: OwnedContentPtr<MyTypes>,
+            extract_context: &ExtractionContext,
+        ) -> Option<Box<dyn ExtractionSession<MyTypes>>> {
+            let length = extract_context.length.unwrap_or(content.size().saturating_sub(extract_context.offset));
+            if length == 0 {
+                return None;
+            }
+            if extract_context.offset == 0 && length == content.size() {
+                return None;
+            }
+            Some(Box::new(ResourceSliceSession {
+                content,
+                offset: extract_context.offset,
+                length,
+                done: false,
+                entry: Entry::default(),
+            }))
+        }
+    }
+
+    impl ExtractionSession<MyTypes> for ResourceSliceSession {
+        fn advance(&mut self) -> Option<&Entry> {
+            if self.done {
+                return None;
+            }
+            self.done = true;
+            let path = format!("overlay@{}", self.offset);
+            self.entry.path.set_from_str(&path);
+            self.entry.size = self.length;
+            self.entry.skip_from_filtering = false;
+            Some(&self.entry)
+        }
+        fn extract(&mut self) -> Option<Box<dyn Content<MyTypes>>> {
+            let mut buf = vec![0u8; self.length as usize];
+            let n = self.content.read_into(self.offset, self.length as u32, &mut buf)?;
+            buf.truncate(n);
+            let path = format!("overlay@{}", self.offset);
+            Some(Box::new(BufferContent::<MyTypes>::from_parts(buf, path, Some(MyTypes::Resource))))
+        }
+    }
+
+    fn build_scanner(request_survives_reprocess: bool) -> Scanner<MyTypes, NoMetadata> {
+        let mut builder = ScannerBuilder::<MyTypes>::new()
+            .add_identifier(MyTypes::Pe, PeIdentifier)
+            .add_analyzer(MyTypes::Pe, 0, PeHeaderAnalyzer);
+        if request_survives_reprocess {
+            builder = builder
+                .add_analyzer(MyTypes::Pe, 5, PeSignatureAnalyzer)
+                .add_extractor(MyTypes::Resource, ResourceSliceExtractor);
+        }
+        builder
+            .add_analyzer(MyTypes::Pe, 10, DotNetDetector)
+            .add_analyzer(MyTypes::DotNet, 0, DotNetAnalyzer)
+            .add_extractor(MyTypes::DotNet, ManagedResourceExtractor)
+            .max_change_type(2)
+            .build()
+    }
+
+    fn finding_texts(res: &ScanResult<MyTypes>) -> Vec<String> {
+        res.findings().map(|f| f.finding().to_string()).collect()
+    }
+
+    fn children(res: &ScanResult<MyTypes>, parent: ScanContentHandle) -> Vec<(String, Option<MyTypes>)> {
+        let mut out = Vec::new();
+        let mut child = res.child(parent);
+        while let Some(h) = child {
+            out.push((res.path(h).unwrap_or("?").to_string(), res.content_type(h)));
+            child = res.next_sibling(h);
+        }
+        out
+    }
+
+    #[test]
+    fn pe_reprocesses_to_dotnet() {
+        let mut scanner = build_scanner(false);
+        let bytes = make_dotnet(&[b"RES01"]);
+        let mut content = BufferContent::<MyTypes>::new(&bytes, "sample.dll");
+        let res = scanner.scan(&mut content, true);
+
+        let root = res.root().unwrap();
+        assert_eq!(res.content_type(root), Some(MyTypes::DotNet));
+        assert_ne!(res.content_type(root), Some(MyTypes::Pe));
+
+        let texts = finding_texts(&res);
+        assert!(texts.contains(&"pe:machine=x64".to_string()), "{texts:?}");
+        assert!(texts.contains(&"clr:runtime=v4".to_string()), "{texts:?}");
+        for f in res.findings() {
+            assert_eq!(f.content_type(), Some(MyTypes::DotNet), "PE-pass findings stay on the retyped node");
+        }
+
+        assert_eq!(children(&res, root), vec![("res://0".into(), Some(MyTypes::Resource))]);
+        assert_eq!(res.objects_scanned(), 2);
+    }
+
+    #[test]
+    fn native_pe_does_not_reprocess() {
+        let mut scanner = build_scanner(false);
+        let mut content = BufferContent::<MyTypes>::new(&make_native(), "native.dll");
+        let res = scanner.scan(&mut content, true);
+
+        let root = res.root().unwrap();
+        assert_eq!(res.content_type(root), Some(MyTypes::Pe));
+        assert_eq!(finding_texts(&res), vec!["pe:machine=x64".to_string()]);
+        assert!(res.child(root).is_none());
+        assert_eq!(res.objects_scanned(), 1);
+    }
+
+    #[test]
+    fn requested_extract_survives_reprocess() {
+        let mut scanner = build_scanner(true);
+        let bytes = make_dotnet(&[b"RES01"]);
+        let mut content = BufferContent::<MyTypes>::new(&bytes, "sample.dll");
+        let res = scanner.scan(&mut content, true);
+
+        let root = res.root().unwrap();
+        assert_eq!(res.content_type(root), Some(MyTypes::DotNet));
+        assert_eq!(
+            children(&res, root),
+            vec![
+                ("overlay@0".into(), Some(MyTypes::Resource)),
+                ("res://0".into(), Some(MyTypes::Resource)),
+            ]
+        );
+
+        let root_findings: Vec<_> = res
+            .findings()
+            .filter(|f| f.path() == Some("sample.dll"))
+            .map(|f| (f.finding().to_string(), f.content_type()))
+            .collect();
+        assert_eq!(
+            root_findings,
+            vec![
+                ("pe:machine=x64".into(), Some(MyTypes::DotNet)),
+                ("clr:runtime=v4".into(), Some(MyTypes::DotNet)),
+            ]
+        );
+        assert!(res.findings().all(|f| f.path() != Some("overlay@0") || f.finding() != "clr:runtime=v4"));
     }
 }

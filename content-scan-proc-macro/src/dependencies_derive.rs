@@ -149,7 +149,9 @@ fn parse_attr_body(stream: TokenStream) -> Result<ParsedAttr, String> {
             _ => return Err(format!("expected `=` after `{key}` in Dependencies attribute")),
         }
 
-        let value = toks.get(i).ok_or_else(|| format!("expected value after `{key} =` in Dependencies attribute"))?;
+        let value = toks
+            .get(i)
+            .ok_or_else(|| format!("expected value after `{key} =` in Dependencies attribute"))?;
 
         match key.as_str() {
             "name" => {
@@ -198,7 +200,9 @@ fn parse_requires(value: &TokenTree) -> Result<Vec<String>, String> {
             }
             Ok(items)
         }
-        other => Err(format!("Dependencies `requires` must be a string or an array of strings, found `{other}`")),
+        other => Err(format!(
+            "Dependencies `requires` must be a string or an array of strings, found `{other}`"
+        )),
     }
 }
 

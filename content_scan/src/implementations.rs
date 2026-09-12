@@ -8,5 +8,5 @@ pub use buffer_content::BufferContent;
 pub use file_content::FileContent;
 pub use folder_content::FolderContent;
 pub use folder_extractor::FolderExtractor;
-pub use zip::ZipIdentifier;
 pub use zip::ZipExtractor;
+pub use zip::ZipIdentifier;

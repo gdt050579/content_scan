@@ -146,9 +146,16 @@ impl<T: ContentType, M: FindingMetadata> Scanner<T, M> {
                     ScanOutcome::Continue => {
                         if change_type_count < self.max_change_type {
                             content.as_mut().set_content_type(new_ty);
-                            if let Some(obj) = self.context.objects.get_mut(my_index as usize) {
+                            let parent_local = if let Some(obj) = self.context.objects.get_mut(my_index as usize) {
                                 obj.type_id = new_ty.as_u16();
-                            }
+                                obj.varmap_handle
+                            } else {
+                                None
+                            };
+                            // OnlyRequested children leave current_object_index on the last child.
+                            // Re-analysis must write findings/maps onto this same node.
+                            self.context.current_object_index = Some(my_index);
+                            self.context.local_varmap_handle = parent_local;
                             self.scan_object(content, Some(new_ty), depth, my_index, start_req_count, change_type_count + 1)
                         } else {
                             ScanOutcome::Continue

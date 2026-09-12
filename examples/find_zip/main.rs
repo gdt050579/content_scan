@@ -17,7 +17,7 @@ impl ContentAnalyzer<MyTypes> for ZipPrinter {
         AnalysisOutcome::Continue
     }
 }
- 
+
 fn main() {
     let path = match std::env::args().nth(1) {
         Some(p) => p,

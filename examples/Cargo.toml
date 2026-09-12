@@ -49,3 +49,7 @@ path = "find_zip/main.rs"
 [[example]]
 name = "zip_png_size"
 path = "zip_png_size/main.rs"
+
+[[example]]
+name = "pe_reprocess"
+path = "pe_reprocess/main.rs"

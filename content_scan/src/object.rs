@@ -4,7 +4,10 @@ pub(crate) struct ArenaIndex {
     pub(crate) size: u32,
 }
 impl ArenaIndex {
-    pub(crate) const INVALID: ArenaIndex = ArenaIndex { pos: u32::MAX, size: u32::MAX };
+    pub(crate) const INVALID: ArenaIndex = ArenaIndex {
+        pos: u32::MAX,
+        size: u32::MAX,
+    };
     #[inline(always)]
     pub(crate) fn is_valid(&self) -> bool {
         self.pos != u32::MAX

@@ -91,7 +91,10 @@ impl ExtractionSession<MyTypes> for NumericSession {
 struct NumericAnalyzer;
 impl ContentAnalyzer<MyTypes> for NumericAnalyzer {
     fn analyze(&mut self, content: &mut dyn Content<MyTypes>, context: &mut Context<MyTypes>) -> AnalysisOutcome<MyTypes> {
-        let value = std::str::from_utf8(content.read(0, content.size() as u32).unwrap()).unwrap().parse::<u32>().unwrap();
+        let value = std::str::from_utf8(content.read(0, content.size() as u32).unwrap())
+            .unwrap()
+            .parse::<u32>()
+            .unwrap();
         if !context.global().update(var!("sum"), |v: &mut u32| *v += value) {
             context.global().set(var!("sum"), value);
         }
