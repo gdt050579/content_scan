@@ -23,6 +23,11 @@ enum ScanOutcome {
     Exit,
 }
 
+enum RunExtractorsMethod {
+    All,
+    OnlyRequested,
+}
+
 /// The engine that drives a scan.
 ///
 /// A `Scanner` bundles together a set of
@@ -102,7 +107,7 @@ impl<T: ContentType, M: FindingMetadata> Scanner<T, M> {
         }
         ScanResult::new(&self.context)
     }
-    fn inner_scan(&mut self, mut content: ContentPtr<T>, depth: u32, parent_index: u32) -> ScanOutcome {
+    fn inner_scan(&mut self, content: ContentPtr<T>, depth: u32, parent_index: u32) -> ScanOutcome {
         self.context.local_varmap_handle = None; // so that next time someone ask for a local varmap, it will get one from the context varmap_pool
         self.context.current_object_index = None;
         let start_req_count = self.context.extraction_requests_stack.len();
@@ -111,46 +116,50 @@ impl<T: ContentType, M: FindingMetadata> Scanner<T, M> {
                 return ScanOutcome::Exit;
             }
         }
-        let (mut ty, my_index) = self.create_object(content, parent_index);
+        let (ty, my_index) = self.create_object(content, parent_index);
+        self.scan_object(content, ty, depth, my_index, start_req_count, 0)
+    }
+
+    fn scan_object(
+        &mut self,
+        mut content: ContentPtr<T>,
+        ty: Option<T>,
+        depth: u32,
+        my_index: u32,
+        start_req_count: usize,
+        change_type_count: u32,
+    ) -> ScanOutcome {
         if let Some(observer) = self.context.observer.as_mut() {
             observer.on_scan_object(content.as_ref().path().as_printable_string(), ty);
         }
-
-        let mut times = 0;
-        let mut response = loop {
-            let outcome = self.run_analyzers(content, ty);
-            match outcome {
-                AnalysisOutcome::ReprocessAsType(new_ty) => {
-                    let extr_response = self.run_extractors(content, ty, depth, my_index, start_req_count);
-                    self.restore_extraction_request_stack(start_req_count);
-                    if extr_response == ScanOutcome::Exit {
-                        return ScanOutcome::Exit;
+        let analysis_outcome = self.run_analyzers(content, ty);
+        let result = match analysis_outcome {
+            AnalysisOutcome::Continue => self.run_extractors(content, ty, depth, my_index, start_req_count, RunExtractorsMethod::All),
+            AnalysisOutcome::Skip => ScanOutcome::Continue,
+            AnalysisOutcome::Exit => ScanOutcome::Exit,
+            AnalysisOutcome::ReprocessAsType(new_ty) => {
+                let extr_response = self.run_extractors(content, ty, depth, my_index, start_req_count, RunExtractorsMethod::OnlyRequested);
+                self.restore_extraction_request_stack(start_req_count);
+                match extr_response {
+                    ScanOutcome::Skip => ScanOutcome::Skip,
+                    ScanOutcome::Exit => ScanOutcome::Exit,
+                    ScanOutcome::Continue => {
+                        if change_type_count < self.max_change_type {
+                            content.as_mut().set_content_type(new_ty);
+                            if let Some(obj) = self.context.objects.get_mut(my_index as usize) {
+                                obj.type_id = new_ty.as_u16();
+                            }
+                            self.scan_object(content, Some(new_ty), depth, my_index, start_req_count, change_type_count + 1)
+                        } else {
+                            ScanOutcome::Continue
+                        }
                     }
-                    ty = Some(new_ty);
-                    content.as_mut().set_content_type(new_ty);
-                    if let Some(obj) = self.context.objects.get_mut(my_index as usize) {
-                        obj.type_id = new_ty.as_u16();
-                    }
-                    times += 1;
-                    if times > self.max_change_type {
-                        break ScanOutcome::Continue;
-                    }
-                    continue;
                 }
-                AnalysisOutcome::Continue => break ScanOutcome::Continue,
-                AnalysisOutcome::Skip => break ScanOutcome::Skip,
-                AnalysisOutcome::Exit => break ScanOutcome::Exit,
             }
         };
-        if response == ScanOutcome::Continue {
-            response = self.run_extractors(content, ty, depth, my_index, start_req_count);
-        }
-        self.restore_extraction_request_stack(start_req_count);
-        match response {
-            ScanOutcome::Continue | ScanOutcome::Skip => ScanOutcome::Continue,
-            ScanOutcome::Exit => ScanOutcome::Exit,
-        }
+        result
     }
+
     fn create_object(&mut self, content: ContentPtr<T>, parent_index: u32) -> (Option<T>, u32) {
         let ty = self.retrieve_content_type(content);
 
@@ -205,17 +214,27 @@ impl<T: ContentType, M: FindingMetadata> Scanner<T, M> {
         }
         AnalysisOutcome::Continue
     }
-    fn run_extractors(&mut self, content: ContentPtr<T>, content_type: Option<T>, depth: u32, my_index: u32, start_req_index: usize) -> ScanOutcome {
-        // type-specific extractors
-        if let Some(ty) = content_type {
-            if let Some((start, end)) = self.extractors.range(ty) {
-                let res = self.extract_range(content, start, end, depth, my_index, None);
-                if matches!(res, ScanOutcome::Exit | ScanOutcome::Skip) {
-                    return res;
+    fn run_extractors(
+        &mut self,
+        content: ContentPtr<T>,
+        content_type: Option<T>,
+        depth: u32,
+        my_index: u32,
+        start_req_index: usize,
+        method: RunExtractorsMethod,
+    ) -> ScanOutcome {
+        // type-specific extractors (only if method is All)
+        if matches!(method, RunExtractorsMethod::All) {
+            if let Some(ty) = content_type {
+                if let Some((start, end)) = self.extractors.range(ty) {
+                    let res = self.extract_range(content, start, end, depth, my_index, None);
+                    if matches!(res, ScanOutcome::Exit | ScanOutcome::Skip) {
+                        return res;
+                    }
                 }
             }
         }
-        // run extraction requests
+        // run extraction requests (for both All and OnlyRequested methods)
         let req_count = self.context.extraction_requests_stack.len();
         for i in start_req_index..req_count {
             let ty = self.context.extraction_requests_stack[i].content_type;
