@@ -19,7 +19,6 @@ use std::marker::PhantomData;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Ord, PartialOrd)]
 enum ScanOutcome {
     Continue,
-    Skip,
     Exit,
 }
 
@@ -117,7 +116,9 @@ impl<T: ContentType, M: FindingMetadata> Scanner<T, M> {
             }
         }
         let (ty, my_index) = self.create_object(content, parent_index);
-        self.scan_object(content, ty, depth, my_index, start_req_count, 0)
+        let result = self.scan_object(content, ty, depth, my_index, start_req_count, 0);
+        self.restore_extraction_request_stack(start_req_count);
+        result
     }
 
     fn scan_object(
@@ -141,7 +142,6 @@ impl<T: ContentType, M: FindingMetadata> Scanner<T, M> {
                 let extr_response = self.run_extractors(content, ty, depth, my_index, start_req_count, RunExtractorsMethod::OnlyRequested);
                 self.restore_extraction_request_stack(start_req_count);
                 match extr_response {
-                    ScanOutcome::Skip => ScanOutcome::Skip,
                     ScanOutcome::Exit => ScanOutcome::Exit,
                     ScanOutcome::Continue => {
                         if change_type_count < self.max_change_type {
@@ -228,7 +228,7 @@ impl<T: ContentType, M: FindingMetadata> Scanner<T, M> {
             if let Some(ty) = content_type {
                 if let Some((start, end)) = self.extractors.range(ty) {
                     let res = self.extract_range(content, start, end, depth, my_index, None);
-                    if matches!(res, ScanOutcome::Exit | ScanOutcome::Skip) {
+                    if matches!(res, ScanOutcome::Exit) {
                         return res;
                     }
                 }
@@ -240,7 +240,7 @@ impl<T: ContentType, M: FindingMetadata> Scanner<T, M> {
             let ty = self.context.extraction_requests_stack[i].content_type;
             if let Some((start, end)) = self.extractors.range(ty) {
                 let res = self.extract_range(content, start, end, depth, my_index, Some(i as u32));
-                if matches!(res, ScanOutcome::Exit | ScanOutcome::Skip) {
+                if matches!(res, ScanOutcome::Exit) {
                     return res;
                 }
             } else {
@@ -309,7 +309,7 @@ impl<T: ContentType, M: FindingMetadata> Scanner<T, M> {
                 let result = self.extract_content(content, i, depth, parent_index, &ec_metadata);
                 match result {
                     ScanOutcome::Continue => continue,
-                    ScanOutcome::Exit | ScanOutcome::Skip => {
+                    ScanOutcome::Exit => {
                         next_action = result;
                         break;
                     }
@@ -368,7 +368,6 @@ impl<T: ContentType, M: FindingMetadata> Scanner<T, M> {
                     match result {
                         ScanOutcome::Continue => continue,
                         ScanOutcome::Exit => return ScanOutcome::Exit,
-                        ScanOutcome::Skip => return ScanOutcome::Continue,
                     }
                 }
             }
