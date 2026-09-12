@@ -49,6 +49,7 @@ pub struct Scanner<T: ContentType, M: FindingMetadata> {
     context: Context<T, M>,
     stop_condition: Option<Box<dyn StopCondition>>,
     max_depth: u32,
+    max_change_type: u32,
 }
 impl<T: ContentType, M: FindingMetadata> Scanner<T, M> {
     /// Scans a single top-level [`Content`] and returns the results.
@@ -115,6 +116,7 @@ impl<T: ContentType, M: FindingMetadata> Scanner<T, M> {
             observer.on_scan_object(content.as_ref().path().as_printable_string(), ty);
         }
 
+        let mut times = 0;
         let mut response = loop {
             let outcome = self.run_analyzers(content, ty);
             match outcome {
@@ -123,6 +125,10 @@ impl<T: ContentType, M: FindingMetadata> Scanner<T, M> {
                     content.as_mut().set_content_type(new_ty);
                     if let Some(obj) = self.context.objects.get_mut(my_index as usize) {
                         obj.type_id = new_ty.as_u16();
+                    }
+                    times += 1;
+                    if times > self.max_change_type {
+                        break ScanOutcome::Continue;
                     }
                     continue;
                 }
@@ -450,6 +456,7 @@ pub struct ScannerBuilder<T: ContentType, M: FindingMetadata = NoMetadata> {
     stop_condition: Option<Box<dyn StopCondition>>,
     observer: Option<Box<dyn ScanObserver<T, M>>>,
     max_depth: u32,
+    max_change_type: u32,
     store_findings: bool,
     _metadata: PhantomData<M>,
 }
@@ -463,6 +470,7 @@ impl<T: ContentType, M: FindingMetadata> ScannerBuilder<T, M> {
             stop_condition: None,
             observer: None,
             max_depth: 8,
+            max_change_type: 2,
             store_findings: true,
             _metadata: PhantomData,
         }
@@ -557,6 +565,19 @@ impl<T: ContentType, M: FindingMetadata> ScannerBuilder<T, M> {
     /// would exceed `max_depth`.
     pub fn max_depth(mut self, max_depth: u32) -> Self {
         self.max_depth = max_depth.clamp(1, u32::MAX - 2);
+        self
+    }
+
+    /// Sets the maximum number of times a content type can be changed per object.
+    ///
+    /// The value is clamped to `1..=T::COUNT`.
+    ///
+    /// This is useful to prevent infinite loops when a content type is changed
+    /// to a type that is not supported by the analyzer.
+    ///
+    /// The default value is **2**.
+    pub fn max_change_type(mut self, max_change_type: u32) -> Self {
+        self.max_change_type = max_change_type.clamp(1, T::COUNT as u32);
         self
     }
 
@@ -670,6 +691,7 @@ impl<T: ContentType, M: FindingMetadata> ScannerBuilder<T, M> {
             context: Context::new(self.observer, self.store_findings),
             max_depth: self.max_depth,
             stop_condition: self.stop_condition,
+            max_change_type: self.max_change_type,
         }
     }
 }
