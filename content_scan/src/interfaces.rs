@@ -8,8 +8,9 @@ use crate::OwnedContentPtr;
 /// Return value used by analyzers to steer the scan.
 ///
 /// [`ContentAnalyzer::analyze`] returns a `AnalysisOutcome` that tells the
-/// scanner whether to continue this object, skip the rest of it, or
-/// abort the entire scan. [`ContentExtractor`] and
+/// scanner whether to continue this object, skip the rest of it,
+/// abort the entire scan, or reprocess the same object as another
+/// type. [`ContentExtractor`] and
 /// [`ExtractionSession`] methods do not return this type: they yield
 /// [`Option`] at each session step.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -32,7 +33,12 @@ pub enum AnalysisOutcome<T: ContentType> {
     Exit,
     /// Reprocess the current content object as the given type.
     ///
-    /// The scanner will change the type of the current content and re-run the identifiers associated with the new type.
+    /// Remaining analyzers for this pass stop. The scanner runs **only
+    /// requested** extractors, then (if under
+    /// [`ScannerBuilder::max_change_type`](crate::ScannerBuilder::max_change_type))
+    /// calls [`Content::set_content_type`](crate::Content::set_content_type),
+    /// updates the tree node, and re-enters analysis. Identifiers are
+    /// not re-run.
     ReprocessAsType(T),
 }
 

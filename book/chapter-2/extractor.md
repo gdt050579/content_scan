@@ -2,7 +2,7 @@
 
 An extractor **produces children**. Identifiers name the parent; analyzers inspect it; extractors open it and yield new [`Content`](content.md) objects, which the scanner then runs through the same pipeline (filter → identify → analyze → extract) until [`max_depth`](../chapter-3/recursion.md).
 
-Extractors do not write the [`Context`](../chapter-4/context.md) and they do not return [`AnalysisOutcome`](analyzer.md#nextaction). They yield `Option`. Steering the scan is still the analyzers’ job.
+Extractors do not write the [`Context`](../chapter-4/context.md) and they do not return [`AnalysisOutcome`](analyzer.md#analysisoutcome). They yield `Option`. Steering the scan is still the analyzers’ job.
 
 You may register **many** extractors, including several for the same type. There is no generic extractor: every one is keyed by a `ContentType`.
 
@@ -33,12 +33,12 @@ Put a `pos` or a `ZipArchive` on the extractor itself and a nested extraction wi
 
 ## When an extractor runs
 
-An extractor registered for type `T` runs in two situations, **after** that object’s analyzers have finished (and only if they returned `Continue`, not `Skip` / `Exit`):
+An extractor registered for type `T` runs in two situations, **after** that object’s analyzers have finished:
 
-1. **The parent was identified as `T`.** `ExtractionContext` covers the whole object: `offset = 0`, `length = Some(content.size())`, `params = None`.
-2. **An analyzer requested `T`** with `context.request_extract(T)`. The parent does **not** need to have been identified as `T`. The context then carries that request’s offset, length, and params. See [Requesting extraction](requesting_extraction.md).
+1. **The parent was identified as `T`** — and analysis returned `Continue`. `ExtractionContext` covers the whole object: `offset = 0`, `length = Some(content.size())`, `params = None`.
+2. **An analyzer requested `T`** with `context.request_extract(T)` — on `Continue` (after own-type extractors) or on `ReprocessAsType` (instead of them). The parent does **not** need to have been identified as `T`. The context then carries that request’s offset, length, and params. See [Requesting extraction](requesting_extraction.md).
 
-Order: extractors for the object’s **own** type first (registration order), then requested types in **emit** order. Several extractors for the same type all run, in the order they were added — there is no priority byte.
+`Skip` / `Exit` skip extractors on this object. On `Continue`, order is own-type extractors first (registration order), then requested types in **emit** order. Several extractors for the same type all run, in the order they were added — there is no priority byte.
 
 ```rust
 .add_extractor(MyTypes::Zip, ZipExtractor::new())
@@ -185,4 +185,4 @@ The crate ships two extractors. Full behaviour is [Chapter 5](../chapter-5/built
 
 Each extracted child is a new object at `depth + 1`. Extraction stops when that next child would exceed `max_depth` (default 8; the root is depth 1). The filter, if any, is applied to each `Entry` unless `skip_from_filtering` is set. The root is filtered only when `scan(..., filter_root)` is `true` — [Recursion and filter_root](../chapter-3/recursion.md).
 
-That is the last of the three plugin kinds. [Extraction Context](extraction_context.md), [Requesting extraction](requesting_extraction.md), and [Extractions vs Context](extractions_vs_context.md) complete the picture. [Architecture](architecture.md) is the map; [How one scan runs](../chapter-3/how_one_scan_runs.md) is the same loop with every `Skip` / `Exit` / requested-extraction edge.
+That is the last of the three plugin kinds. [Extraction Context](extraction_context.md), [Requesting extraction](requesting_extraction.md), and [Extractions vs Context](extractions_vs_context.md) complete the picture. [Architecture](architecture.md) is the map; [How one scan runs](../chapter-3/how_one_scan_runs.md) is the same loop with every `Skip` / `Exit` / `ReprocessAsType` / requested-extraction edge.

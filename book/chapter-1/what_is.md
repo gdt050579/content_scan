@@ -63,11 +63,11 @@ The scanner:
 - Checks a [stop condition](../chapter-3/stop_condition.md) before identifying the next object.
 - Resolves the type, unless the content already reports one.
 - Runs type-specific analyzers, then generic analyzers.
-- Runs extractors for the resolved type, then any extra extractions analyzers requested.
+- Runs extractors for the resolved type, then any extra extractions analyzers requested — or, on `ReprocessAsType`, requested extractors only, then re-analyzes the same object as the new type (capped by `max_change_type`).
 - Recurses into children up to `max_depth`.
 - Records each object in a parent/child/sibling tree you can walk afterwards.
 
-Analyzers steer that process with `AnalysisOutcome`: continue this object, skip the rest of it, or abort the entire scan. A [`StopCondition`](../chapter-3/stop_condition.md) can abort as well, before the next object is even identified.
+Analyzers steer that process with `AnalysisOutcome`: continue this object, skip the rest of it, abort the entire scan, or reprocess the same object as another type. A [`StopCondition`](../chapter-3/stop_condition.md) can abort as well, before the next object is even identified.
 
 ## Who this book is for
 

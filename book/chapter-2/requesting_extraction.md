@@ -39,12 +39,14 @@ impl ContentAnalyzer<MyTypes> for PeAnalyzer {
 
 ## When it runs
 
-After **all** analyzers for the current object have returned `Continue`:
+After analyzers for the current object finish:
 
-1. Extractors registered for the object’s **own** identified type (whole object).
-2. Then, in **emission order**, extractors registered for each **requested** type, with that request’s `ExtractionContext`.
+1. On `Continue`: extractors registered for the object’s **own** identified type (whole object), then requested types in **emission order**.
+2. On `ReprocessAsType`: **only** requested types (own-type extractors for the old type are skipped). Then the same object may be re-analyzed as the new type — [How one scan runs](../chapter-3/how_one_scan_runs.md).
 
-`Skip` or `Exit` from an analyzer skips extractors on this object, including queued requests. Several requests (same or different types) may be emitted from one analyzer; each is independent. The queue is **cleared at the start of every object**, including nested children — a child does not inherit the parent’s requests.
+Each requested type runs with that request’s `ExtractionContext`.
+
+`Skip` or `Exit` from an analyzer skips extractors on this object, including queued requests. Several requests (same or different types) may be emitted from one analyzer; each is independent. The queue is **cleared at the start of every object**, including nested children — a child does not inherit the parent’s requests. After a `ReprocessAsType` re-enters analysis, new requests from that pass are independent of the ones already consumed.
 
 If nothing is registered for the requested type, the request is ignored (any param map is released). Register the extractor:
 

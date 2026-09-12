@@ -1,6 +1,6 @@
 # Analyzer
 
-An analyzer **inspects** an object that has already been through identification (or, for generic analyzers, any object) and **records** what it learned. It does not return “the scan result.” It writes into the [`Context`](../chapter-4/context.md) — maps, findings, extraction requests — and returns a [`AnalysisOutcome`](#nextaction) that steers the rest of *this* object.
+An analyzer **inspects** an object that has already been through identification (or, for generic analyzers, any object) and **records** what it learned. It does not return “the scan result.” It writes into the [`Context`](../chapter-4/context.md) — maps, findings, extraction requests — and returns a [`AnalysisOutcome`](#analysisoutcome) that steers the rest of *this* object.
 
 You may register **many** analyzers, including several for the same type. That is how a PE scan can parse headers in one plugin and extract icons in another, without either pretending to be a monolith.
 
@@ -35,15 +35,18 @@ The value you pass to `add_analyzer` is **your instance**. Construction happens 
 
 Only analyzers return this. Extractors yield `Option`.
 
-| Value | Effect |
-| --- | --- |
-| `Continue` | Next analyzer for this object; after the last one, extractors. |
-| `Skip` | Stop **this** object: remaining analyzers and extractors on it do not run. Siblings and later objects still scan. |
-| `Exit` | Abort the **entire** scan. The call stack unwinds back to `scan()`. |
+| Value                 | Effect                                                                                                                                                                                                                                          |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Continue`            | Next analyzer for this object; after the last one, own-type extractors then requested extractors.                                                                                                                                               |
+| `Skip`                | Stop **this** object: remaining analyzers and extractors on it do not run. Siblings and later objects still scan.                                                                                                                               |
+| `Exit`                | Abort the **entire** scan. The call stack unwinds back to `scan()`.                                                                                                                                                                             |
+| `ReprocessAsType(ty)` | Stop remaining analyzers for this pass. Run **only requested** extractors, then (if under [`max_change_type`](../chapter-3/builder.md), default **2**) assign `ty` on the **same** tree node and re-enter analysis. Identifiers are not re-run. |
 
-`Skip` is “I am done with this file.” `Exit` is “stop everything.” Default to `Continue`.
+`Skip` is “I am done with this file.” `Exit` is “stop everything.” `ReprocessAsType` is “this object is actually another type — finish queued extractions, then analyze it as that.” Default to `Continue`.
 
-Aborting from **outside** the analyzer (timeout, cancel button) is a [`StopCondition`](../chapter-3/stop_condition.md), not `AnalysisOutcome`. That check runs before the object is identified; `Exit` from `analyze` runs after it is already in the tree.
+A **typed** analyzer that returns `ReprocessAsType` also skips the generic bucket for this pass. A **generic** analyzer that returns `ReprocessAsType` is currently treated as `Continue`. Over `max_change_type`, reprocessing stops and the object keeps its current type.
+
+Aborting from **outside** the analyzer (timeout, cancel button) is a [`StopCondition`](../chapter-3/stop_condition.md), not `AnalysisOutcome`. That check runs before the object is identified; `Exit` / `ReprocessAsType` from `analyze` run after it is already in the tree. `ReprocessAsType` does not re-check the stop condition.
 
 ## Writing the context for another analyzer
 
@@ -183,10 +186,10 @@ A PE header analyzer is **typed**: it only makes sense on `MyTypes::Pe`. A signa
 
 ## Requesting extraction
 
-An analyzer that finds nested content of **another** type — an embedded ZIP inside a PE — does not unpack it itself. It calls `context.request_extract(MyTypes::Zip).at(offset).len(len).emit()`. After this object’s analyzers finish, extractors registered for `Zip` run on that window. That mechanism is [Requesting extraction](requesting_extraction.md). Small structs for the next analyzer stay in the scan context instead — [Extractions vs Context](extractions_vs_context.md).
+An analyzer that finds nested content of **another** type — an embedded ZIP inside a PE — does not unpack it itself. It calls `context.request_extract(MyTypes::Zip).at(offset).len(len).emit()`. After this object’s analyzers finish (`Continue`, or `ReprocessAsType` for requested extractors only), extractors registered for `Zip` run on that window. That mechanism is [Requesting extraction](requesting_extraction.md). Small structs for the next analyzer stay in the scan context instead — [Extractions vs Context](extractions_vs_context.md). To make the **parent** a ZIP instead of opening a window, return `ReprocessAsType(MyTypes::Zip)`.
 
 ## What this page leaves out
 
 - Full `var!` / `VarMap` / result-tree APIs — [Chapter 4](../chapter-4/context.md).
-- `Skip` / `Exit` versus nested extraction sessions — [How one scan runs](../chapter-3/how_one_scan_runs.md).
+- `Skip` / `Exit` / `ReprocessAsType` versus nested extraction sessions — [How one scan runs](../chapter-3/how_one_scan_runs.md).
 - The `#[Dependencies]` attribute, debug checks, and the global name space — [Dependencies](dependencies.md).

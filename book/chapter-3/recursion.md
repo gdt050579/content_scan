@@ -18,6 +18,8 @@ For a directory walk, depth is nesting of folders (plus files as the last step).
 
 Hitting the cap is silent: the parent is still analyzed; no further children are opened. Raise it for deep trees (`md5` example uses 64). Depth `1` means “this object only, never extract.”
 
+`max_change_type` is a different cap: how many times **one object** may [`ReprocessAsType`](../chapter-2/analyzer.md#analysisoutcome) (default **2**). It does not add depth. See [Builder](builder.md) and [How one scan runs](how_one_scan_runs.md).
+
 ## `filter_root`
 
 ```rust

@@ -75,7 +75,7 @@ A few things to notice:
 
 - `content.read(offset, count)` returns a borrowed slice, or `None` if that window cannot be read.
 - `context.global()` is a scan-wide [`VarMap`](../chapter-4/global_vs_local.md). `var!("count_vowels")` is a compile-time typed key.
-- `AnalysisOutcome::Continue` means “keep going on this object” (remaining analyzers, then extractors). `Skip` stops this object; `Exit` aborts the whole scan.
+- `AnalysisOutcome::Continue` means “keep going on this object” (remaining analyzers, then extractors). `Skip` stops this object; `Exit` aborts the whole scan; `ReprocessAsType` re-analyzes the same object as another type (see [Analyzer](../chapter-2/analyzer.md#analysisoutcome)).
 
 ## 4. Build the scanner and run it
 

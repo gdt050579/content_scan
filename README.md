@@ -515,13 +515,14 @@ enum MyTypes {
 ```rust
 pub trait Content<T: ContentType> {
     fn content_type(&self) -> Option<T> { None }
+    fn set_content_type(&mut self, ty: T);
     fn path(&self) -> &ContentPath;
     fn size(&self) -> u64;
     fn read(&mut self, offset: u64, count: u32) -> Option<&[u8]>;
 }
 ```
 
-A `Content` is any addressable byte source. It exposes a [`ContentPath`](#contentpath) (used for identification, filtering, and display), a `size`, and a `read(offset, count)` method that returns a borrowed slice.
+A `Content` is any addressable byte source. It exposes a [`ContentPath`](#contentpath) (used for identification, filtering, and display), a `size`, and a `read(offset, count)` method that returns a borrowed slice. `set_content_type` is what the scanner calls when an analyzer returns [`ReprocessAsType`](#contentanalyzer); built-in contents store the new type so the next analysis pass skips identifiers.
 
 Three implementations ship with the crate — an in-memory one, a file-backed one, and a directory marker:
 
@@ -665,9 +666,10 @@ pub trait ContentAnalyzer<T: ContentType, M: FindingMetadata = NoMetadata>: Depe
 
 Analyzers inspect content and write results into the shared `Context`. Use `context.local()` for per-object `VarMap`s, `context.global()` for scan-wide aggregates, and `context.add_finding(...)` for a flat list of [`Finding`](#findings)s. To pull nested content out of the current object using extractors registered for a **different** type — for example an analyzer that locates an embedded ZIP and wants the Zip extractor to open it — call `context.request_extract(ty)` and [emit an extraction request](#requesting-extraction). Only analyzers return `AnalysisOutcome`; that value controls the rest of **this** object:
 
-- `AnalysisOutcome::Continue` — run the next analyzer for this object; after the last analyzer, run extractors.
+- `AnalysisOutcome::Continue` — run the next analyzer for this object; after the last analyzer, run own-type extractors then requested extractors.
 - `AnalysisOutcome::Skip` — stop this object: do not run remaining analyzers or any extractors on it. Siblings and later objects still scan.
 - `AnalysisOutcome::Exit` — abort the entire scan.
+- `AnalysisOutcome::ReprocessAsType(ty)` — stop remaining analyzers for this pass, run **only requested** extractors, then (if this object has changed type fewer times than [`max_change_type`](#scanner--scannerbuilder), default **2**) assign `ty` on the **same** tree node and re-run typed + generic analyzers. Identifiers are not re-run. A generic analyzer that returns this is currently treated as `Continue`.
 
 Register analyzers with:
 
@@ -696,7 +698,7 @@ pub struct Entry {
 
 Extractors turn a container into a stream of children. The scanner calls `create_session` once per parent; the returned [`ExtractionSession`](#extractionsession) then enumerates children. Methods return `Option` — they do **not** return `AnalysisOutcome` and cannot Skip or Exit on their own.
 
-`create_session` is called after that object's analyzers have run. It receives:
+`create_session` is called after that object's analyzers have run (`Continue`: own-type then requested extractors; `ReprocessAsType`: requested extractors only). It receives:
 
 - an [`OwnedContentPtr`](#ownedcontentptr) to the parent — store it on the session if `advance` / `extract` need to read the parent;
 - an [`ExtractionContext`](#extractioncontext) describing the region to look at (`offset`, optional `length`, optional `params`). Copy those fields into the session; the context is only valid for this call.
@@ -849,10 +851,12 @@ Builder methods:
 | `param(key, value)` | Adds one extractor-specific parameter. The first call reserves a pooled `VarMap`; later calls write into the same map. A request with no `.param()` carries no map (`params = None`). |
 | `emit()` | Commits the request. Required — the builder is `#[must_use]`. |
 
-After this object's analyzers finish, the scanner:
+After this object's analyzers finish with `Continue`, the scanner:
 
 1. Runs extractors registered for the object's **own** identified type (whole object).
 2. Then, in emission order, runs extractors registered for each **requested** type on the same parent, with that request's `ExtractionContext`.
+
+`Skip` or `Exit` skips extractors on this object, including queued requests. `ReprocessAsType` runs **only** the requested extractors (own-type extractors for the old type are skipped), then may re-analyze the same object as the new type.
 
 The current object does not need to have been identified as the requested type. Several requests (of the same or different types) may be emitted from one analyzer; each is independent. Nested child scans start with an empty request queue.
 
@@ -939,6 +943,7 @@ Assemble a scanner with `ScannerBuilder`:
 let scanner = ScannerBuilder::<MyType>::new()
     .filter(filter)                                   // optional
     .max_depth(8)                                     // default: 8
+    .max_change_type(2)                               // default: 2
     .add_identifier(MyType::Text, TextIdentifier {})
     .add_analyzer(MyType::Text, 0, MyAnalyzer {})
     .add_generic_analyzer(10, LoggingAnalyzer {})
@@ -953,6 +958,8 @@ let result: ScanResult = scanner.scan(&mut content, /* filter_root */ true);
 ```
 
 `max_depth` limits how deep the scanner is allowed to recurse into extracted children (default `8`, minimum `1`). The root is depth `1`; a child of a depth-`N` object is depth `N + 1`. Extraction stops when that next child would exceed `max_depth`, so `max_depth(8)` visits at most eight objects on any path.
+
+`max_change_type` limits how many times one object may [`ReprocessAsType`](#contentanalyzer) (default `2`, clamped to `1..=T::COUNT`). Each accepted change assigns the new type on the same tree node and re-runs analyzers; identifiers are not re-run. Over the cap, reprocessing stops and the object keeps its current type.
 
 The second argument to `scan` decides whether the configured `Filter` is applied to the root object itself. Pass `true` for a normal file — the scan then returns an empty `ScanResult` if the filter rejects it. Pass `false` when the root is a container that the filter was never written to accept, such as a folder being walked with a filter that only allows `png` files. Extracted children are always filtered regardless of this flag (unless their `Entry` opts out via `skip_from_filtering`).
 
@@ -969,7 +976,7 @@ The `Context` passed to analyzers (from the [`varmap`](https://crates.io/crates/
 - `context.global()` — persists for the entire `scan()` call. Use it to accumulate results across all analyzed objects.
 - `context.local()` — per-object scratch storage. The first call from an analyzer on a given object lazily grabs a `VarMap` from an internal pool, clears it, and attaches it to that object; subsequent calls (from other analyzers running on the same object) return the same map. It is kept alive after the scan and can be looked up on the corresponding `ScanContentHandle` via `ScanResult::local(handle)`.
 - `context.add_finding(text, source, metadata)` — records a [`Finding`](#findings) on the current object. After the scan, iterate them with `res.findings()`.
-- `context.request_extract(ty)` — queues an extra extraction pass: after this object's own extractors run, the scanner will run extractors registered for `ty` on the current content. See [Requesting extraction](#requesting-extraction). The request queue is cleared at the start of every object's scan, including nested children.
+- `context.request_extract(ty)` — queues an extra extraction pass. On `Continue`, those extractors run after this object's own extractors; on `ReprocessAsType`, they run instead. See [Requesting extraction](#requesting-extraction). The request queue is cleared at the start of every object's scan, including nested children.
 
 `context.objects_scanned()` returns how many objects have been visited so far.
 
@@ -1122,17 +1129,20 @@ For every scanned object, the scanner performs the following steps (see [`conten
    4. identifiers that returned `None` from `identify_method` (each `validate()` is tried in registration order).
 
    Each fast-matcher candidate is confirmed via the corresponding identifier's `validate()` method. Custom identifiers have no pre-filter; `validate()` is the identification.
-3. **Type-specific analyzers** for the resolved type run in priority order. They may write `VarMap`s, emit [`Finding`](#findings)s via `context.add_finding`, or queue extra extraction.
-4. **Generic analyzers** run for every object in priority order (same recording APIs).
-5. **Type-specific extractors** for the resolved type run in registration order (`create_session` → `advance`/`extract` loop; the session is dropped when the loop ends). Each `create_session` receives an `OwnedContentPtr` to the parent and an `ExtractionContext` covering the whole object (`offset = 0`, `length = Some(size)`, `params = None`). For each entry they emit, the scanner recurses (subject to `max_depth` and `Filter`). Entries marked `skip_from_filtering` bypass the `Filter` check.
-6. **Extraction requests** queued by analyzers via `context.request_extract(ty)` then run, in emission order. For each request the extractors registered for `ty` run on the **same** parent, with that request's offset, length, and params. The parent does not need to have been identified as `ty`.
+3. **Record.** The object is appended to `Context::objects` — interned from `ContentPath::as_printable_string()`, tagged with the resolved type, and linked into its parent's child list — *before* analyzers run.
+4. **Type-specific analyzers** for the current type run in priority order. They may write `VarMap`s, emit [`Finding`](#findings)s via `context.add_finding`, queue extra extraction, or return a steering [`AnalysisOutcome`](#contentanalyzer).
+5. **Generic analyzers** run for every object in priority order (same recording APIs), unless a typed analyzer already returned `Skip`, `Exit`, or `ReprocessAsType`.
+6. **Type-specific extractors** for the resolved type run in registration order **only if analysis returned `Continue`** (`create_session` → `advance`/`extract` loop; the session is dropped when the loop ends). Each `create_session` receives an `OwnedContentPtr` to the parent and an `ExtractionContext` covering the whole object (`offset = 0`, `length = Some(size)`, `params = None`). For each entry they emit, the scanner recurses (subject to `max_depth` and `Filter`). Entries marked `skip_from_filtering` bypass the `Filter` check.
+7. **Extraction requests** queued by analyzers via `context.request_extract(ty)` then run, in emission order — after own-type extractors on `Continue`, or **alone** on `ReprocessAsType`. For each request the extractors registered for `ty` run on the **same** parent, with that request's offset, length, and params. The parent does not need to have been identified as `ty`.
+8. **`ReprocessAsType`.** After those requested extractors, if this object has changed type fewer times than `max_change_type`, the scanner calls `set_content_type`, updates the tree node's `type_id`, and re-enters analysis on the **same** node (steps 4–7). Identifiers, the filter, and the stop condition are not re-run. Over the cap, the object keeps its current type.
 
-While this is happening, the scanner also **records the object** into `Context::objects` — interned from `ContentPath::as_printable_string()` into an internal arena, tagged with the resolved content type, and linked into its parent's child list. Findings emitted during the analyzer steps are appended to the same `Context` and later exposed through [`ScanResult::findings`](#findings). After `scan()` returns, the tree is available through [`ScanResult`](#navigating-the-scan-result-tree).
+Findings emitted during the analyzer steps are appended to the same `Context` and later exposed through [`ScanResult::findings`](#findings). After `scan()` returns, the tree is available through [`ScanResult`](#navigating-the-scan-result-tree).
 
 Only **analyzers** return `AnalysisOutcome`. Extractor and session methods return `Option` (`create_session` / `advance` / `extract`); they cannot short-circuit the scan themselves.
 
 - Analyzer `Skip` on an object stops remaining analyzers and extractors **on that object**. The scanner maps that Skip to `Continue` for the parent, so the session that produced the object keeps enumerating siblings.
 - Analyzer `Exit` aborts the whole scan. The extraction session that produced the current object is dropped as the call stack unwinds; remaining extractors on ancestors do not run.
+- Analyzer `ReprocessAsType(ty)` stops remaining analyzers for this pass, runs requested extractors, then re-analyzes the same object as `ty` (capped by `max_change_type`). A child's `ReprocessAsType` does not end the parent session.
 
 ---
 

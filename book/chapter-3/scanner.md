@@ -1,12 +1,12 @@
 # Scanner
 
-The `Scanner` is the pipeline engine. It owns the plugins, the optional filter, [`observer`](observer.md), [`stop condition`](stop_condition.md), `max_depth`, and the [`Context`](../chapter-4/context.md) that a scan fills. You do not construct one by hand: [`ScannerBuilder`](builder.md) does that. You drive it with `scan()`.
+The `Scanner` is the pipeline engine. It owns the plugins, the optional filter, [`observer`](observer.md), [`stop condition`](stop_condition.md), `max_depth`, `max_change_type`, and the [`Context`](../chapter-4/context.md) that a scan fills. You do not construct one by hand: [`ScannerBuilder`](builder.md) does that. You drive it with `scan()`.
 
 ```rust
 let result = scanner.scan(&mut content, /* filter_root */ true);
 ```
 
-What happens inside one call is [How one scan runs](how_one_scan_runs.md). This chapter is how you assemble the engine, how you reuse it, and the knobs that most people get wrong: the [filter](filter.md), [`filter_root` / `max_depth`](recursion.md), plus the optional [observer](observer.md) and [stop condition](stop_condition.md).
+What happens inside one call is [How one scan runs](how_one_scan_runs.md). This chapter is how you assemble the engine, how you reuse it, and the knobs that most people get wrong: the [filter](filter.md), [`filter_root` / `max_depth`](recursion.md), `max_change_type`, plus the optional [observer](observer.md) and [stop condition](stop_condition.md).
 
 ## Create once, scan many times
 
@@ -65,6 +65,7 @@ The second argument is **not** “enable the filter.” Children are always filt
 | Stop condition      | Optional; abort before the next object is identified        |
 | Store Findings Flag | Keep findings for `ScanResult::findings()` (default `true`) |
 | Max depth           | Recursion cap (default 8)                                   |
+| Max change type     | Cap on `ReprocessAsType` per object (default 2)             |
 | Context             | Cleared every `scan()`; borrowed as `ScanResult`            |
 
 You never construct a `Context`. Analyzers receive `&mut Context` during the scan; after `scan()` you read the same data through `ScanResult`.
@@ -76,4 +77,4 @@ You never construct a `Context`. Analyzers receive `&mut Context` during the sca
 - [Observer](observer.md) — live callbacks; `store_findings`.
 - [Stop condition](stop_condition.md) — abort the scan from outside the analyzer.
 - [Recursion and filter_root](recursion.md) — depth, the root flag, `skip_from_filtering`.
-- [How one scan runs](how_one_scan_runs.md) — `inner_scan` / `extract_content`: `Skip`, `Exit`, observer, stop condition, requested extractors, `max_depth`.
+- [How one scan runs](how_one_scan_runs.md) — `inner_scan` / `scan_object` / `extract_content`: `Skip`, `Exit`, `ReprocessAsType`, observer, stop condition, requested extractors, `max_depth`, `max_change_type`.

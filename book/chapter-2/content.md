@@ -14,17 +14,19 @@ Two child pages cover the type parameter and the name of an object:
 ```rust
 pub trait Content<T: ContentType> {
     fn content_type(&self) -> Option<T> { None }
+    fn set_content_type(&mut self, ty: T);
     fn path(&self) -> &ContentPath;
     fn size(&self) -> u64;
     fn read(&mut self, offset: u64, count: u32) -> Option<&[u8]>;
 }
 ```
 
-Four methods, on purpose. The scanner, the filter, identifiers, analyzers, and extractors all work from this surface.
+Five methods, on purpose. The scanner, the filter, identifiers, analyzers, and extractors all work from this surface.
 
 | Method                | Role                                                                                                                 |
 | --------------------- | -------------------------------------------------------------------------------------------------------------------- |
 | `content_type()`      | `Some(ty)` pins the type and **skips identifiers**. `None` (the default) means the scanner must identify the object. |
+| `set_content_type(ty)` | The scanner calls this on [`ReprocessAsType`](analyzer.md#analysisoutcome). Built-in contents store `ty` so the next analysis pass skips identifiers. |
 | `path()`              | Name used by the filter, by name/extension identification, and interned into the result tree.                        |
 | `size()`              | Total byte length. Directories report `0`.                                                                           |
 | `read(offset, count)` | Random-access window into the bytes. Returns a slice borrowed from `self`.                                           |

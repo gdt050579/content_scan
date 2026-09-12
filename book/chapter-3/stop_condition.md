@@ -10,7 +10,7 @@ pub trait StopCondition {
 }
 ```
 
-The default never stops. `should_stop` is checked at the **start of every content object**, in `inner_scan`, **before** identification and analysis. When it returns `true`, that object is **not** recorded. The scanner unwinds with `AnalysisOutcome::Exit` and `scan()` returns the [`ScanResult`](../chapter-4/scan_result.md) accumulated so far. Objects already in the tree stay there.
+The default never stops. `should_stop` is checked at the **start of every content object**, in `inner_scan`, **before** identification and analysis. When it returns `true`, that object is **not** recorded. The scanner unwinds with the same abort as [`AnalysisOutcome::Exit`](../chapter-2/analyzer.md#analysisoutcome) and `scan()` returns the [`ScanResult`](../chapter-4/scan_result.md) accumulated so far. Objects already in the tree stay there. A later `ReprocessAsType` on an object that *was* recorded does **not** re-check the stop condition.
 
 ```rust
 struct Deadline(std::time::Instant);
@@ -30,7 +30,7 @@ An [`observer`](observer.md) still gets `on_end` after an abort. It does **not**
 
 ## Versus `AnalysisOutcome::Exit`
 
-Analyzers can already abort with [`AnalysisOutcome::Exit`](../chapter-2/analyzer.md#nextaction). Use that when **the plugin** decides the scan is done (signature hit, corrupt container, budget it tracks in the [`Context`](../chapter-4/context.md)).
+Analyzers can already abort with [`AnalysisOutcome::Exit`](../chapter-2/analyzer.md#analysisoutcome). Use that when **the plugin** decides the scan is done (signature hit, corrupt container, budget it tracks in the [`Context`](../chapter-4/context.md)).
 
 Use a stop condition when the decision is **not** tied to the current file’s analysis:
 
@@ -78,4 +78,4 @@ There is no API to replace the condition after `build()`. Plan the sharing (or r
 
 ## Where it sits in the loop
 
-[How one scan runs](how_one_scan_runs.md) is the full control flow. In short: `on_begin` → optional root filter → `inner_scan` (stop check → identify → analyze → extract) → `on_end`. Hitting the stop check is the same unwind as an analyzer `Exit`, minus the current object.
+[How one scan runs](how_one_scan_runs.md) is the full control flow. In short: `on_begin` → optional root filter → `inner_scan` (stop check → identify → `scan_object`) → `on_end`. Hitting the stop check is the same unwind as an analyzer `Exit`, minus the current object.
