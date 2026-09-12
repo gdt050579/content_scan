@@ -121,6 +121,11 @@ impl<T: ContentType, M: FindingMetadata> Scanner<T, M> {
             let outcome = self.run_analyzers(content, ty);
             match outcome {
                 AnalysisOutcome::ReprocessAsType(new_ty) => {
+                    let extr_response = self.run_extractors(content, ty, depth, my_index, start_req_count);
+                    self.restore_extraction_request_stack(start_req_count);
+                    if extr_response == ScanOutcome::Exit {
+                        return ScanOutcome::Exit;
+                    }
                     ty = Some(new_ty);
                     content.as_mut().set_content_type(new_ty);
                     if let Some(obj) = self.context.objects.get_mut(my_index as usize) {
