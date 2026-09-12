@@ -2,7 +2,7 @@
 
 The scanner is a dispatcher. It does not know what a PNG is, or how to unpack a ZIP. It knows *when* to call your plugins, *in what order*, and *where those plugins are allowed to leave results*.
 
-This page is the map. [How one scan runs](../chapter-3/how_one_scan_runs.md) is that loop as `inner_scan` and `extract_content` implement it — `Skip` versus nested sessions, `Exit`, requested extractors, `max_depth`, observer callbacks, and the stop-condition check.
+This page is the map. [How one scan runs](../chapter-3/how_one_scan_runs.md) is that loop as `inner_scan` / `scan_object` and `extract_content` implement it — `Skip` versus nested sessions, `Exit`, `ReprocessAsType`, requested extractors, `max_depth`, `max_change_type`, observer callbacks, and the stop-condition check.
 
 ## The assembled scanner
 
@@ -13,6 +13,7 @@ A `Scanner` is built once, then reused for many `scan()` calls. It holds:
 - the analyzer list (typed and generic)
 - the extractor list (typed only)
 - a `max_depth`
+- a `max_change_type` (how many times one object may `ReprocessAsType`; default **2**)
 - an optional [`ScanObserver`](../chapter-3/observer.md) and [`StopCondition`](../chapter-3/stop_condition.md)
 - a [`Context`](../chapter-4/context.md) that is **cleared at the start of every scan** and filled as plugins run
 
@@ -27,6 +28,7 @@ You never construct a `Context` yourself. Analyzers receive `&mut Context` durin
                          │  Analyzers    (N, typed+generic)  │
                          │  Extractors   (N, per type)       │
                          │  max_depth                        │
+                         │  max_change_type                  │
                          │  Observer?  StopCondition?        │
                          │                                   │
                          │          ┌──────────────┐         │
@@ -82,7 +84,7 @@ If two typed analyzers share the same `(content_type, priority)`, both run; thei
 
 ## Pipeline for one object
 
-Every object — the root you passed to `scan()`, or a child an extractor just produced — goes through the same steps. Children start a fresh pass at `depth + 1`.
+Every object — the root you passed to `scan()`, or a child an extractor just produced — goes through the same steps. Children start a fresh pass at `depth + 1`. `ReprocessAsType` does **not**: it re-enters `scan_object` on the **same** tree node.
 
 ```text
                          ┌─────────────┐
@@ -111,57 +113,77 @@ Every object — the root you passed to `scan()`, or a child an extractor just p
                                             ▼                                   │
                               ┌───────────────────────────┐                     │
                               │ Record object in Context  │                     │
+                              │ (once; type_id may change)│                     │
+                              └─────────────┬─────────────┘                     │
+                                            │                                   │
+              ┌─ scan_object ───────────────┘                                   │
+              │   ┌───────────────────────────────────────────────┐             │
+              ▼   ▼                                               │             │
+     ┌───────────────────────────┐                                │             │           
+     │ Type-specific analyzers   │──┐                             │             │
+     │ 0..N for this type        │  │                             │             │
+     │ (by priority)             │  │                             │             │
+     └─────────────┬─────────────┘  │                             │             │
+                   │                │ write                       │             │
+                   ▼                ├──────► Context              │             │
+     ┌───────────────────────────┐  │        maps +               │             │
+     │ Generic analyzers         │──┘        findings             │             │
+     │ 0..N (by priority)        │                                │             │
+     └─────────────┬─────────────┘                                │             │
+                   └────────────┐                                 │             │
+                                ▼                                 │             │
+                        AnalysisOutcome                           │             │
+              ┌──────────┬──────────┬──────────┐                  │             │
+           Skip       Exit     Continue   ReprocessAsType         │             │
+              │          │          │              │              │             │
+              ▼          ▼          │              ▼              │             │
+           stop       abort         │     Requested extractors    │             │
+           this       entire        │     only (own-type skipped) │             │
+           object     scan          │              │              │             │
+                                    │              ├─ children ───┼─────────────┘
+                                    │              │              │             │
+                                    │              │  set type,   │             │
+                                    │              │  same object │             │
+                                    │              └── re-enter ──┘             │
+                                    │               if count < max_change_type  │
+                                    ▼                                           │
+                              ┌───────────────────────────┐                     │
+                              │ Extractors for this type  │                     │
+                              │ 0..N (registration order) │                     │
                               └─────────────┬─────────────┘                     │
                                             │                                   │
                                             ▼                                   │
                               ┌───────────────────────────┐                     │
-                              │ Type-specific analyzers   │──┐                  │
-                              │ 0..N for this type        │  │                  │
-                              │ (by priority)             │  │                  │
-                              └─────────────┬─────────────┘  │                  │
-                                            │                │ write            │
-                                            ▼                ├──────► Context   │
-                              ┌───────────────────────────┐  │        maps +    │
-                              │ Generic analyzers         │──┘        findings  │
-                              │ 0..N (by priority)        │                     │
+                              │ Requested extractors      │                     │
+                              │ 0..N per request          │                     │
                               └─────────────┬─────────────┘                     │
                                             │                                   │
                                             ▼                                   │
-                                       AnalysisOutcome                               │
-                                  ┌─────────┼─────────┐                         │
-                               Skip       Exit     Continue                     │
-                                  │         │         │                         │
-                                  ▼         ▼         ▼                         │
-                               stop      abort   ┌───────────────────────────┐  │
-                               this      entire  │ Extractors for this type  │  │
-                               object    scan    │ 0..N (registration order) │  │
-                                                 └─────────────┬─────────────┘  │
-                                                               │                │
-                                                               ▼                │
-                                                 ┌───────────────────────────┐  │
-                                                 │ Requested extractors      │  │
-                                                 │ 0..N per request          │  │
-                                                 └─────────────┬─────────────┘  │
-                                                               │                │
-                                                               ▼                │
-                                                 ┌───────────────────────────┐  │
-                                                 │ Each child Content        ├──┘
-                                                 │ if depth < max_depth      │
-                                                 └───────────────────────────┘
+                              ┌───────────────────────────┐                     │
+                              │ Each child Content        ├─────────────────────┘
+                              │ if depth < max_depth      │
+                              └───────────────────────────┘
 ```
 
 In words:
 
 1. **Filter.** If a filter is configured and this object is subject to it, a reject means the object is not scanned at all (`on_filtered` if an observer is attached). The root is tested only when `scan(..., filter_root)` is `true`. Extracted children are tested unless their `Entry` sets `skip_from_filtering`. See [Recursion and filter_root](../chapter-3/recursion.md).
-2. **Stop condition.** At the start of `inner_scan`, before identification, an optional [`StopCondition`](../chapter-3/stop_condition.md) can abort the whole scan. That object is not recorded.
+2. **Stop condition.** At the start of `inner_scan`, before identification, an optional [`StopCondition`](../chapter-3/stop_condition.md) can abort the whole scan. That object is not recorded. A later `ReprocessAsType` does **not** re-check the stop condition.
 3. **Type.** If `Content::content_type()` already returns `Some(ty)`, identifiers are skipped. Otherwise the identifier table proposes candidates — magic (first 16 bytes), then file name, then extension, then identifiers with no `IdentifyMethod` — and each candidate’s `validate` must accept. At most one identifier exists for each variant, so a match names a type unambiguously.
-4. **Record.** The scanner appends the object to the context’s tree (path, resolved type, parent/child/sibling links) *before* analyzers run, then `on_scan_object`.
-5. **Analyze.** All analyzers registered for that type run, lowest priority first. Then all generic analyzers run, again by priority. Unidentified objects still get the generic bucket. Each analyzer returns a `AnalysisOutcome`: `Continue`, `Skip` (no further analyzers or extractors on **this** object), or `Exit` (unwind the whole scan). Findings notify `on_finding`.
-6. **Extract.** If analysis continued, extractors registered for the object’s own type run, then extractors for any type an analyzer requested with `request_extract`. Each extractor opens a session and yields children (`on_extraction` after the filter); each child goes back to step 1 at the next depth, until `max_depth`.
+4. **Record.** The scanner appends the object to the context’s tree (path, resolved type, parent/child/sibling links) *before* analyzers run. The node is created once. `ReprocessAsType` mutates that node’s `type_id`; it does not add a second object.
+5. **Analyze (`scan_object`).** `on_scan_object` fires, then all analyzers registered for the current type run, lowest priority first. Then all generic analyzers run, again by priority. Unidentified objects still get the generic bucket. Each analyzer returns an `AnalysisOutcome`:
+   - `Continue` — next analyzer; after the last one, extractors (step 6).
+   - `Skip` — no further analyzers or extractors on **this** object.
+   - `Exit` — unwind the whole scan.
+   - `ReprocessAsType(ty)` — from a **typed** analyzer, stop remaining analyzers for this pass (typed *and* generic), then step 7. A generic analyzer that returns `ReprocessAsType` is currently treated as `Continue`.
+
+   Findings notify `on_finding`.
+6. **Extract (`Continue`).** If analysis continued, extractors registered for the object’s own type run, then extractors for any type an analyzer requested with `request_extract`. Each extractor opens a session and yields children (`on_extraction` after the filter); each child goes back to step 1 at the next depth, until `max_depth`.
+7. **Reprocess.** If analysis returned `ReprocessAsType`, the scanner first runs **only requested** extractors (own-type extractors for the *old* type are skipped). Those children still go around the loop from step 1. Then, if this object has changed type fewer times than `max_change_type` (default **2**), the scanner calls `Content::set_content_type`, updates the tree node, and re-enters `scan_object` — identification is **not** re-run. Over the cap, reprocessing stops and the object keeps its current type.
 
 Extractors and sessions do not return `AnalysisOutcome`. They yield `Option`. Only analyzers steer the scan.
 
-The same object never runs “some other type’s” typed analyzers. A file identified as `Png` runs `Png` analyzers (and generics), not `Zip` analyzers. It *can* still run `Zip` **extractors** if an analyzer requested `Zip` on a byte range — that is how embedded archives are opened without re-typing the parent. [Requesting extraction](requesting_extraction.md) covers that mechanism.
+A file identified as `Png` runs `Png` analyzers (and generics), not `Zip` analyzers — unless an analyzer returns `ReprocessAsType(Zip)`, in which case the **same** object is re-analyzed as `Zip`. Without that, the object can still run `Zip` **extractors** if an analyzer requested `Zip` on a byte range — that is how embedded archives are opened without re-typing the parent. [Requesting extraction](requesting_extraction.md) covers that mechanism.
 
 ## Where data is stored
 
@@ -179,7 +201,7 @@ There are two places plugins put information, on purpose:
         ├── context.global().set(...)     ─┐
         ├── context.local().set(...)      ─┼── Context
         ├── context.add_finding(...)      ─┤     └── findings[]
-        └── context.request_extract(...)  ─┘         (queue for step 6)
+        └── context.request_extract(...)  ─┘         (queue for extraction)
 ```
 
 Treat both as a **general notion** here: maps are how you stash typed values; findings are how you emit a list of detections. The APIs (`var!`, `VarMapValue`, finding metadata, walking `ScanContentHandle`s, the lifetime of `ScanResult`) are [Chapter 4](../chapter-4/context.md) — [global vs local](../chapter-4/global_vs_local.md), [findings](../chapter-4/findings.md), [the result tree](../chapter-4/scan_result.md).
@@ -192,6 +214,7 @@ The architecture is complete enough to read the rest of the book against:
 
 - **One identifier per type; many analyzers and extractors, including several for the same type.**
 - **Typed analyzers then generic analyzers; typed extractors then requested extractors.**
+- **`ReprocessAsType` re-enters `scan_object` on the same node** after requested extractors, capped by `max_change_type`.
 - **Results live in the context (maps + object tree) and in findings.** Chapter 4 is where those structures are defined.
 
-Not yet: `IdentifyMethod` variants and the 16-byte magic window ([Identifier](identifier.md)), analyzer `Dependencies` and `AnalysisOutcome` ([Analyzer](analyzer.md)), sessions / `OwnedContentPtr` / `Entry` ([Extractor](extractor.md)), builder panics and `with_metadata` ([Builder](../chapter-3/builder.md)), [observer](../chapter-3/observer.md) and [stop condition](../chapter-3/stop_condition.md), or the exact `Skip`/`Exit` interaction with nested sessions ([How one scan runs](../chapter-3/how_one_scan_runs.md)).
+Not yet: `IdentifyMethod` variants and the 16-byte magic window ([Identifier](identifier.md)), analyzer `Dependencies` and `AnalysisOutcome` ([Analyzer](analyzer.md)), sessions / `OwnedContentPtr` / `Entry` ([Extractor](extractor.md)), builder panics, `with_metadata`, and `max_change_type` ([Builder](../chapter-3/builder.md)), [observer](../chapter-3/observer.md) and [stop condition](../chapter-3/stop_condition.md), or the exact `Skip`/`Exit`/`ReprocessAsType` interaction with nested sessions ([How one scan runs](../chapter-3/how_one_scan_runs.md)).
